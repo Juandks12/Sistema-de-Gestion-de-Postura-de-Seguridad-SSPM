@@ -57,9 +57,10 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users  User[]
-  assets Asset[]
-  scans  Scan[]
+  users     User[]
+  assets    Asset[]
+  scans     Scan[]
+  scanPorts ScanPort[]
 
   @@map("organizations")
 }
@@ -106,6 +107,7 @@ model Asset {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    User?        @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   scans        Scan[]
+  scanPorts    ScanPort[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -120,6 +122,10 @@ model Scan {
   type           ScanType   @default(PORT_SCAN)
   status         ScanStatus @default(PENDING)
   requestedById  String?    @map("requested_by_id") @db.Uuid
+  /// Dirección IP efectivamente escaneada (el dominio se resuelve y valida antes de lanzar Nmap).
+  targetAddress  String?    @map("target_address") @db.VarChar(45)
+  /// Parámetros de ejecución (argumentos de Nmap, perfil, timeout).
+  parameters     Json?
   startedAt      DateTime?  @map("started_at") @db.Timestamptz(6)
   finishedAt     DateTime?  @map("finished_at") @db.Timestamptz(6)
   /// Salida cruda de la herramienta (p. ej. XML de Nmap convertido a JSON).
@@ -133,8 +139,43 @@ model Scan {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
   requestedBy  User?        @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  ports        ScanPort[]
 
   @@index([organizationId, assetId])
-  @@index([status])
+  @@index([status, createdAt])
   @@map("scans")
+}
+
+/// Puerto/servicio detectado en un escaneo (RF-02 puertos, RF-03 versiones).
+/// Se normaliza en tabla propia para poder consultar la superficie expuesta,
+/// comparar escaneos (nuevos puertos abiertos) y alimentar los hallazgos del Sprint 2.
+model ScanPort {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  scanId         String   @map("scan_id") @db.Uuid
+  assetId        String   @map("asset_id") @db.Uuid
+  port           Int
+  /// tcp | udp | sctp
+  protocol       String   @db.VarChar(8)
+  /// open | closed | filtered | unfiltered | open|filtered | closed|filtered
+  state          String   @db.VarChar(20)
+  reason         String?  @db.VarChar(40)
+  serviceName    String?  @map("service_name") @db.VarChar(100)
+  product        String?  @db.VarChar(200)
+  version        String?  @db.VarChar(100)
+  extraInfo      String?  @map("extra_info") @db.VarChar(255)
+  /// ssl si el servicio va sobre TLS
+  tunnel         String?  @db.VarChar(20)
+  cpe            String[] @default([])
+  /// Confianza de la detección de Nmap (0-10)
+  confidence     Int?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scan         Scan         @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, protocol, port])
+  @@index([organizationId, assetId, state])
+  @@map("scan_ports")
 }

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { validateAssetValue } from '../common/utils/network.util';
@@ -19,10 +20,15 @@ const assetInclude = {
  */
 @Injectable()
 export class AssetsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async create(actor: AuthUser, dto: CreateAssetDto) {
-    const validation = validateAssetValue(dto.value, dto.type);
+    const validation = validateAssetValue(dto.value, dto.type, {
+      allowPrivate: this.config.get<boolean>('ALLOW_PRIVATE_TARGETS') === true,
+    });
     if (!validation.ok) {
       throw new BadRequestException(validation.reason);
     }
