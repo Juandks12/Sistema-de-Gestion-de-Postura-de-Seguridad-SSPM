@@ -6,7 +6,7 @@ export class CreateScanDto {
   @ApiPropertyOptional({
     enum: ScanType,
     default: ScanType.PORT_SCAN,
-    description: 'Tipo de escaneo. En el Sprint 1 solo está disponible PORT_SCAN (Nmap).',
+    description: 'PORT_SCAN (Nmap), WEB_HEADERS (cabeceras HTTP), SSL_CERT (certificado TLS) o SENSITIVE_PATHS (rutas sensibles).',
   })
   @IsOptional()
   @IsEnum(ScanType)

@@ -12,11 +12,8 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScanDto } from './dto/create-scan.dto';
 import { ListScansQuery } from './dto/list-scans.query';
-import { NmapRunner } from './nmap/nmap.runner';
+import { ScanCancellationService } from './scan-cancellation.service';
 import { ScanWorkerService } from './scan-worker.service';
-
-/** Tipos de escaneo implementados. El resto llegan en el Sprint 2. */
-const SUPPORTED_SCAN_TYPES: ScanType[] = [ScanType.PORT_SCAN];
 
 const scanListSelect = {
   id: true,
@@ -40,15 +37,15 @@ export class ScansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly worker: ScanWorkerService,
-    private readonly runner: NmapRunner,
+    private readonly cancellation: ScanCancellationService,
     private readonly config: ConfigService,
   ) {}
 
-  /** RF-02: encola un escaneo de puertos/servicios para un activo de la organización. */
+  /** Encola un escaneo (puertos, cabeceras, TLS o rutas sensibles) para un activo de la organización. */
   async request(actor: AuthUser, assetId: string, dto: CreateScanDto) {
     const type = dto.type ?? ScanType.PORT_SCAN;
-    if (!SUPPORTED_SCAN_TYPES.includes(type)) {
-      throw new BadRequestException(`El tipo de escaneo ${type} todavía no está disponible`);
+    if (!this.worker.supportedTypes.includes(type)) {
+      throw new BadRequestException(`El tipo de escaneo ${type} no está disponible`);
     }
 
     const scan = await this.prisma.$transaction(async (tx) => {
@@ -112,6 +109,25 @@ export class ScansService {
     return scan;
   }
 
+  /** Encola todos los tipos de escaneo disponibles para un activo (auditoría completa). */
+  async requestAll(actor: AuthUser, assetId: string) {
+    const queued: Awaited<ReturnType<ScansService['request']>>[] = [];
+    const skipped: Array<{ type: ScanType; reason: string }> = [];
+    for (const type of this.worker.supportedTypes) {
+      try {
+        queued.push(await this.request(actor, assetId, { type }));
+      } catch (err) {
+        if (err instanceof NotFoundException || err instanceof BadRequestException) throw err;
+        if (err instanceof HttpException) {
+          skipped.push({ type, reason: err.message });
+          continue;
+        }
+        throw err;
+      }
+    }
+    return { queued, skipped };
+  }
+
   async findAll(organizationId: string, query: ListScansQuery) {
     const where: Prisma.ScanWhereInput = {
       organizationId,
@@ -147,6 +163,7 @@ export class ScansService {
         ...scanListSelect,
         parameters: true,
         rawResult: includeRaw,
+        _count: { select: { findings: true } },
         ports: {
           orderBy: [{ protocol: 'asc' }, { port: 'asc' }],
           select: {
@@ -191,7 +208,7 @@ export class ScansService {
       throw new ConflictException('El escaneo cambió de estado; vuelve a consultarlo');
     }
     if (scan.status === ScanStatus.RUNNING) {
-      this.runner.cancel(id);
+      this.cancellation.abort(id, 'cancelled');
     }
     return this.findOne(organizationId, id);
   }

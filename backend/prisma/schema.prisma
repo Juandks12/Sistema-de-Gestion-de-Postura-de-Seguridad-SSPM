@@ -38,6 +38,36 @@ enum ScanType {
   SENSITIVE_PATHS
 }
 
+/// Severidad de un hallazgo (RF-08), alineada con los rangos de CVSS v3.1:
+/// CRITICAL 9.0-10.0 | HIGH 7.0-8.9 | MEDIUM 4.0-6.9 | LOW 0.1-3.9 | INFO 0.0
+enum FindingSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+/// Familia del hallazgo, ligada al módulo que lo detecta.
+enum FindingCategory {
+  EXPOSED_SERVICE
+  HTTP_HEADERS
+  TLS_CERTIFICATE
+  SENSITIVE_PATH
+}
+
+/// Estado de gestión de un hallazgo.
+/// OPEN            -> detectado en el último escaneo del tipo correspondiente
+/// RESOLVED        -> dejó de detectarse en un escaneo posterior
+/// ACCEPTED        -> riesgo aceptado por la organización (no cuenta en el score)
+/// FALSE_POSITIVE  -> descartado por el usuario
+enum FindingStatus {
+  OPEN
+  RESOLVED
+  ACCEPTED
+  FALSE_POSITIVE
+}
+
 /// Ciclo de vida de un escaneo asíncrono.
 enum ScanStatus {
   PENDING
@@ -61,6 +91,7 @@ model Organization {
   assets    Asset[]
   scans     Scan[]
   scanPorts ScanPort[]
+  findings  Finding[]
 
   @@map("organizations")
 }
@@ -81,6 +112,7 @@ model User {
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAssets   Asset[]      @relation("AssetCreatedBy")
   requestedScans  Scan[]       @relation("ScanRequestedBy")
+  reviewedFindings Finding[]   @relation("FindingReviewedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -108,6 +140,7 @@ model Asset {
   createdBy    User?        @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   scans        Scan[]
   scanPorts    ScanPort[]
+  findings     Finding[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -140,6 +173,8 @@ model Scan {
   asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
   requestedBy  User?        @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   ports        ScanPort[]
+  /// Hallazgos detectados por última vez en este escaneo.
+  findings     Finding[]
 
   @@index([organizationId, assetId])
   @@index([status, createdAt])
@@ -178,4 +213,48 @@ model ScanPort {
   @@unique([scanId, protocol, port])
   @@index([organizationId, assetId, state])
   @@map("scan_ports")
+}
+
+/// Hallazgo de seguridad sobre un activo (RF-08). Se deduplica entre escaneos
+/// mediante `fingerprint` (regla + ubicación): un mismo problema detectado en
+/// escaneos sucesivos es un único hallazgo con `first_seen_at`/`last_seen_at`.
+model Finding {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  assetId        String          @map("asset_id") @db.Uuid
+  /// Último escaneo en el que se detectó.
+  lastScanId     String?         @map("last_scan_id") @db.Uuid
+  category       FindingCategory
+  /// Identificador de la regla del catálogo (p. ej. HDR-HSTS-MISSING).
+  ruleId         String          @map("rule_id") @db.VarChar(60)
+  severity       FindingSeverity
+  /// Puntuación CVSS v3.1 de referencia asignada a la regla (0.0-10.0).
+  cvssScore      Decimal?        @map("cvss_score") @db.Decimal(3, 1)
+  status         FindingStatus   @default(OPEN)
+  title          String          @db.VarChar(200)
+  description    String
+  recommendation String
+  /// Dónde se detectó: "tcp/22", "https://host/", "https://host/.env"...
+  location       String          @db.VarChar(500)
+  /// Datos concretos que sustentan el hallazgo (cabeceras, fechas, versiones...).
+  evidence       Json?
+  /// sha256(ruleId + location) para deduplicar.
+  fingerprint    String          @db.VarChar(64)
+  firstSeenAt    DateTime        @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime        @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  resolvedAt     DateTime?       @map("resolved_at") @db.Timestamptz(6)
+  reviewedById   String?         @map("reviewed_by_id") @db.Uuid
+  reviewNote     String?         @map("review_note")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  lastScan     Scan?        @relation(fields: [lastScanId], references: [id], onDelete: SetNull)
+  reviewedBy   User?        @relation("FindingReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([assetId, fingerprint])
+  @@index([organizationId, status, severity])
+  @@index([organizationId, assetId, category])
+  @@map("findings")
 }

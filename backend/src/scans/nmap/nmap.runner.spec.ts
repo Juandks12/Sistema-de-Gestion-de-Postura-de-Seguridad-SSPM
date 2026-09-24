@@ -14,7 +14,7 @@ const config = (values: Record<string, unknown>) =>
 describe('NmapRunner', () => {
   it('informa si el binario no existe', async () => {
     const runner = new NmapRunner(config({ NMAP_PATH: '/nonexistent/nmap' }));
-    await expect(runner.run('scan-x', ['--version'], 5000)).rejects.toBeInstanceOf(
+    await expect(runner.run(['--version'], { timeoutMs: 5000 })).rejects.toBeInstanceOf(
       ScanExecutionError,
     );
   });
@@ -38,9 +38,8 @@ describe('NmapRunner', () => {
     it('ejecuta Nmap de forma asíncrona y devuelve XML parseable', async () => {
       const runner = new NmapRunner(config({ NMAP_PATH: 'nmap' }));
       const out = await runner.run(
-        'scan-real',
         ['-sT', '-Pn', '-n', '-p', String(port), '-oX', '-', '127.0.0.1'],
-        60000,
+        { timeoutMs: 60000 },
       );
       expect(out.exitCode).toBe(0);
       expect(out.timedOut).toBe(false);
@@ -51,25 +50,25 @@ describe('NmapRunner', () => {
     it('aborta el proceso cuando supera el tiempo máximo', async () => {
       const runner = new NmapRunner(config({ NMAP_PATH: 'nmap' }));
       const out = await runner.run(
-        'scan-timeout',
         ['-sT', '-Pn', '-n', '-T0', '-p', '1-65535', '-oX', '-', '127.0.0.1'],
-        1000,
+        { timeoutMs: 1000 },
       );
       expect(out.timedOut).toBe(true);
       expect(runner.runningCount).toBe(0);
     }, 30000);
 
-    it('permite cancelar un escaneo en curso', async () => {
+    it('permite cancelar un escaneo en curso mediante AbortSignal', async () => {
       const runner = new NmapRunner(config({ NMAP_PATH: 'nmap' }));
+      const controller = new AbortController();
       const promise = runner.run(
-        'scan-cancel',
         ['-sT', '-Pn', '-n', '-T0', '-p', '1-65535', '-oX', '-', '127.0.0.1'],
-        30000,
+        { timeoutMs: 30000, signal: controller.signal },
       );
       await new Promise((r) => setTimeout(r, 300));
-      expect(runner.cancel('scan-cancel')).toBe(true);
+      controller.abort('cancelled');
       const out = await promise;
       expect(out.cancelled).toBe(true);
+      expect(runner.runningCount).toBe(0);
     }, 30000);
   });
 });
