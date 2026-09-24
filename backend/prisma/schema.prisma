@@ -1,0 +1,149 @@
+// ---------------------------------------------------------------------------
+// SSPM - SaaS Lite | Modelo de datos (Sprint 1)
+//
+// Cubre las tablas de la sección 6.2 del documento requeridas para el Sprint 1:
+//   users, organizations, assets, scans
+// Las tablas findings, risk_scores, reports y alerts se agregarán en los
+// sprints 2, 3 y 4 respectivamente.
+//
+// Multi-tenant: `organizations` es el tenant. Toda entidad de negocio lleva
+// `organization_id` y las consultas de la aplicación se filtran siempre por
+// la organización del usuario autenticado (ver RolesGuard / servicios).
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Rol del usuario dentro de su organización (RBAC).
+enum UserRole {
+  /// Administra la organización: usuarios, activos, escaneos y configuración.
+  ADMIN
+  /// Gestiona activos y ejecuta escaneos, no administra usuarios.
+  ANALYST
+  /// Solo lectura: dashboard, hallazgos y reportes.
+  VIEWER
+}
+
+/// Tipo de activo externo registrado (RF-01).
+enum AssetType {
+  DOMAIN
+  IP
+}
+
+/// Tipo de escaneo. Sprint 1 solo usa PORT_SCAN (Nmap); el resto se habilita en el Sprint 2.
+enum ScanType {
+  PORT_SCAN
+  HTTP_HEADERS
+  SSL_TLS
+  SENSITIVE_PATHS
+}
+
+/// Ciclo de vida de un escaneo asíncrono.
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(150)
+  /// Identificador legible y único (p. ej. "acme-sas"), útil para URLs y reportes.
+  slug      String   @unique @db.VarChar(80)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users  User[]
+  assets Asset[]
+  scans  Scan[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  email          String    @unique @db.VarChar(255)
+  passwordHash   String    @map("password_hash") @db.VarChar(255)
+  fullName       String    @map("full_name") @db.VarChar(150)
+  role           UserRole  @default(VIEWER)
+  isActive       Boolean   @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAssets  Asset[]      @relation("AssetCreatedBy")
+  requestedScans Scan[]       @relation("ScanRequestedBy")
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model Asset {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  type           AssetType
+  /// Dominio (FQDN en minúsculas) o dirección IP pública, normalizado.
+  value          String    @db.VarChar(253)
+  /// Nombre descriptivo opcional (p. ej. "Sitio corporativo").
+  label          String?   @db.VarChar(150)
+  description    String?
+  /// El usuario declara tener autorización para analizar este activo (sección 1.6.3).
+  authorizationConfirmed Boolean  @default(false) @map("authorization_confirmed")
+  isActive       Boolean   @default(true) @map("is_active")
+  lastScannedAt  DateTime? @map("last_scanned_at") @db.Timestamptz(6)
+  createdById    String?   @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scans        Scan[]
+
+  /// Un mismo activo no puede repetirse dentro de una organización,
+  /// pero sí puede existir en organizaciones distintas.
+  @@unique([organizationId, value])
+  @@index([organizationId, type])
+  @@map("assets")
+}
+
+model Scan {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  assetId        String     @map("asset_id") @db.Uuid
+  type           ScanType   @default(PORT_SCAN)
+  status         ScanStatus @default(PENDING)
+  /// Parámetros con los que se lanzó el escaneo (perfil de Nmap, puertos, etc.).
+  parameters     Json?
+  /// Salida cruda de la herramienta (XML de Nmap) para trazabilidad y auditoría.
+  rawOutput      String?    @map("raw_output")
+  /// Resumen estructurado del resultado (puertos abiertos, servicios, versiones).
+  summary        Json?
+  errorMessage   String?    @map("error_message")
+  requestedById  String?    @map("requested_by_id") @db.Uuid
+  queuedAt       DateTime   @default(now()) @map("queued_at") @db.Timestamptz(6)
+  startedAt      DateTime?  @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?  @map("finished_at") @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([assetId, createdAt])
+  @@map("scans")
+}
