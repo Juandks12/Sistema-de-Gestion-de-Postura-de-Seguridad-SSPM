@@ -1,0 +1,140 @@
+// ---------------------------------------------------------------------------
+// SSPM - SaaS Lite | Modelo de datos (Sprint 1)
+// Tablas de la sección 6.2 del documento: users, organizations, assets, scans.
+// Las tablas findings, risk_scores, reports y alerts se añadirán en sprints
+// posteriores (Sprint 2 en adelante).
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Rol de un usuario dentro de su organización (tenant).
+/// ADMIN   -> Administrador de TI: gestiona usuarios, activos y escaneos.
+/// ANALYST -> Desarrollador / analista: registra activos y lanza escaneos.
+/// VIEWER  -> Gerente: solo lectura (dashboard, reportes).
+enum UserRole {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+/// Tipo de activo externo registrado (RF-01).
+enum AssetType {
+  DOMAIN
+  IP
+}
+
+/// Tipo de escaneo soportado. En Sprint 1 solo se implementa PORT_SCAN (Nmap).
+enum ScanType {
+  PORT_SCAN
+  WEB_HEADERS
+  SSL_CERT
+  SENSITIVE_PATHS
+}
+
+/// Ciclo de vida de un escaneo asíncrono.
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+/// Organización (tenant). Toda entidad de negocio cuelga de una organización
+/// y cualquier consulta debe filtrarse por `organization_id`.
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(150)
+  slug      String   @unique @db.VarChar(80)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users  User[]
+  assets Asset[]
+  scans  Scan[]
+
+  @@map("organizations")
+}
+
+/// Usuario de la plataforma. Pertenece a exactamente una organización.
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  email          String    @unique @db.VarChar(254)
+  passwordHash   String    @map("password_hash") @db.VarChar(255)
+  fullName       String    @map("full_name") @db.VarChar(150)
+  role           UserRole  @default(VIEWER)
+  isActive       Boolean   @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAssets   Asset[]      @relation("AssetCreatedBy")
+  requestedScans  Scan[]       @relation("ScanRequestedBy")
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+/// Activo externo (dominio o IP pública) perteneciente a una organización.
+model Asset {
+  id                     String    @id @default(uuid()) @db.Uuid
+  organizationId         String    @map("organization_id") @db.Uuid
+  type                   AssetType
+  /// Valor normalizado (dominio en minúsculas sin punto final, o IP canónica).
+  value                  String    @db.VarChar(253)
+  name                   String?   @db.VarChar(150)
+  description            String?
+  isActive               Boolean   @default(true) @map("is_active")
+  /// El usuario declara que posee autorización para escanear este activo (sección 1.6.3).
+  authorizationConfirmed Boolean   @default(false) @map("authorization_confirmed")
+  authorizedAt           DateTime? @map("authorized_at") @db.Timestamptz(6)
+  createdById            String?   @map("created_by_id") @db.Uuid
+  lastScannedAt          DateTime? @map("last_scanned_at") @db.Timestamptz(6)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scans        Scan[]
+
+  @@unique([organizationId, value])
+  @@index([organizationId])
+  @@map("assets")
+}
+
+/// Ejecución de un escaneo sobre un activo. Se procesa de forma asíncrona.
+model Scan {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  assetId        String     @map("asset_id") @db.Uuid
+  type           ScanType   @default(PORT_SCAN)
+  status         ScanStatus @default(PENDING)
+  requestedById  String?    @map("requested_by_id") @db.Uuid
+  startedAt      DateTime?  @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?  @map("finished_at") @db.Timestamptz(6)
+  /// Salida cruda de la herramienta (p. ej. XML de Nmap convertido a JSON).
+  rawResult      Json?      @map("raw_result")
+  /// Resumen estructurado (puertos abiertos, servicios, versiones).
+  summary        Json?
+  errorMessage   String?    @map("error_message")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, assetId])
+  @@index([status])
+  @@map("scans")
+}

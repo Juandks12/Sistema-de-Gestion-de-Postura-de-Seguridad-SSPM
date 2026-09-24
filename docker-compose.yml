@@ -1,0 +1,42 @@
+# Infraestructura local del SSPM - SaaS Lite.
+#   Solo base de datos:      docker compose up -d db
+#   Base de datos + API:     docker compose up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sspm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: sspm_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - sspm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sspm_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    container_name: sspm-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:admin@db:5432/sspm_db?schema=public
+      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto-por-uno-largo-y-aleatorio}
+      JWT_EXPIRES_IN: 8h
+      BCRYPT_SALT_ROUNDS: 12
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "3000:3000"
+
+volumes:
+  sspm_pgdata:
