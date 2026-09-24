@@ -1,1 +1,1 @@
-# Sistema-de-Gesti-n-de-Postura-de-Seguridad-SSPM
+# Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM
