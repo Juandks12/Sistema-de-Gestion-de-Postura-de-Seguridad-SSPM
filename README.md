@@ -38,6 +38,7 @@ directorio hermano (`frontend/`) en sprints posteriores.
 .
 ├── docker-compose.yml          # Base de datos + API (imagen de producción)
 ├── docker-compose.dev.yml      # Modo desarrollo: código montado y recarga en caliente
+├── docker-compose.db-access.yml # Opcional: publica PostgreSQL en tu equipo
 ├── .env.example                # Variables opcionales de docker compose
 └── backend/
     ├── Dockerfile              # Imagen multi-etapa: development y production
@@ -136,10 +137,6 @@ dc exec api npm run lint                               # linter
 dc exec api npx prisma migrate dev --name <nombre>     # nueva migración tras editar schema.prisma
 ```
 
-Para explorar la base de datos con una herramienta gráfica (pgAdmin, DBeaver,
-DataGrip), conéctate a `localhost:5432`, usuario `postgres`, contraseña `admin`,
-base `sspm_db`.
-
 Notas del modo desarrollo:
 
 - `node_modules` vive en un volumen propio del contenedor, con dependencias
@@ -147,6 +144,27 @@ Notas del modo desarrollo:
 - Si `package-lock.json` cambia, por ejemplo tras un `git pull`, el contenedor
   sincroniza las dependencias automáticamente al arrancar.
 - Los cambios se detectan por sondeo para que funcione en Windows y macOS.
+
+### Conectarse a la base de datos desde tu equipo
+
+Por defecto PostgreSQL no publica ningún puerto: la API llega a la base por la
+red interna de Docker, y así no choca con un PostgreSQL instalado en tu equipo.
+Para usar una consola SQL no necesitas nada más:
+
+```bash
+docker compose exec db psql -U postgres -d sspm_db
+```
+
+Para conectarte con una herramienta gráfica (pgAdmin, DBeaver, DataGrip), añade
+`docker-compose.db-access.yml`, que publica el puerto solo en `127.0.0.1`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.db-access.yml up -d
+```
+
+Después conéctate a `localhost:5432`, usuario `postgres`, contraseña `admin`,
+base `sspm_db`. Si el 5432 está ocupado, pon otro puerto en `DB_PORT` dentro del
+`.env` de la raíz, por ejemplo `DB_PORT=15432`.
 
 ### Configuración opcional
 
@@ -157,13 +175,13 @@ edítalo. Las variables principales son:
 | Variable | Por defecto | Uso |
 |----------|-------------|-----|
 | `API_PORT` | `3000` | Puerto de la API en tu equipo |
-| `DB_PORT` | `5432` | Puerto de PostgreSQL en tu equipo |
+| `DB_PORT` | `5432` | Puerto de PostgreSQL en tu equipo, solo con `docker-compose.db-access.yml` |
 | `JWT_SECRET` | valor de desarrollo | Secreto para firmar los tokens |
 | `SEED_DEMO_DATA` | `true` | Crear los usuarios de demostración al arrancar |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Modo laboratorio, solo en modo desarrollo |
 
-Los puertos se publican solo en `127.0.0.1`, así que la API y la base de datos
-no son accesibles desde otros equipos de tu red.
+La API se publica solo en `127.0.0.1`, así que no es accesible desde otros
+equipos de tu red. La base de datos no se publica salvo que lo pidas.
 
 ### Escanear servicios de tu propio equipo
 
@@ -176,9 +194,13 @@ el caso de estudio con activos controlados:
 
 ### Solución de problemas
 
-- **"port is already allocated"**: otro programa usa el puerto 3000 o 5432,
-  por ejemplo un PostgreSQL instalado localmente. Cambia `API_PORT` o `DB_PORT`
-  en el `.env` de la raíz.
+- **"port is already allocated" o "Intento de acceso a un socket no permitido"**:
+  otro programa usa ese puerto o Windows lo tiene reservado. Si es el 3000, cambia
+  `API_PORT` en el `.env` de la raíz. Si es el 5432 al usar
+  `docker-compose.db-access.yml`, cambia `DB_PORT`.
+- **Swagger muestra una versión antigua**: quedan contenedores de una versión
+  anterior ocupando el puerto. Revisa `docker ps`; si aparecen `sspm-api` o
+  `sspm-db` sin el sufijo `-1`, elimínalos con `docker rm -f sspm-api sspm-db`.
 - **La API no pasa a `healthy`**: revisa `docker compose logs api`. Si cambiaste
   `POSTGRES_PASSWORD` después de crear la base, borra el volumen con
   `docker compose down -v`; la contraseña solo se aplica la primera vez.
@@ -193,7 +215,8 @@ Solo si prefieres ejecutar la API directamente en tu equipo.
 ### Requisitos previos
 
 - Node.js ≥ 20.18 y npm
-- PostgreSQL 16 (local, o solo la base con `docker compose up -d db`)
+- PostgreSQL 16, instalado localmente o solo la base en Docker con
+  `docker compose -f docker-compose.yml -f docker-compose.db-access.yml up -d db`
 - Nmap ≥ 7.80 accesible en el `PATH` (`sudo apt install nmap`, `brew install nmap` o el instalador oficial en Windows)
 
 ### 1. Instalar dependencias

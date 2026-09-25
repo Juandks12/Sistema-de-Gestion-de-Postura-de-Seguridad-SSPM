@@ -7,6 +7,8 @@
 #   Detener y borrar la base:       docker compose down -v
 #
 # Modo desarrollo con recarga en caliente: ver docker-compose.dev.yml.
+# Acceso a PostgreSQL desde tu equipo (pgAdmin, DBeaver...): ver
+# docker-compose.db-access.yml.
 # Las variables ${...} se pueden ajustar en un archivo .env junto a este
 # (ver .env.example). Este archivo está pensado para uso local: no lo uses
 # tal cual en un servidor público.
@@ -21,9 +23,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
       POSTGRES_DB: sspm_db
-    ports:
-      # Solo accesible desde tu equipo (no desde la red local).
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    # Sin puertos publicados: la API accede por la red interna de Docker y así
+    # no hay conflictos con un PostgreSQL instalado en el equipo.
     volumes:
       - sspm_pgdata:/var/lib/postgresql/data
     healthcheck:
