@@ -7,6 +7,8 @@ export interface AuthContextValue {
   ready: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Guarda la sesión devuelta por la API (p. ej. tras cambiar la contraseña). */
+  applySession: (res: AuthResponse) => void;
   /** true si el usuario puede registrar activos, lanzar escaneos y revisar hallazgos. */
   canEdit: boolean;
   hasRole: (...roles: UserRole[]) => boolean;
@@ -55,6 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
+  const applySession = useCallback((res: AuthResponse) => {
+    tokenStore.set(res.accessToken);
+    tokenStore.setUser(res.user);
+    setUser(res.user);
+  }, []);
+
   const logout = useCallback(() => {
     tokenStore.clear();
     setUser(null);
@@ -66,10 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ready,
       login,
       logout,
+      applySession,
       canEdit: user?.role === 'ADMIN' || user?.role === 'ANALYST',
       hasRole: (...roles) => (user ? roles.includes(user.role) : false),
     }),
-    [user, ready, login, logout],
+    [user, ready, login, logout, applySession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

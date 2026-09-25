@@ -1,4 +1,4 @@
-import type { FindingCategory, FindingStatus, Grade, ScanStatus, ScanType, Severity } from './types';
+import type { FindingCategory, FindingStatus, Grade, ScanStatus, ScanType, Severity, UserRole } from './types';
 
 const dateTime = new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeStyle: 'short' });
 const dateOnly = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
@@ -94,3 +94,15 @@ export function cvss(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '—';
   return Number(value).toFixed(1);
 }
+
+export const ROLE_LABEL: Record<UserRole, string> = {
+  ADMIN: 'Administrador',
+  ANALYST: 'Analista',
+  VIEWER: 'Gerencia (solo lectura)',
+};
+
+export const ROLE_DESCRIPTION: Record<UserRole, string> = {
+  ADMIN: 'Gestiona usuarios, activos, escaneos y hallazgos.',
+  ANALYST: 'Registra activos, lanza escaneos y revisa hallazgos.',
+  VIEWER: 'Consulta el dashboard, los activos y los hallazgos sin modificar nada.',
+};

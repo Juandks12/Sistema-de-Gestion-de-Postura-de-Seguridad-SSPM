@@ -214,3 +214,25 @@ export interface OrgHistory {
   days: number;
   points: HistoryPoint[];
 }
+
+export interface OrgUser {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  passwordChangedAt: string | null;
+  organizationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+  createdAt: string;
+  _count: { users: number; assets: number; scans: number };
+}

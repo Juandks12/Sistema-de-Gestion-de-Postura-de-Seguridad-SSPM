@@ -308,6 +308,8 @@ Se adapta a móvil y escritorio y respeta el modo claro u oscuro del sistema.
 | Detalle de activo | Score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
 | Hallazgos | Filtros por estado, severidad y categoría; cada fila se expande con descripción, recomendación, evidencia y acciones para aceptar el riesgo, marcar falso positivo o reabrir |
 | Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación |
+| Usuarios (solo ADMIN) | Alta de usuarios con contraseña inicial y generador, cambio de rol, restablecimiento de contraseña y activación o desactivación del acceso |
+| Mi cuenta | Datos del perfil y la organización, y cambio de la propia contraseña con los requisitos a la vista |
 
 Las acciones de escritura (registrar, auditar, revisar) solo aparecen para los roles
 `ADMIN` y `ANALYST`. El rol `VIEWER` ve todo en modo lectura.
@@ -331,11 +333,13 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | POST | `/api/v1/auth/register` | público | Crea una organización y su primer usuario ADMIN |
 | POST | `/api/v1/auth/login` | público | Devuelve un JWT |
 | GET | `/api/v1/auth/me` | todos | Usuario autenticado |
+| PATCH | `/api/v1/auth/me/password` | todos | Cambiar mi contraseña (exige la actual); cierra mis otras sesiones y devuelve un token nuevo |
 | GET | `/api/v1/organizations/me` | todos | Organización del usuario |
 | PATCH | `/api/v1/organizations/me` | ADMIN | Renombrar la organización |
 | GET | `/api/v1/users` | ADMIN | Usuarios de la organización |
 | POST | `/api/v1/users` | ADMIN | Crear usuario en la organización |
 | PATCH | `/api/v1/users/:id` | ADMIN | Cambiar rol / activar / desactivar |
+| POST | `/api/v1/users/:id/reset-password` | ADMIN | Asignar una contraseña nueva a otro usuario; cierra sus sesiones |
 | **POST** | **`/api/v1/assets`** | ADMIN, ANALYST | **RF-01: registrar un dominio o IP** |
 | GET | `/api/v1/assets` | todos | Listado paginado (`type`, `isActive`, `search`, `page`, `pageSize`) |
 | GET | `/api/v1/assets/:id` | todos | Detalle de un activo |
@@ -557,6 +561,8 @@ ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm ru
 - El identificador de organización **nunca** se acepta desde la URL ni el cuerpo:
   se toma siempre del token, y todas las consultas filtran por `organization_id`.
 - Acceder a un recurso de otra organización responde `404` (no se revela su existencia).
+- Cambiar o restablecer una contraseña incrementa `users.token_version`, que viaja en el
+  JWT: todas las sesiones anteriores de ese usuario dejan de ser válidas al instante.
 - `JwtAuthGuard` y `RolesGuard` son globales: todo endpoint exige token salvo los
   marcados con `@Public()`, y `@Roles(...)` restringe por rol.
 - La estrategia JWT recarga el usuario en cada petición, por lo que desactivar una
@@ -573,7 +579,8 @@ ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm ru
 Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports`):
 
 - **organizations**: tenant (`name`, `slug`, `is_active`).
-- **users**: `email` único, `password_hash` (bcrypt), `role`, `organization_id`.
+- **users**: `email` único, `password_hash` (bcrypt), `role`, `organization_id`,
+  `token_version` (revocación de sesiones) y `password_changed_at`.
 - **assets**: `type`, `value` (único por organización), `authorization_confirmed`,
   `created_by_id`, `last_scanned_at`.
 - **scans**: `asset_id`, `type` (`PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`,
@@ -607,6 +614,9 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
 ## Seguridad del propio sistema
 
 - Contraseñas con bcrypt; login con comparación de tiempo constante.
+- Política de contraseñas única para todos los formularios: 8 a 72 caracteres, con
+  mayúscula, minúscula y número. La aplicación web muestra los requisitos mientras se escribe.
+- Cambio de contraseña y restablecimiento por un administrador, que cierran las demás sesiones.
 - `helmet` para cabeceras HTTP seguras y CORS restringido por `CORS_ORIGINS`.
 - Validación estricta de entrada (`whitelist` + `forbidNonWhitelisted`).
 - Los valores de activos se validan como FQDN/IP antes de persistirse y de nuevo antes

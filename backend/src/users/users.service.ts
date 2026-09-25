@@ -4,6 +4,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 /** Campos públicos de un usuario (nunca se expone passwordHash). */
@@ -14,6 +15,7 @@ const userSelect = {
   role: true,
   isActive: true,
   lastLoginAt: true,
+  passwordChangedAt: true,
   organizationId: true,
   createdAt: true,
   updatedAt: true,
@@ -72,6 +74,27 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id },
       data: { role: dto.role, isActive: dto.isActive },
+      select: userSelect,
+    });
+  }
+
+  /**
+   * Un ADMIN asigna una contraseña nueva a otro usuario de su organización
+   * (por ejemplo, si la olvidó). Cierra todas las sesiones de ese usuario.
+   * Para la propia cuenta debe usarse el cambio de contraseña, que exige la actual.
+   */
+  async resetPassword(actor: AuthUser, id: string, dto: ResetPasswordDto) {
+    await this.findOne(actor.organizationId, id);
+    if (id === actor.id) {
+      throw new BadRequestException('Para tu propia cuenta usa "Cambiar mi contraseña"');
+    }
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash: await this.auth.hashPassword(dto.newPassword),
+        passwordChangedAt: new Date(),
+        tokenVersion: { increment: 1 },
+      },
       select: userSelect,
     });
   }

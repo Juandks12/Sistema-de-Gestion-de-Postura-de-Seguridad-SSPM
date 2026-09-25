@@ -1,7 +1,8 @@
+import { IsStrongPassword } from '../../common/validators/password';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'Carlos Dev' })
@@ -18,12 +19,7 @@ export class CreateUserDto {
   email!: string;
 
   @ApiProperty({ example: 'Password123!' })
-  @IsString()
-  @MinLength(8)
-  @MaxLength(72)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
-    message: 'La contraseña debe incluir mayúscula, minúscula y número',
-  })
+  @IsStrongPassword()
   password!: string;
 
   @ApiProperty({ enum: UserRole, example: UserRole.ANALYST })

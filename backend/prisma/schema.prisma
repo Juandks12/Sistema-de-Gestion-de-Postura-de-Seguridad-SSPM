@@ -121,6 +121,9 @@ model User {
   role           UserRole  @default(VIEWER)
   isActive       Boolean   @default(true) @map("is_active")
   lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
+  /// Se incrementa al cambiar o restablecer la contraseña; invalida los JWT emitidos antes.
+  tokenVersion      Int       @default(0) @map("token_version")
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
