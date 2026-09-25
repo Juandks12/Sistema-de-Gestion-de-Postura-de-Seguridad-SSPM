@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FindingCategory, FindingSeverity, FindingStatus, Prisma, ScanType } from '@prisma/client';
+import { FindingCategory, FindingSeverity, FindingStatus, Prisma, RiskScoreTrigger, ScanType } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { RiskScoresService } from '../risk/risk-scores.service';
 import { FindingDraft } from '../scans/scanner.interface';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
@@ -79,7 +80,10 @@ function emptyCounts(): Record<FindingSeverity, number> {
  */
 @Injectable()
 export class FindingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly riskScores: RiskScoresService,
+  ) {}
 
   /**
    * Sincroniza los hallazgos de un escaneo completado dentro de una transacción:
@@ -184,11 +188,22 @@ export class FindingsService {
   }
 
   async review(actor: AuthUser, id: string, dto: ReviewFindingDto) {
-    await this.findOne(actor.organizationId, id);
-    return this.prisma.finding.update({
-      where: { id },
-      data: { status: dto.status, reviewNote: dto.note ?? null, reviewedById: actor.id },
-      select: findingSelect,
+    const existing = await this.findOne(actor.organizationId, id);
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.finding.update({
+        where: { id },
+        data: { status: dto.status, reviewNote: dto.note ?? null, reviewedById: actor.id },
+        select: findingSelect,
+      });
+      // Aceptar un riesgo o descartar un falso positivo cambia el Security Score.
+      if (existing.status !== dto.status) {
+        await this.riskScores.snapshot(tx, {
+          organizationId: actor.organizationId,
+          assetId: existing.assetId,
+          trigger: RiskScoreTrigger.FINDING_REVIEWED,
+        });
+      }
+      return updated;
     });
   }
 

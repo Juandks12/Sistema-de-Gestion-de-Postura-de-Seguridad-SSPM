@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, RiskScoreTrigger } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { validateAssetValue } from '../common/utils/network.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { RiskScoresService } from '../risk/risk-scores.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
@@ -23,6 +24,7 @@ export class AssetsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly riskScores: RiskScoresService,
   ) {}
 
   async create(actor: AuthUser, dto: CreateAssetDto) {
@@ -100,16 +102,26 @@ export class AssetsService {
   }
 
   async update(organizationId: string, id: string, dto: UpdateAssetDto) {
-    await this.findOne(organizationId, id);
-    return this.prisma.asset.update({
-      where: { id },
-      data: { name: dto.name, description: dto.description, isActive: dto.isActive },
-      include: assetInclude,
+    const existing = await this.findOne(organizationId, id);
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.asset.update({
+        where: { id },
+        data: { name: dto.name, description: dto.description, isActive: dto.isActive },
+        include: assetInclude,
+      });
+      // Excluir o incluir un activo en el monitoreo cambia el score de la organización.
+      if (dto.isActive !== undefined && dto.isActive !== existing.isActive) {
+        await this.riskScores.snapshotOrganization(tx, organizationId, RiskScoreTrigger.ASSET_CHANGED);
+      }
+      return updated;
     });
   }
 
   async remove(organizationId: string, id: string): Promise<void> {
     await this.findOne(organizationId, id);
-    await this.prisma.asset.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.asset.delete({ where: { id } });
+      await this.riskScores.snapshotOrganization(tx, organizationId, RiskScoreTrigger.ASSET_CHANGED);
+    });
   }
 }

@@ -68,6 +68,20 @@ enum FindingStatus {
   FALSE_POSITIVE
 }
 
+/// Ámbito de una instantánea de puntuación.
+enum RiskScoreScope {
+  ORGANIZATION
+  ASSET
+}
+
+/// Evento que originó la instantánea de puntuación.
+enum RiskScoreTrigger {
+  SCAN_COMPLETED
+  FINDING_REVIEWED
+  ASSET_CHANGED
+  MANUAL
+}
+
 /// Ciclo de vida de un escaneo asíncrono.
 enum ScanStatus {
   PENDING
@@ -90,8 +104,9 @@ model Organization {
   users     User[]
   assets    Asset[]
   scans     Scan[]
-  scanPorts ScanPort[]
-  findings  Finding[]
+  scanPorts  ScanPort[]
+  findings   Finding[]
+  riskScores RiskScore[]
 
   @@map("organizations")
 }
@@ -141,6 +156,7 @@ model Asset {
   scans        Scan[]
   scanPorts    ScanPort[]
   findings     Finding[]
+  riskScores   RiskScore[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -257,4 +273,40 @@ model Finding {
   @@index([organizationId, status, severity])
   @@index([organizationId, assetId, category])
   @@map("findings")
+}
+
+/// Instantánea del Security Score (RF-07) e histórico de postura (RF-11).
+/// Se registra una fila por activo y otra por organización cada vez que
+/// cambia la información que alimenta la puntuación (escaneo completado,
+/// revisión de un hallazgo, cambio de activo o recálculo manual).
+model RiskScore {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  scope          RiskScoreScope
+  /// Nulo cuando scope = ORGANIZATION.
+  assetId        String?          @map("asset_id") @db.Uuid
+  /// 0-100. Nulo si aún no hay ningún escaneo completado.
+  score          Int?
+  /// A, B, C, D o F. Nulo si score es nulo.
+  grade          String?          @db.VarChar(1)
+  criticalCount  Int              @default(0) @map("critical_count")
+  highCount      Int              @default(0) @map("high_count")
+  mediumCount    Int              @default(0) @map("medium_count")
+  lowCount       Int              @default(0) @map("low_count")
+  infoCount      Int              @default(0) @map("info_count")
+  /// Activos con al menos un escaneo completado (solo scope = ORGANIZATION).
+  scoredAssets   Int              @default(0) @map("scored_assets")
+  /// Detalle del cálculo: pesos, penalizaciones por severidad y versión del modelo.
+  breakdown      Json?
+  trigger        RiskScoreTrigger
+  /// Escaneo que originó la instantánea, si aplica.
+  scanId         String?          @map("scan_id") @db.Uuid
+  computedAt     DateTime         @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, scope, computedAt])
+  @@index([assetId, computedAt])
+  @@map("risk_scores")
 }

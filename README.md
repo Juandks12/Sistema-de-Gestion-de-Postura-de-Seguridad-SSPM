@@ -15,7 +15,7 @@ directorio hermano (`frontend/`) en sprints posteriores.
 | Sprint 0 | Diseño, modelo de datos, arquitectura | ✅ Documentado |
 | Sprint 1 | Registro de activos (RF-01), integración Nmap, detección de puertos/servicios (RF-02, RF-03) | ✅ Implementado |
 | Sprint 2 | Cabeceras HTTP (RF-04), SSL/TLS (RF-05), rutas sensibles (RF-06), clasificación por severidad (RF-08) | ✅ Implementado |
-| Sprint 3 | Security Score y dashboard | ⏳ |
+| Sprint 3 | Security Score (RF-07), histórico de postura (RF-11) y endpoints del dashboard | ✅ Implementado |
 | Sprint 4 | Reportes PDF y alertas | ⏳ |
 
 ## Stack tecnológico
@@ -69,6 +69,8 @@ directorio hermano (`frontend/`) en sprints posteriores.
     │   │   ├── scan-worker.service.ts  # Cola y worker asíncrono
     │   │   └── target-resolver.ts      # Resolución DNS segura del objetivo
     │   ├── findings/           # RF-08: hallazgos, catálogo de reglas y severidad
+    │   ├── risk/               # RF-07/RF-11: motor de riesgo, Security Score e histórico
+    │   ├── dashboard/          # Datos agregados para el dashboard (sección 8)
     │   └── health/             # Endpoint de salud
     └── test/                   # Pruebas end-to-end (supertest)
 ```
@@ -296,6 +298,14 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | GET | `/api/v1/findings/rules` | todos | Catálogo de reglas con severidad y CVSS de referencia |
 | GET | `/api/v1/findings/:id` | todos | Detalle de un hallazgo con evidencia y recomendación |
 | PATCH | `/api/v1/findings/:id` | ADMIN, ANALYST | Aceptar el riesgo, marcar falso positivo o reabrir |
+| **GET** | **`/api/v1/risk-scores/current`** | todos | **RF-07: Security Score actual de la organización o de un activo (`assetId`), con el desglose de la fórmula** |
+| GET | `/api/v1/risk-scores/history` | todos | RF-11: histórico de postura (`assetId`, `from`, `to`, `granularity=day\|raw`) |
+| GET | `/api/v1/risk-scores/model` | todos | Fórmula, pesos, topes y calificaciones del modelo |
+| POST | `/api/v1/risk-scores/recalculate` | ADMIN, ANALYST | Recalcular y registrar una instantánea de todos los activos |
+| GET | `/api/v1/dashboard/overview` | todos | Vista general: score, tendencia, hallazgos, activos y escaneos recientes |
+| GET | `/api/v1/dashboard/assets` | todos | Tabla de activos con score y hallazgos, peor postura primero |
+| GET | `/api/v1/dashboard/assets/:id` | todos | Vista detallada de un activo: score, histórico, hallazgos y puertos abiertos |
+| GET | `/api/v1/dashboard/history` | todos | Serie diaria del score de la organización (`days`, por defecto 30) |
 
 ### Ejemplo: registrar un activo (RF-01)
 
@@ -382,7 +392,68 @@ curl -s "http://localhost:3000/api/v1/findings/summary" -H "Authorization: Beare
 - Ciclo de vida: `OPEN` mientras se detecta; pasa a `RESOLVED` cuando un escaneo posterior
   del mismo tipo ya no lo encuentra, y se reabre si reaparece. `ACCEPTED` y `FALSE_POSITIVE`
   los fija el usuario y se conservan entre escaneos.
-- `GET /findings/summary` devuelve los conteos que alimentarán el Security Score del Sprint 3.
+- `GET /findings/summary` devuelve los conteos que alimentan el Security Score.
+
+## Motor de riesgo y Security Score (RF-07)
+
+Implementa la sección 6.3 del documento. El código está en `backend/src/risk/scoring.ts`
+y `GET /risk-scores/model` devuelve el modelo vigente.
+
+### Fórmula
+
+```
+Score = 100 − Σ min(Tope_s, Peso_s × Abiertos_s)      acotado a [0, 100]
+```
+
+Solo cuentan los hallazgos en estado `OPEN`. Los `ACCEPTED` (riesgo aceptado), los
+`FALSE_POSITIVE` y los `RESOLVED` no penalizan, así que revisar un hallazgo cambia el score.
+
+| Severidad | Rango CVSS v3.1 | Peso por hallazgo | Tope de penalización |
+|-----------|-----------------|-------------------|----------------------|
+| CRITICAL | 9.0 – 10.0 | 25 | 100 |
+| HIGH | 7.0 – 8.9 | 10 | 60 |
+| MEDIUM | 4.0 – 6.9 | 4 | 30 |
+| LOW | 0.1 – 3.9 | 1 | 10 |
+| INFO | 0.0 | 0 | 0 |
+
+Los topes (reglas de penalización, 6.3.4) evitan que muchos hallazgos menores hundan
+la puntuación por sí solos u oculten uno crítico. Un solo hallazgo crítico deja el
+score en 75 y cuatro lo llevan a 0.
+
+### Calificación (6.3.5)
+
+| Score | Grado | Nivel |
+|-------|-------|-------|
+| 90 – 100 | A | Excelente |
+| 75 – 89 | B | Buena |
+| 60 – 74 | C | Aceptable |
+| 40 – 59 | D | Deficiente |
+| 0 – 39 | F | Crítica |
+
+### Activo y organización
+
+- Un activo se evalúa cuando tiene al menos un escaneo completado; hasta entonces su
+  score es nulo y no cuenta.
+- El score de la organización es la media redondeada de los scores de sus activos
+  activos y evaluados. Así no depende del número de activos registrados; los conteos
+  globales por severidad se reportan aparte para no ocultar la gravedad.
+- Desactivar un activo lo excluye del cálculo.
+
+### Histórico de postura (RF-11)
+
+Cada vez que cambia la información que alimenta el score se guarda una instantánea
+en `risk_scores`, una del activo y otra de la organización:
+
+| Evento | `trigger` |
+|--------|-----------|
+| Escaneo completado | `SCAN_COMPLETED` |
+| Hallazgo aceptado, descartado o reabierto | `FINDING_REVIEWED` |
+| Activo activado, desactivado o eliminado | `ASSET_CHANGED` |
+| `POST /risk-scores/recalculate` | `MANUAL` |
+
+`GET /risk-scores/history` devuelve la serie, por defecto con la última instantánea de
+cada día. `GET /dashboard/overview` incluye la tendencia frente a la instantánea anterior
+y frente a hace siete días.
 
 ### Garantías y protección contra abuso (sección 11.3)
 
@@ -461,7 +532,11 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   `cvss_score`, `status`, `title`, `description`, `recommendation`, `location`, `evidence`,
   `fingerprint`, `first_seen_at`, `last_seen_at`, `resolved_at`, `reviewed_by_id`, `review_note`.
 
-Las tablas `risk_scores`, `reports` y `alerts` se añadirán en los sprints 3 y 4.
+- **risk_scores**: instantáneas del Security Score por activo (`scope = ASSET`) y por
+  organización (`scope = ORGANIZATION`): `score`, `grade`, conteos por severidad,
+  `scored_assets`, `breakdown` con el desglose de la fórmula, `trigger` y `scan_id`.
+
+Las tablas `reports` y `alerts` se añadirán en el Sprint 4.
 
 ## Scripts útiles
 
@@ -493,8 +568,9 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   la telemetría de Prisma y de Scarf.
 - `docker compose` publica los puertos solo en `127.0.0.1`.
 
-## Próximos pasos (Sprint 3)
+## Próximos pasos (Sprint 4)
 
-1. Motor de riesgo y Security Score (RF-07) a partir de `GET /findings/summary`.
-2. Tabla `risk_scores` con histórico de postura por organización y activo (RF-11).
-3. Endpoints de dashboard: visión general, tabla de hallazgos priorizada y evolución histórica.
+1. Generación de reportes PDF ejecutivo y técnico (RF-09) a partir del dashboard y los hallazgos.
+2. Tabla `alerts` y notificaciones por correo o webhook (RF-10): nuevos puertos abiertos,
+   certificados próximos a vencer y hallazgos críticos.
+3. Escaneos programados para el monitoreo continuo (sección 10.4).
