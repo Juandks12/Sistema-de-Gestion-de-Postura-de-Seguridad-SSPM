@@ -14,40 +14,36 @@ const FIXTURE = readFileSync(
   'utf8',
 );
 
-/** Sustituto de Nmap: devuelve el fixture, falla o se queda "colgado" hasta cancelarse. */
+/** Sustituto de Nmap: devuelve el fixture, falla o se queda "colgado" hasta que se aborta la señal. */
 class FakeNmapRunner {
   mode: 'ok' | 'hang' | 'fail' = 'ok';
   readonly calls: string[][] = [];
-  private readonly hanging = new Map<string, (out: NmapRunOutput) => void>();
+  running = 0;
 
-  async run(scanId: string, args: string[]): Promise<NmapRunOutput> {
+  async run(args: string[], options: { timeoutMs: number; signal?: AbortSignal }): Promise<NmapRunOutput> {
     this.calls.push(args);
     const base = { stderr: '', timedOut: false, cancelled: false, durationMs: 1234 };
     if (this.mode === 'fail') {
       return { ...base, stdout: '', stderr: 'QUITTING! simulated failure', exitCode: 1 };
     }
     if (this.mode === 'hang') {
-      return new Promise((resolve) => this.hanging.set(scanId, resolve));
+      this.running += 1;
+      return new Promise((resolve) => {
+        options.signal?.addEventListener(
+          'abort',
+          () => {
+            this.running -= 1;
+            resolve({ stdout: '', stderr: '', exitCode: null, timedOut: false, cancelled: true, durationMs: 1 });
+          },
+          { once: true },
+        );
+      });
     }
     return { ...base, stdout: FIXTURE, exitCode: 0 };
   }
 
-  cancel(scanId: string): boolean {
-    const resolve = this.hanging.get(scanId);
-    if (!resolve) return false;
-    this.hanging.delete(scanId);
-    resolve({ stdout: '', stderr: '', exitCode: null, timedOut: false, cancelled: true, durationMs: 1 });
-    return true;
-  }
-
-  cancelAll(): string[] {
-    const ids = [...this.hanging.keys()];
-    ids.forEach((id) => this.cancel(id));
-    return ids;
-  }
-
   get runningCount(): number {
-    return this.hanging.size;
+    return this.running;
   }
 }
 
@@ -133,7 +129,6 @@ describe('Scans (e2e) - RF-02/RF-03 con Nmap', () => {
   });
 
   afterAll(async () => {
-    fake.cancelAll();
     await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
     await app.close();
   });
@@ -146,8 +141,8 @@ describe('Scans (e2e) - RF-02/RF-03 con Nmap', () => {
     await requestScan(tokenAdminB).expect(404);
   });
 
-  it('rechaza tipos de escaneo aún no implementados (400)', async () => {
-    await requestScan(tokenAdminA, assetId, { type: 'SSL_CERT' }).expect(400);
+  it('rechaza tipos de escaneo desconocidos (400)', async () => {
+    await requestScan(tokenAdminA, assetId, { type: 'FULL_PENTEST' }).expect(400);
   });
 
   it('encola el escaneo (202), lo ejecuta de forma asíncrona y guarda puertos y servicios', async () => {
@@ -176,6 +171,8 @@ describe('Scans (e2e) - RF-02/RF-03 con Nmap', () => {
     );
     expect(scan.parameters.args.slice(-1)).toEqual(['45.33.32.156']);
     expect(scan.rawResult).toBeUndefined();
+    expect(scan.summary.findings).toMatchObject({ created: 2 });
+    expect(scan._count.findings).toBe(2);
 
     const lastArgs = fake.calls[fake.calls.length - 1];
     expect(lastArgs).toEqual(expect.arrayContaining(['-sV', '-oX', '-']));
@@ -226,6 +223,7 @@ describe('Scans (e2e) - RF-02/RF-03 con Nmap', () => {
     await new Promise((r) => setTimeout(r, 300));
     const after = await waitForStatus(body.id, ['CANCELLED']);
     expect(after.ports).toHaveLength(0);
+    expect(fake.runningCount).toBe(0);
   });
 
   it('registra el error cuando Nmap falla', async () => {

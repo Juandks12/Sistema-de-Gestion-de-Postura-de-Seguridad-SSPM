@@ -26,6 +26,12 @@ describe('validateEnv', () => {
     ).toThrow(/ALLOW_PRIVATE_TARGETS/);
   });
 
+  it('valida los puertos web', () => {
+    expect(validateEnv({ ...base }).WEB_HTTPS_PORTS).toBe('443');
+    expect(validateEnv({ ...base, WEB_HTTP_PORTS: '80,8080' }).WEB_HTTP_PORTS).toBe('80,8080');
+    expect(() => validateEnv({ ...base, WEB_HTTP_PORTS: '80-90' })).toThrow(/WEB_HTTP_PORTS/);
+  });
+
   it('rechaza listas de puertos mal formadas', () => {
     expect(() => validateEnv({ ...base, SCAN_PORTS: '22;rm -rf' })).toThrow(/SCAN_PORTS/);
     expect(validateEnv({ ...base, SCAN_PORTS: '22,80,8000-8100' }).SCAN_PORTS).toBe('22,80,8000-8100');
