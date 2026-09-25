@@ -5,8 +5,8 @@ Plataforma SaaS multi-tenant orientada a PyMEs para registrar activos externos
 de cabeceras HTTP, certificados SSL/TLS), clasificar hallazgos por criticidad y
 calcular un *Security Score* comprensible para la toma de decisiones.
 
-Este repositorio contiene el **backend** (API REST). El frontend se añadirá en un
-directorio hermano (`frontend/`) en sprints posteriores.
+Este repositorio contiene el **backend** (API REST, en `backend/`) y el **frontend**
+(dashboard web, en `frontend/`).
 
 ## Estado del proyecto
 
@@ -15,7 +15,7 @@ directorio hermano (`frontend/`) en sprints posteriores.
 | Sprint 0 | Diseño, modelo de datos, arquitectura | ✅ Documentado |
 | Sprint 1 | Registro de activos (RF-01), integración Nmap, detección de puertos/servicios (RF-02, RF-03) | ✅ Implementado |
 | Sprint 2 | Cabeceras HTTP (RF-04), SSL/TLS (RF-05), rutas sensibles (RF-06), clasificación por severidad (RF-08) | ✅ Implementado |
-| Sprint 3 | Security Score y dashboard | ⏳ |
+| Sprint 3 | Security Score (RF-07), histórico de postura (RF-11), endpoints del dashboard y base del frontend | ✅ Implementado |
 | Sprint 4 | Reportes PDF y alertas | ⏳ |
 
 ## Stack tecnológico
@@ -31,6 +31,7 @@ directorio hermano (`frontend/`) en sprints posteriores.
 - **Parser XML:** `fast-xml-parser` para la salida `-oX` de Nmap
 - **Auditoría web:** `undici` (HTTP con conexión a IP validada) y `node:tls` (certificados)
 - **Contenedores:** Docker multi-etapa (Ubuntu 24.04 LTS, Node 22, Nmap 7.94) y Docker Compose
+- **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4 y Recharts, servido por Nginx en Docker
 
 ## Estructura de carpetas
 
@@ -40,6 +41,15 @@ directorio hermano (`frontend/`) en sprints posteriores.
 ├── docker-compose.dev.yml      # Modo desarrollo: código montado y recarga en caliente
 ├── docker-compose.db-access.yml # Opcional: publica PostgreSQL en tu equipo
 ├── .env.example                # Variables opcionales de docker compose
+├── frontend/                   # Dashboard web (React + Vite)
+│   ├── Dockerfile              # development (Vite) y production (Nginx + proxy /api)
+│   ├── nginx.conf              # Sirve la SPA y reenvía /api al backend
+│   └── src/
+│       ├── auth/               # Sesión JWT, contexto y rutas protegidas
+│       ├── components/         # Layout, componentes de interfaz y gráficas
+│       ├── hooks/queries.ts    # Acceso a la API con TanStack Query
+│       ├── lib/                # Cliente HTTP, tipos de la API y formato
+│       └── pages/              # Vista general, activos, detalle, hallazgos y escaneos
 └── backend/
     ├── Dockerfile              # Imagen multi-etapa: development y production
     ├── docker-entrypoint.sh    # Migraciones y datos de demostración al arrancar
@@ -69,6 +79,8 @@ directorio hermano (`frontend/`) en sprints posteriores.
     │   │   ├── scan-worker.service.ts  # Cola y worker asíncrono
     │   │   └── target-resolver.ts      # Resolución DNS segura del objetivo
     │   ├── findings/           # RF-08: hallazgos, catálogo de reglas y severidad
+    │   ├── risk/               # RF-07/RF-11: motor de riesgo, Security Score e histórico
+    │   ├── dashboard/          # Datos agregados para el dashboard (sección 8)
     │   └── health/             # Endpoint de salud
     └── test/                   # Pruebas end-to-end (supertest)
 ```
@@ -76,7 +88,7 @@ directorio hermano (`frontend/`) en sprints posteriores.
 ## Puesta en marcha con Docker (recomendado)
 
 Solo necesitas **Git** y **Docker**. No hace falta instalar Node.js, PostgreSQL
-ni Nmap: todo se ejecuta dentro de contenedores.
+ni Nmap: la base de datos, la API y la aplicación web se ejecutan en contenedores.
 
 - Windows y macOS: [Docker Desktop](https://www.docker.com/products/docker-desktop/).
   En Windows, activa el motor WSL 2 durante la instalación.
@@ -97,9 +109,11 @@ arrancar el contenedor de la API se hace automáticamente lo siguiente:
 2. Aplica las migraciones pendientes.
 3. Carga la organización y los usuarios de demostración (ver tabla más abajo).
 4. Arranca la API con el worker de escaneos y Nmap.
+5. Arranca la aplicación web.
 
-Cuando `docker compose ps` muestre la API como `healthy`, ya está disponible:
+Cuando `docker compose ps` muestre `api` y `web` como `healthy`, ya está disponible:
 
+- **Aplicación web: <http://localhost:8080>** (entra con `admin@demo.local` / `Password123!`)
 - API: <http://localhost:3000/api/v1>
 - Swagger UI: <http://localhost:3000/api/docs>
 - Salud: <http://localhost:3000/api/v1/health>
@@ -110,6 +124,7 @@ Cuando `docker compose ps` muestre la API como `healthy`, ya está disponible:
 |--------|---------|
 | Ver el estado | `docker compose ps` |
 | Ver los logs de la API | `docker compose logs -f api` |
+| Ver los logs de la web | `docker compose logs -f web` |
 | Detener (conserva los datos) | `docker compose down` |
 | Detener y borrar la base de datos | `docker compose down -v` |
 | Reconstruir tras un `git pull` | `docker compose up -d --build` |
@@ -117,13 +132,15 @@ Cuando `docker compose ps` muestre la API como `healthy`, ya está disponible:
 
 ### Modo desarrollo (recarga en caliente)
 
-Para programar en el backend sin instalar nada en tu equipo, usa el archivo
-`docker-compose.dev.yml`. Monta la carpeta `backend/` en el contenedor, y Nest
-recompila y reinicia la API cada vez que guardas un archivo.
+Para programar sin instalar nada en tu equipo, usa el archivo
+`docker-compose.dev.yml`. Monta las carpetas `backend/` y `frontend/` en los
+contenedores: Nest reinicia la API y Vite recarga la web cada vez que guardas un archivo.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
+
+En este modo la aplicación web está en <http://localhost:5173>.
 
 Con la API de desarrollo levantada, puedes ejecutar comandos dentro del contenedor:
 
@@ -135,11 +152,13 @@ dc exec api npm test                                   # pruebas unitarias
 dc exec api npm run test:e2e                           # pruebas end-to-end
 dc exec api npm run lint                               # linter
 dc exec api npx prisma migrate dev --name <nombre>     # nueva migración tras editar schema.prisma
+dc exec web npm run lint                               # linter del frontend
+dc exec web npm run typecheck                          # tipos del frontend
 ```
 
 Notas del modo desarrollo:
 
-- `node_modules` vive en un volumen propio del contenedor, con dependencias
+- `node_modules` vive en un volumen propio de cada contenedor, con dependencias
   compiladas para Linux. El `node_modules` de tu equipo, si existe, no se usa.
 - Si `package-lock.json` cambia, por ejemplo tras un `git pull`, el contenedor
   sincroniza las dependencias automáticamente al arrancar.
@@ -175,13 +194,14 @@ edítalo. Las variables principales son:
 | Variable | Por defecto | Uso |
 |----------|-------------|-----|
 | `API_PORT` | `3000` | Puerto de la API en tu equipo |
+| `WEB_PORT` | `8080` | Puerto de la aplicación web (`5173` en modo desarrollo) |
 | `DB_PORT` | `5432` | Puerto de PostgreSQL en tu equipo, solo con `docker-compose.db-access.yml` |
 | `JWT_SECRET` | valor de desarrollo | Secreto para firmar los tokens |
 | `SEED_DEMO_DATA` | `true` | Crear los usuarios de demostración al arrancar |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Modo laboratorio, solo en modo desarrollo |
 
-La API se publica solo en `127.0.0.1`, así que no es accesible desde otros
-equipos de tu red. La base de datos no se publica salvo que lo pidas.
+La API y la web se publican solo en `127.0.0.1`, así que no son accesibles desde
+otros equipos de tu red. La base de datos no se publica salvo que lo pidas.
 
 ### Escanear servicios de tu propio equipo
 
@@ -195,8 +215,8 @@ el caso de estudio con activos controlados:
 ### Solución de problemas
 
 - **"port is already allocated" o "Intento de acceso a un socket no permitido"**:
-  otro programa usa ese puerto o Windows lo tiene reservado. Si es el 3000, cambia
-  `API_PORT` en el `.env` de la raíz. Si es el 5432 al usar
+  otro programa usa ese puerto o Windows lo tiene reservado. Si es el 3000 o el 8080,
+  cambia `API_PORT` o `WEB_PORT` en el `.env` de la raíz. Si es el 5432 al usar
   `docker-compose.db-access.yml`, cambia `DB_PORT`.
 - **Swagger muestra una versión antigua**: quedan contenedores de una versión
   anterior ocupando el puerto. Revisa `docker ps`; si aparecen `sspm-api` o
@@ -254,6 +274,17 @@ npm run start:dev           # recarga automática
 npm run build && npm start  # modo producción
 ```
 
+### 5. Arrancar la aplicación web
+
+```bash
+cd ../frontend
+npm install
+npm run dev                 # http://localhost:5173, reenvía /api a http://localhost:3000
+```
+
+Para servirla compilada, `npm run build` genera `frontend/dist/`; cualquier servidor
+estático vale si reenvía `/api` al backend (ver `frontend/nginx.conf`).
+
 ## Usuarios de demostración
 
 Se crean automáticamente con Docker, o con `npx prisma db seed` sin Docker.
@@ -263,6 +294,33 @@ Se crean automáticamente con Docker, o con `npx prisma db seed` sin Docker.
 | `admin@demo.local` | ADMIN | `Password123!` |
 | `analista@demo.local` | ANALYST | `Password123!` |
 | `gerente@demo.local` | VIEWER | `Password123!` |
+
+## Aplicación web (frontend)
+
+Dashboard de la sección 8 del documento, construido sobre los endpoints de la API.
+Se adapta a móvil y escritorio y respeta el modo claro u oscuro del sistema.
+
+| Pantalla | Qué muestra |
+|----------|-------------|
+| Inicio de sesión | Acceso con la cuenta de la organización; la sesión se guarda en el navegador |
+| Vista general | Security Score con calificación y tendencia, hallazgos por severidad, activos monitoreados, escaneos en curso, evolución de la postura, activos con peor postura, hallazgos prioritarios y escaneos recientes |
+| Activos | Tabla ordenada por peor postura con score, hallazgos abiertos y último escaneo; alta de activos con declaración de autorización; auditoría completa con un clic |
+| Detalle de activo | Score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
+| Hallazgos | Filtros por estado, severidad y categoría; cada fila se expande con descripción, recomendación, evidencia y acciones para aceptar el riesgo, marcar falso positivo o reabrir |
+| Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación |
+| Usuarios (solo ADMIN) | Alta de usuarios con contraseña inicial y generador, cambio de rol, restablecimiento de contraseña y activación o desactivación del acceso |
+| Mi cuenta | Datos del perfil y la organización, y cambio de la propia contraseña con los requisitos a la vista |
+
+Las acciones de escritura (registrar, auditar, revisar) solo aparecen para los roles
+`ADMIN` y `ANALYST`. El rol `VIEWER` ve todo en modo lectura.
+
+Convenciones del código:
+
+- Las páginas obtienen datos con los hooks de `src/hooks/queries.ts`; cada mutación
+  invalida las consultas afectadas para que la interfaz se refresque sola.
+- Los colores se definen como roles (`bg-surface`, `text-ink`, `text-critical`...) en
+  `src/index.css`, con valores distintos para modo claro y oscuro.
+- La severidad nunca se comunica solo con color: siempre lleva icono y etiqueta.
 
 ## Endpoints disponibles
 
@@ -275,11 +333,13 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | POST | `/api/v1/auth/register` | público | Crea una organización y su primer usuario ADMIN |
 | POST | `/api/v1/auth/login` | público | Devuelve un JWT |
 | GET | `/api/v1/auth/me` | todos | Usuario autenticado |
+| PATCH | `/api/v1/auth/me/password` | todos | Cambiar mi contraseña (exige la actual); cierra mis otras sesiones y devuelve un token nuevo |
 | GET | `/api/v1/organizations/me` | todos | Organización del usuario |
 | PATCH | `/api/v1/organizations/me` | ADMIN | Renombrar la organización |
 | GET | `/api/v1/users` | ADMIN | Usuarios de la organización |
 | POST | `/api/v1/users` | ADMIN | Crear usuario en la organización |
 | PATCH | `/api/v1/users/:id` | ADMIN | Cambiar rol / activar / desactivar |
+| POST | `/api/v1/users/:id/reset-password` | ADMIN | Asignar una contraseña nueva a otro usuario; cierra sus sesiones |
 | **POST** | **`/api/v1/assets`** | ADMIN, ANALYST | **RF-01: registrar un dominio o IP** |
 | GET | `/api/v1/assets` | todos | Listado paginado (`type`, `isActive`, `search`, `page`, `pageSize`) |
 | GET | `/api/v1/assets/:id` | todos | Detalle de un activo |
@@ -296,6 +356,14 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | GET | `/api/v1/findings/rules` | todos | Catálogo de reglas con severidad y CVSS de referencia |
 | GET | `/api/v1/findings/:id` | todos | Detalle de un hallazgo con evidencia y recomendación |
 | PATCH | `/api/v1/findings/:id` | ADMIN, ANALYST | Aceptar el riesgo, marcar falso positivo o reabrir |
+| **GET** | **`/api/v1/risk-scores/current`** | todos | **RF-07: Security Score actual de la organización o de un activo (`assetId`), con el desglose de la fórmula** |
+| GET | `/api/v1/risk-scores/history` | todos | RF-11: histórico de postura (`assetId`, `from`, `to`, `granularity=day\|raw`) |
+| GET | `/api/v1/risk-scores/model` | todos | Fórmula, pesos, topes y calificaciones del modelo |
+| POST | `/api/v1/risk-scores/recalculate` | ADMIN, ANALYST | Recalcular y registrar una instantánea de todos los activos |
+| GET | `/api/v1/dashboard/overview` | todos | Vista general: score, tendencia, hallazgos, activos y escaneos recientes |
+| GET | `/api/v1/dashboard/assets` | todos | Tabla de activos con score y hallazgos, peor postura primero |
+| GET | `/api/v1/dashboard/assets/:id` | todos | Vista detallada de un activo: score, histórico, hallazgos y puertos abiertos |
+| GET | `/api/v1/dashboard/history` | todos | Serie diaria del score de la organización (`days`, por defecto 30) |
 
 ### Ejemplo: registrar un activo (RF-01)
 
@@ -382,7 +450,68 @@ curl -s "http://localhost:3000/api/v1/findings/summary" -H "Authorization: Beare
 - Ciclo de vida: `OPEN` mientras se detecta; pasa a `RESOLVED` cuando un escaneo posterior
   del mismo tipo ya no lo encuentra, y se reabre si reaparece. `ACCEPTED` y `FALSE_POSITIVE`
   los fija el usuario y se conservan entre escaneos.
-- `GET /findings/summary` devuelve los conteos que alimentarán el Security Score del Sprint 3.
+- `GET /findings/summary` devuelve los conteos que alimentan el Security Score.
+
+## Motor de riesgo y Security Score (RF-07)
+
+Implementa la sección 6.3 del documento. El código está en `backend/src/risk/scoring.ts`
+y `GET /risk-scores/model` devuelve el modelo vigente.
+
+### Fórmula
+
+```
+Score = 100 − Σ min(Tope_s, Peso_s × Abiertos_s)      acotado a [0, 100]
+```
+
+Solo cuentan los hallazgos en estado `OPEN`. Los `ACCEPTED` (riesgo aceptado), los
+`FALSE_POSITIVE` y los `RESOLVED` no penalizan, así que revisar un hallazgo cambia el score.
+
+| Severidad | Rango CVSS v3.1 | Peso por hallazgo | Tope de penalización |
+|-----------|-----------------|-------------------|----------------------|
+| CRITICAL | 9.0 – 10.0 | 25 | 100 |
+| HIGH | 7.0 – 8.9 | 10 | 60 |
+| MEDIUM | 4.0 – 6.9 | 4 | 30 |
+| LOW | 0.1 – 3.9 | 1 | 10 |
+| INFO | 0.0 | 0 | 0 |
+
+Los topes (reglas de penalización, 6.3.4) evitan que muchos hallazgos menores hundan
+la puntuación por sí solos u oculten uno crítico. Un solo hallazgo crítico deja el
+score en 75 y cuatro lo llevan a 0.
+
+### Calificación (6.3.5)
+
+| Score | Grado | Nivel |
+|-------|-------|-------|
+| 90 – 100 | A | Excelente |
+| 75 – 89 | B | Buena |
+| 60 – 74 | C | Aceptable |
+| 40 – 59 | D | Deficiente |
+| 0 – 39 | F | Crítica |
+
+### Activo y organización
+
+- Un activo se evalúa cuando tiene al menos un escaneo completado; hasta entonces su
+  score es nulo y no cuenta.
+- El score de la organización es la media redondeada de los scores de sus activos
+  activos y evaluados. Así no depende del número de activos registrados; los conteos
+  globales por severidad se reportan aparte para no ocultar la gravedad.
+- Desactivar un activo lo excluye del cálculo.
+
+### Histórico de postura (RF-11)
+
+Cada vez que cambia la información que alimenta el score se guarda una instantánea
+en `risk_scores`, una del activo y otra de la organización:
+
+| Evento | `trigger` |
+|--------|-----------|
+| Escaneo completado | `SCAN_COMPLETED` |
+| Hallazgo aceptado, descartado o reabierto | `FINDING_REVIEWED` |
+| Activo activado, desactivado o eliminado | `ASSET_CHANGED` |
+| `POST /risk-scores/recalculate` | `MANUAL` |
+
+`GET /risk-scores/history` devuelve la serie, por defecto con la última instantánea de
+cada día. `GET /dashboard/overview` incluye la tendencia frente a la instantánea anterior
+y frente a hace siete días.
 
 ### Garantías y protección contra abuso (sección 11.3)
 
@@ -432,6 +561,8 @@ ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm ru
 - El identificador de organización **nunca** se acepta desde la URL ni el cuerpo:
   se toma siempre del token, y todas las consultas filtran por `organization_id`.
 - Acceder a un recurso de otra organización responde `404` (no se revela su existencia).
+- Cambiar o restablecer una contraseña incrementa `users.token_version`, que viaja en el
+  JWT: todas las sesiones anteriores de ese usuario dejan de ser válidas al instante.
 - `JwtAuthGuard` y `RolesGuard` son globales: todo endpoint exige token salvo los
   marcados con `@Public()`, y `@Roles(...)` restringe por rol.
 - La estrategia JWT recarga el usuario en cada petición, por lo que desactivar una
@@ -448,7 +579,8 @@ ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm ru
 Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports`):
 
 - **organizations**: tenant (`name`, `slug`, `is_active`).
-- **users**: `email` único, `password_hash` (bcrypt), `role`, `organization_id`.
+- **users**: `email` único, `password_hash` (bcrypt), `role`, `organization_id`,
+  `token_version` (revocación de sesiones) y `password_changed_at`.
 - **assets**: `type`, `value` (único por organización), `authorization_confirmed`,
   `created_by_id`, `last_scanned_at`.
 - **scans**: `asset_id`, `type` (`PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`,
@@ -461,7 +593,11 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   `cvss_score`, `status`, `title`, `description`, `recommendation`, `location`, `evidence`,
   `fingerprint`, `first_seen_at`, `last_seen_at`, `resolved_at`, `reviewed_by_id`, `review_note`.
 
-Las tablas `risk_scores`, `reports` y `alerts` se añadirán en los sprints 3 y 4.
+- **risk_scores**: instantáneas del Security Score por activo (`scope = ASSET`) y por
+  organización (`scope = ORGANIZATION`): `score`, `grade`, conteos por severidad,
+  `scored_assets`, `breakdown` con el desglose de la fórmula, `trigger` y `scan_id`.
+
+Las tablas `reports` y `alerts` se añadirán en el Sprint 4.
 
 ## Scripts útiles
 
@@ -478,6 +614,9 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
 ## Seguridad del propio sistema
 
 - Contraseñas con bcrypt; login con comparación de tiempo constante.
+- Política de contraseñas única para todos los formularios: 8 a 72 caracteres, con
+  mayúscula, minúscula y número. La aplicación web muestra los requisitos mientras se escribe.
+- Cambio de contraseña y restablecimiento por un administrador, que cierran las demás sesiones.
 - `helmet` para cabeceras HTTP seguras y CORS restringido por `CORS_ORIGINS`.
 - Validación estricta de entrada (`whitelist` + `forbidNonWhitelisted`).
 - Los valores de activos se validan como FQDN/IP antes de persistirse y de nuevo antes
@@ -493,8 +632,9 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   la telemetría de Prisma y de Scarf.
 - `docker compose` publica los puertos solo en `127.0.0.1`.
 
-## Próximos pasos (Sprint 3)
+## Próximos pasos (Sprint 4)
 
-1. Motor de riesgo y Security Score (RF-07) a partir de `GET /findings/summary`.
-2. Tabla `risk_scores` con histórico de postura por organización y activo (RF-11).
-3. Endpoints de dashboard: visión general, tabla de hallazgos priorizada y evolución histórica.
+1. Generación de reportes PDF ejecutivo y técnico (RF-09) a partir del dashboard y los hallazgos.
+2. Tabla `alerts` y notificaciones por correo o webhook (RF-10): nuevos puertos abiertos,
+   certificados próximos a vencer y hallazgos críticos.
+3. Escaneos programados para el monitoreo continuo (sección 10.4).

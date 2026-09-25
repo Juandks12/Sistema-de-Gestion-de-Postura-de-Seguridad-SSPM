@@ -5,6 +5,7 @@
 # con CRLF el contenedor no puede ejecutarlos.
 *.sh text eol=lf
 Dockerfile text eol=lf
+*.conf text eol=lf
 
 *.png binary
 *.jpg binary

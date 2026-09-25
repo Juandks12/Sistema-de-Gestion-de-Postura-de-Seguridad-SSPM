@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User, UserRole } from '@prisma/client';
@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthUser, JwtPayload } from '../common/interfaces/auth-user.interface';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -81,6 +82,36 @@ export class AuthService {
     return this.buildAuthResponse(user);
   }
 
+  /**
+   * Cambio de contraseña del propio usuario. Exige la contraseña actual, cierra
+   * todas las sesiones abiertas (incrementa tokenVersion) y devuelve un token
+   * nuevo para que la sesión actual continúe.
+   *
+   * Una contraseña actual incorrecta responde 400 y no 401: el 401 se reserva
+   * para sesiones inválidas y el frontend lo interpreta como cierre de sesión.
+   */
+  async changePassword(actor: AuthUser, dto: ChangePasswordDto): Promise<AuthResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id: actor.id } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    if (!(await bcrypt.compare(dto.currentPassword, user.passwordHash))) {
+      throw new BadRequestException('La contraseña actual no es correcta');
+    }
+    if (await bcrypt.compare(dto.newPassword, user.passwordHash)) {
+      throw new BadRequestException('La nueva contraseña debe ser distinta de la actual');
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await this.hashPassword(dto.newPassword),
+        passwordChangedAt: new Date(),
+        tokenVersion: { increment: 1 },
+      },
+    });
+    return this.buildAuthResponse(updated);
+  }
+
   hashPassword(plain: string): Promise<string> {
     const rounds = this.config.get<number>('BCRYPT_SALT_ROUNDS') ?? 12;
     return bcrypt.hash(plain, rounds);
@@ -92,6 +123,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       org: user.organizationId,
+      ver: user.tokenVersion,
     };
     return {
       accessToken: this.jwt.sign(payload),

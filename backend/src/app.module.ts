@@ -12,6 +12,8 @@ import { AssetsModule } from './assets/assets.module';
 import { HealthModule } from './health/health.module';
 import { ScansModule } from './scans/scans.module';
 import { FindingsModule } from './findings/findings.module';
+import { RiskModule } from './risk/risk.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { FindingsModule } from './findings/findings.module';
     AssetsModule,
     ScansModule,
     FindingsModule,
+    RiskModule,
+    DashboardModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).
