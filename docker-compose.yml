@@ -1,17 +1,29 @@
-# Infraestructura local del SSPM - SaaS Lite.
-#   Solo base de datos:      docker compose up -d db
-#   Base de datos + API:     docker compose up -d --build
+# ---------------------------------------------------------------------------
+# SSPM - SaaS Lite | Entorno local con Docker
+#
+#   Levantar base de datos + API:   docker compose up -d --build
+#   Ver los logs de la API:         docker compose logs -f api
+#   Detener:                        docker compose down
+#   Detener y borrar la base:       docker compose down -v
+#
+# Modo desarrollo con recarga en caliente: ver docker-compose.dev.yml.
+# Las variables ${...} se pueden ajustar en un archivo .env junto a este
+# (ver .env.example). Este archivo está pensado para uso local: no lo uses
+# tal cual en un servidor público.
+# ---------------------------------------------------------------------------
+name: sspm
+
 services:
   db:
     image: postgres:16-alpine
-    container_name: sspm-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
       POSTGRES_DB: sspm_db
     ports:
-      - "5432:5432"
+      # Solo accesible desde tu equipo (no desde la red local).
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - sspm_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +33,10 @@ services:
       retries: 10
 
   api:
-    build: ./backend
-    container_name: sspm-api
+    build:
+      context: ./backend
+      target: production
+    image: sspm-api:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -30,13 +44,39 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:admin@db:5432/sspm_db?schema=public
-      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto-por-uno-largo-y-aleatorio}
-      JWT_EXPIRES_IN: 8h
-      BCRYPT_SALT_ROUNDS: 12
-      CORS_ORIGINS: http://localhost:5173
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-admin}@db:5432/sspm_db?schema=public
+      JWT_SECRET: ${JWT_SECRET:-secreto-local-de-desarrollo-cambialo-en-produccion}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3001}
+      # Crea la organización y los usuarios de demostración al arrancar.
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      # Motor de escaneo
+      SCAN_MAX_CONCURRENCY: ${SCAN_MAX_CONCURRENCY:-2}
+      SCAN_MAX_CONCURRENCY_PER_ORG: ${SCAN_MAX_CONCURRENCY_PER_ORG:-1}
+      SCAN_MAX_PER_HOUR_PER_ORG: ${SCAN_MAX_PER_HOUR_PER_ORG:-30}
+      SCAN_TIMEOUT_SECONDS: ${SCAN_TIMEOUT_SECONDS:-600}
+      SCAN_TOP_PORTS: ${SCAN_TOP_PORTS:-1000}
+      SCAN_PORTS: ${SCAN_PORTS:-}
+      WEB_HTTP_PORTS: ${WEB_HTTP_PORTS:-80}
+      WEB_HTTPS_PORTS: ${WEB_HTTPS_PORTS:-443}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    extra_hosts:
+      # Permite escanear servicios de tu equipo en modo laboratorio.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
 volumes:
   sspm_pgdata:
