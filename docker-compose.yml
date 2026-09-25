@@ -1,8 +1,9 @@
 # ---------------------------------------------------------------------------
 # SSPM - SaaS Lite | Entorno local con Docker
 #
-#   Levantar base de datos + API:   docker compose up -d --build
-#   Ver los logs de la API:         docker compose logs -f api
+#   Levantar base de datos + API + web:   docker compose up -d --build
+#   Aplicación web:                       http://localhost:8080
+#   Ver los logs de la API:               docker compose logs -f api
 #   Detener:                        docker compose down
 #   Detener y borrar la base:       docker compose down -v
 #
@@ -78,6 +79,18 @@ services:
       timeout: 5s
       retries: 5
       start_period: 90s
+
+  web:
+    build:
+      context: ./frontend
+      target: production
+    image: sspm-web:latest
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
 
 volumes:
   sspm_pgdata:

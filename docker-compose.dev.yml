@@ -1,8 +1,9 @@
 # ---------------------------------------------------------------------------
-# Modo desarrollo: el código de ./backend se monta en el contenedor y Nest
-# recompila y reinicia la API al guardar cambios.
+# Modo desarrollo: el código de ./backend y ./frontend se monta en los
+# contenedores. Nest reinicia la API y Vite recarga la web al guardar cambios.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   Aplicación web: http://localhost:5173
 #
 # Ejecutar comandos dentro del contenedor (con la API levantada):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm test
@@ -25,4 +26,18 @@ services:
     volumes:
       - ./backend:/app
       # node_modules propio del contenedor (Linux), aislado del de tu equipo.
+      - /app/node_modules
+
+  web:
+    build:
+      target: development
+    image: sspm-web:dev
+    restart: "no"
+    environment:
+      # Vite reenvía /api al contenedor de la API.
+      API_PROXY_TARGET: http://api:3000
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
       - /app/node_modules
