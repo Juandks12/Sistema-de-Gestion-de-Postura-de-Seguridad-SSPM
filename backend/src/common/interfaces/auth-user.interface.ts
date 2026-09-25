@@ -16,4 +16,6 @@ export interface JwtPayload {
   email: string;
   role: UserRole;
   org: string;
+  /** Versión de sesión del usuario; si no coincide con la de la BD el token está revocado. */
+  ver?: number;
 }

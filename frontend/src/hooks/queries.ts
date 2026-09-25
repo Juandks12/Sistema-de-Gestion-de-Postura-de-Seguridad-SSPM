@@ -4,16 +4,20 @@ import type {
   Asset,
   AssetDashboard,
   DashboardAsset,
+  AuthResponse,
   Finding,
   FindingCategory,
   FindingStatus,
   OrgHistory,
+  OrgUser,
+  Organization,
   Overview,
   Paginated,
   Scan,
   ScanStatus,
   ScanType,
   Severity,
+  UserRole,
 } from '@/lib/types';
 
 export const keys = {
@@ -24,6 +28,8 @@ export const keys = {
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
+  users: ['users'] as const,
+  organization: ['organization'] as const,
 };
 
 export function useOverview() {
@@ -133,5 +139,43 @@ export function useReviewFinding() {
   return useMutation({
     mutationFn: ({ id, status, note }: { id: string; status: 'OPEN' | 'ACCEPTED' | 'FALSE_POSITIVE'; note?: string }) => api<Finding>(`/findings/${id}`, { method: 'PATCH', json: { status, note } }),
     onSuccess: invalidate,
+  });
+}
+
+export function useUsers(enabled = true) {
+  return useQuery({ queryKey: keys.users, queryFn: () => api<OrgUser[]>('/users'), enabled });
+}
+
+export function useOrganization() {
+  return useQuery({ queryKey: keys.organization, queryFn: () => api<Organization>('/organizations/me') });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { fullName: string; email: string; password: string; role: UserRole }) => api<OrgUser>('/users', { method: 'POST', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; role?: UserRole; isActive?: boolean }) => api<OrgUser>(`/users/${id}`, { method: 'PATCH', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export function useResetUserPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) => api<OrgUser>(`/users/${id}/reset-password`, { method: 'POST', json: { newPassword } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export function useChangeOwnPassword() {
+  return useMutation({
+    mutationFn: (input: { currentPassword: string; newPassword: string }) => api<AuthResponse>('/auth/me/password', { method: 'PATCH', json: input }),
   });
 }

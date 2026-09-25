@@ -1,20 +1,21 @@
-import { Activity, LayoutDashboard, LogOut, Menu, Radar, Server, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { Activity, LayoutDashboard, LogOut, Menu, Radar, Server, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { cn } from '@/lib/cn';
 
 const nav = [
-  { to: '/', label: 'Vista general', icon: LayoutDashboard, end: true },
-  { to: '/assets', label: 'Activos', icon: Server },
-  { to: '/findings', label: 'Hallazgos', icon: ShieldAlert },
-  { to: '/scans', label: 'Escaneos', icon: Radar },
+  { to: '/', label: 'Vista general', icon: LayoutDashboard, end: true, adminOnly: false },
+  { to: '/assets', label: 'Activos', icon: Server, adminOnly: false },
+  { to: '/findings', label: 'Hallazgos', icon: ShieldAlert, adminOnly: false },
+  { to: '/scans', label: 'Escaneos', icon: Radar, adminOnly: false },
+  { to: '/users', label: 'Usuarios', icon: Users, adminOnly: true },
 ];
 
 const roleLabel = { ADMIN: 'Administrador', ANALYST: 'Analista', VIEWER: 'Gerencia' } as const;
 
 export function AppShell() {
-  const { user, logout } = useAuth();
+  const { user, logout, hasRole } = useAuth();
   const [open, setOpen] = useState(false);
 
   const sidebar = (
@@ -29,7 +30,7 @@ export function AppShell() {
         </div>
       </div>
       <nav className="flex-1 space-y-1 px-3" aria-label="Principal">
-        {nav.map(({ to, label, icon: Icon, end }) => (
+        {nav.filter((item) => !item.adminOnly || hasRole('ADMIN')).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -48,14 +49,16 @@ export function AppShell() {
         ))}
       </nav>
       <div className="border-t border-sidebar-line px-4 py-4">
-        <div className="flex items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-sidebar-ink" aria-hidden>
-            {user?.fullName?.slice(0, 1).toUpperCase()}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-sidebar-ink">{user?.fullName}</p>
-            <p className="truncate text-xs text-sidebar-muted">{user ? roleLabel[user.role] : ''}</p>
-          </div>
+        <div className="flex items-center gap-2">
+          <Link to="/account" onClick={() => setOpen(false)} title="Mi cuenta" className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 hover:bg-white/5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-sidebar-ink" aria-hidden>
+              {user?.fullName?.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-sidebar-ink">{user?.fullName}</span>
+              <span className="block truncate text-xs text-sidebar-muted">{user ? roleLabel[user.role] : ''} · Mi cuenta</span>
+            </span>
+          </Link>
           <button type="button" onClick={logout} title="Cerrar sesión" aria-label="Cerrar sesión" className="rounded-md p-1.5 text-sidebar-muted hover:bg-white/10 hover:text-sidebar-ink">
             <LogOut className="size-4" />
           </button>

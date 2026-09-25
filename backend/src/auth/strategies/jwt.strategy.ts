@@ -35,6 +35,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (user.organizationId !== payload.org) {
       throw new UnauthorizedException('Token inválido para la organización');
     }
+    // Un cambio o restablecimiento de contraseña incrementa tokenVersion y cierra
+    // todas las sesiones anteriores. Los tokens antiguos sin `ver` equivalen a 0.
+    if ((payload.ver ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('La sesión ha caducado; vuelve a iniciar sesión');
+    }
 
     return {
       id: user.id,
