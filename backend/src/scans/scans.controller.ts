@@ -29,9 +29,9 @@ export class ScansController {
   @Roles(UserRole.ADMIN, UserRole.ANALYST)
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'RF-02/RF-03: encolar un escaneo de puertos y servicios (Nmap) sobre un activo',
+    summary: 'Encolar un escaneo sobre un activo (PORT_SCAN, WEB_HEADERS, SSL_CERT o SENSITIVE_PATHS)',
     description:
-      'El escaneo se ejecuta de forma asíncrona. Consulta GET /scans/{id} para ver su estado y resultado.',
+      'El escaneo se ejecuta de forma asíncrona. Consulta GET /scans/{id} para ver su estado, resultado y hallazgos.',
   })
   @ApiResponse({ status: 202, description: 'Escaneo encolado (estado PENDING).' })
   @ApiResponse({ status: 400, description: 'Activo inactivo, sin autorización o tipo no disponible.' })
@@ -44,6 +44,17 @@ export class ScansController {
     @Body() dto: CreateScanDto,
   ) {
     return this.scans.request(user, assetId, dto);
+  }
+
+  @Post('assets/:assetId/scans/all')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Auditoría completa: encolar todos los tipos de escaneo disponibles para el activo',
+    description: 'Los tipos que ya tengan un escaneo en curso se omiten y se listan en `skipped`.',
+  })
+  requestAll(@CurrentUser() user: AuthUser, @Param('assetId', ParseUUIDPipe) assetId: string) {
+    return this.scans.requestAll(user, assetId);
   }
 
   @Get('assets/:assetId/exposure')

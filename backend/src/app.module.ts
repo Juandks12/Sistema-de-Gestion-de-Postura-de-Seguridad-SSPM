@@ -11,6 +11,7 @@ import { UsersModule } from './users/users.module';
 import { AssetsModule } from './assets/assets.module';
 import { HealthModule } from './health/health.module';
 import { ScansModule } from './scans/scans.module';
+import { FindingsModule } from './findings/findings.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ScansModule } from './scans/scans.module';
     UsersModule,
     AssetsModule,
     ScansModule,
+    FindingsModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).

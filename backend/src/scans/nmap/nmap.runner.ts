@@ -10,9 +10,11 @@ const MAX_STDERR_BYTES = 64 * 1024;
 /** Margen entre SIGTERM y SIGKILL. */
 const KILL_GRACE_MS = 5000;
 
-interface RunningProcess {
-  child: ChildProcess;
-  cancelled: boolean;
+export interface NmapRunOptions {
+  /** Tiempo máximo del proceso. */
+  timeoutMs: number;
+  /** Cancelación externa (usuario o apagado). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -22,13 +24,18 @@ interface RunningProcess {
 @Injectable()
 export class NmapRunner {
   private readonly logger = new Logger(NmapRunner.name);
-  private readonly running = new Map<string, RunningProcess>();
+  private running = 0;
 
   constructor(private readonly config: ConfigService) {}
 
-  run(scanId: string, args: string[], timeoutMs: number): Promise<NmapRunOutput> {
+  run(args: string[], options: NmapRunOptions): Promise<NmapRunOutput> {
     const binary = this.config.get<string>('NMAP_PATH') ?? 'nmap';
     const startedAt = Date.now();
+    const { signal } = options;
+
+    if (signal?.aborted) {
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: null, timedOut: false, cancelled: true, durationMs: 0 });
+    }
 
     return new Promise<NmapRunOutput>((resolve, reject) => {
       let child: ChildProcess;
@@ -42,15 +49,14 @@ export class NmapRunner {
         reject(new ScanExecutionError(`No se pudo iniciar Nmap: ${(err as Error).message}`));
         return;
       }
-
-      const entry: RunningProcess = { child, cancelled: false };
-      this.running.set(scanId, entry);
+      this.running += 1;
 
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let stdoutBytes = 0;
       let stderrBytes = 0;
       let timedOut = false;
+      let cancelled = false;
       let overflow = false;
       let killTimer: NodeJS.Timeout | undefined;
 
@@ -61,11 +67,24 @@ export class NmapRunner {
         killTimer.unref();
       };
 
+      const onAbort = () => {
+        cancelled = true;
+        terminate();
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+
       const timeout = setTimeout(() => {
         timedOut = true;
-        this.logger.warn(`Escaneo ${scanId}: tiempo máximo excedido, se aborta Nmap`);
+        this.logger.warn('Tiempo máximo de Nmap excedido, se aborta el proceso');
         terminate();
-      }, timeoutMs);
+      }, options.timeoutMs);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        if (killTimer) clearTimeout(killTimer);
+        signal?.removeEventListener('abort', onAbort);
+        this.running -= 1;
+      };
 
       child.stdout?.on('data', (chunk: Buffer) => {
         stdoutBytes += chunk.length;
@@ -84,9 +103,7 @@ export class NmapRunner {
       });
 
       child.once('error', (err: NodeJS.ErrnoException) => {
-        clearTimeout(timeout);
-        if (killTimer) clearTimeout(killTimer);
-        this.running.delete(scanId);
+        cleanup();
         if (err.code === 'ENOENT') {
           reject(new ScanExecutionError('Nmap no está instalado o NMAP_PATH es incorrecto'));
         } else {
@@ -95,9 +112,7 @@ export class NmapRunner {
       });
 
       child.once('close', (code) => {
-        clearTimeout(timeout);
-        if (killTimer) clearTimeout(killTimer);
-        this.running.delete(scanId);
+        cleanup();
         if (overflow) {
           reject(new ScanExecutionError('La salida de Nmap excedió el tamaño máximo permitido'));
           return;
@@ -107,32 +122,14 @@ export class NmapRunner {
           stderr: Buffer.concat(stderr).toString('utf8'),
           exitCode: code,
           timedOut,
-          cancelled: entry.cancelled,
+          cancelled,
           durationMs: Date.now() - startedAt,
         });
       });
     });
   }
 
-  /** Detiene el proceso de un escaneo en curso. Devuelve false si no estaba corriendo aquí. */
-  cancel(scanId: string): boolean {
-    const entry = this.running.get(scanId);
-    if (!entry) return false;
-    entry.cancelled = true;
-    entry.child.kill('SIGTERM');
-    const t = setTimeout(() => entry.child.kill('SIGKILL'), KILL_GRACE_MS);
-    t.unref();
-    return true;
-  }
-
-  /** Detiene todos los escaneos en curso (apagado de la aplicación). */
-  cancelAll(): string[] {
-    const ids = [...this.running.keys()];
-    ids.forEach((id) => this.cancel(id));
-    return ids;
-  }
-
   get runningCount(): number {
-    return this.running.size;
+    return this.running;
   }
 }

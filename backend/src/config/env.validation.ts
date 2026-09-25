@@ -124,6 +124,32 @@ class EnvironmentVariables {
   @IsOptional()
   SCAN_TIMING_TEMPLATE: number = 4;
 
+  /** Puertos HTTP a auditar además de los detectados por el escaneo de puertos. */
+  @IsString()
+  @Matches(/^[0-9]{1,5}(,[0-9]{1,5})*$/, { message: 'WEB_HTTP_PORTS debe ser una lista de puertos separados por coma' })
+  @IsOptional()
+  WEB_HTTP_PORTS: string = '80';
+
+  /** Puertos HTTPS a auditar además de los detectados por el escaneo de puertos. */
+  @IsString()
+  @Matches(/^[0-9]{1,5}(,[0-9]{1,5})*$/, { message: 'WEB_HTTPS_PORTS debe ser una lista de puertos separados por coma' })
+  @IsOptional()
+  WEB_HTTPS_PORTS: string = '443';
+
+  /** Tiempo máximo por petición HTTP/TLS durante la auditoría web. */
+  @IsInt()
+  @Min(1000)
+  @Max(120000)
+  @IsOptional()
+  WEB_REQUEST_TIMEOUT_MS: number = 10000;
+
+  /** Peticiones simultáneas al comprobar rutas sensibles. */
+  @IsInt()
+  @Min(1)
+  @Max(16)
+  @IsOptional()
+  WEB_PATHS_CONCURRENCY: number = 4;
+
   /**
    * Modo laboratorio: permite registrar y escanear IPs privadas/loopback.
    * Solo para el caso de estudio con activos controlados (sección 13.5).
