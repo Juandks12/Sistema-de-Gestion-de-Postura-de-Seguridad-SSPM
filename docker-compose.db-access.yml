@@ -1,0 +1,17 @@
+# ---------------------------------------------------------------------------
+# Publica PostgreSQL en tu equipo para conectarte con pgAdmin, DBeaver,
+# DataGrip o para ejecutar la API fuera de Docker. Por defecto no se publica.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.db-access.yml up -d
+#
+# Se combina también con el modo desarrollo:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.db-access.yml up -d
+#
+# Si el puerto 5432 está ocupado (p. ej. por un PostgreSQL instalado en
+# Windows), define DB_PORT en el .env de la raíz, por ejemplo DB_PORT=15432.
+# ---------------------------------------------------------------------------
+services:
+  db:
+    ports:
+      # Solo accesible desde tu equipo (no desde la red local).
+      - "127.0.0.1:${DB_PORT:-5432}:5432"

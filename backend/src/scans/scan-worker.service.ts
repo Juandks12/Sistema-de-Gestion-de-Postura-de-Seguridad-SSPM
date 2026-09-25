@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, ScanStatus, ScanType } from '@prisma/client';
+import { Prisma, RiskScoreTrigger, ScanStatus, ScanType } from '@prisma/client';
 import { validateAssetValue } from '../common/utils/network.util';
 import { FindingsService } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RiskScoresService } from '../risk/risk-scores.service';
 import { NmapParseError } from './nmap/nmap-xml.parser';
 import { ScanCancellationService } from './scan-cancellation.service';
 import { ScanExecutionError } from './scan.errors';
@@ -41,6 +42,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     private readonly config: ConfigService,
     private readonly cancellation: ScanCancellationService,
     private readonly findings: FindingsService,
+    private readonly riskScores: RiskScoresService,
     @Inject(SCANNERS) scanners: Scanner[],
   ) {
     this.scanners = new Map(scanners.map((s) => [s.type, s]));
@@ -353,6 +355,14 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         },
       });
       await tx.asset.update({ where: { id: scan.assetId }, data: { lastScannedAt: finishedAt } });
+
+      // RF-07 / RF-11: nueva instantánea del Security Score del activo y de la organización.
+      await this.riskScores.snapshot(tx, {
+        organizationId: scan.organizationId,
+        assetId: scan.assetId,
+        trigger: RiskScoreTrigger.SCAN_COMPLETED,
+        scanId: scan.id,
+      });
       return findings;
     });
   }
