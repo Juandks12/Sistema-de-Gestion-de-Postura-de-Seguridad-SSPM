@@ -77,9 +77,6 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-6 text-xs text-muted">
-            Entorno de demostración: <code className="text-ink-2">admin@demo.local</code> / <code className="text-ink-2">Password123!</code>
-          </p>
         </div>
       </div>
     </div>
