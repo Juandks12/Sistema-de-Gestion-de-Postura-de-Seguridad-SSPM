@@ -83,8 +83,17 @@ export type AssetValidationResult =
   | { ok: true; type: AssetType; value: string }
   | { ok: false; reason: string };
 
+export interface AssetValidationOptions {
+  /** Modo laboratorio: acepta IPs privadas y hosts no públicos. */
+  allowPrivate?: boolean;
+}
+
 /** Detecta el tipo y valida que el activo sea un dominio o IP pública. */
-export function validateAssetValue(raw: string, expectedType?: AssetType): AssetValidationResult {
+export function validateAssetValue(
+  raw: string,
+  expectedType?: AssetType,
+  options: AssetValidationOptions = {},
+): AssetValidationResult {
   const value = normalizeAssetValue(raw);
   if (!value) {
     return { ok: false, reason: 'El valor del activo no puede estar vacío' };
@@ -93,15 +102,17 @@ export function validateAssetValue(raw: string, expectedType?: AssetType): Asset
   let type: AssetType;
   if (isIP(value)) {
     type = AssetType.IP;
-    if (isPrivateOrReservedIp(value)) {
+    if (!options.allowPrivate && isPrivateOrReservedIp(value)) {
       return {
         ok: false,
         reason: `La IP ${value} es privada o reservada; solo se admiten activos públicos`,
       };
     }
-  } else if (isFQDN(value, { require_tld: true, allow_underscores: false })) {
+  } else if (
+    isFQDN(value, { require_tld: !options.allowPrivate, allow_underscores: false })
+  ) {
     type = AssetType.DOMAIN;
-    if (isNonPublicHostname(value)) {
+    if (!options.allowPrivate && isNonPublicHostname(value)) {
       return {
         ok: false,
         reason: `El dominio ${value} no es público; solo se admiten activos accesibles desde Internet`,

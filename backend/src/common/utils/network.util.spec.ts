@@ -51,6 +51,12 @@ describe('network.util', () => {
       expect(validateAssetValue('').ok).toBe(false);
     });
 
+    it('en modo laboratorio acepta IPs privadas y hosts locales', () => {
+      expect(validateAssetValue('127.0.0.1', undefined, { allowPrivate: true }).ok).toBe(true);
+      expect(validateAssetValue('localhost', undefined, { allowPrivate: true }).ok).toBe(true);
+      expect(validateAssetValue('no es host', undefined, { allowPrivate: true }).ok).toBe(false);
+    });
+
     it('valida la coherencia con el tipo indicado', () => {
       expect(validateAssetValue('8.8.8.8', AssetType.DOMAIN).ok).toBe(false);
       expect(validateAssetValue('example.org', AssetType.IP).ok).toBe(false);
