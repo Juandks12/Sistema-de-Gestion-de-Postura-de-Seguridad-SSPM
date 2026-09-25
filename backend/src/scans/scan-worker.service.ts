@@ -1,13 +1,13 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, ScanStatus } from '@prisma/client';
+import { Prisma, ScanStatus, ScanType } from '@prisma/client';
 import { validateAssetValue } from '../common/utils/network.util';
+import { FindingsService } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { buildNmapArgs } from './nmap/nmap-args';
-import { NmapParseError, parseNmapXml } from './nmap/nmap-xml.parser';
-import { NmapRunner } from './nmap/nmap.runner';
-import { NmapProfile, NmapScanResult } from './nmap/nmap.types';
+import { NmapParseError } from './nmap/nmap-xml.parser';
+import { ScanCancellationService } from './scan-cancellation.service';
 import { ScanExecutionError } from './scan.errors';
+import { abortReason, OpenPortHint, Scanner, SCANNERS, ScanOutcome } from './scanner.interface';
 import { resolveScanTarget } from './target-resolver';
 
 /** Margen extra antes de considerar "huérfano" un escaneo RUNNING. */
@@ -20,6 +20,7 @@ const STALE_MARGIN_SECONDS = 120;
  * - Permite varias instancias: cada una "reclama" trabajos con
  *   `FOR UPDATE SKIP LOCKED`, de modo que dos workers nunca toman el mismo escaneo.
  * - Respeta un límite global por instancia y un límite por organización.
+ * - Delega la ejecución en el `Scanner` registrado para cada `ScanType`.
  *
  * Si en el futuro se necesita más escala, este servicio puede moverse a un
  * proceso independiente (SCAN_WORKER_ENABLED=false en la API) sin cambiar la API.
@@ -27,6 +28,7 @@ const STALE_MARGIN_SECONDS = 120;
 @Injectable()
 export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(ScanWorkerService.name);
+  private readonly scanners: Map<ScanType, Scanner>;
   private timer?: NodeJS.Timeout;
   private active = 0;
   private ticking = false;
@@ -36,9 +38,18 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly runner: NmapRunner,
     private readonly config: ConfigService,
-  ) {}
+    private readonly cancellation: ScanCancellationService,
+    private readonly findings: FindingsService,
+    @Inject(SCANNERS) scanners: Scanner[],
+  ) {
+    this.scanners = new Map(scanners.map((s) => [s.type, s]));
+  }
+
+  /** Tipos de escaneo con un escáner registrado. */
+  get supportedTypes(): ScanType[] {
+    return [...this.scanners.keys()];
+  }
 
   private get enabled(): boolean {
     return this.config.get<boolean>('SCAN_WORKER_ENABLED') !== false;
@@ -60,17 +71,6 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     return this.config.get<boolean>('ALLOW_PRIVATE_TARGETS') === true;
   }
 
-  private get profile(): NmapProfile {
-    const ports = this.config.get<string>('SCAN_PORTS')?.trim();
-    return {
-      topPorts: this.config.get<number>('SCAN_TOP_PORTS') ?? 1000,
-      ports: ports ? ports : undefined,
-      timing: this.config.get<number>('SCAN_TIMING_TEMPLATE') ?? 4,
-      // Nmap termina un poco antes que el timeout duro del proceso para devolver XML parcial.
-      hostTimeoutSeconds: Math.max(15, this.timeoutSeconds - 15),
-    };
-  }
-
   onApplicationBootstrap(): void {
     if (!this.enabled) {
       this.logger.log('Worker de escaneos deshabilitado (SCAN_WORKER_ENABLED=false)');
@@ -80,7 +80,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     this.timer = setInterval(() => this.kick(), interval);
     this.timer.unref();
     this.logger.log(
-      `Worker de escaneos activo (concurrencia ${this.maxConcurrency}, ` +
+      `Worker de escaneos activo (tipos: ${this.supportedTypes.join(', ')}; concurrencia ${this.maxConcurrency}, ` +
         `${this.maxPerOrg} por organización, timeout ${this.timeoutSeconds}s)`,
     );
     this.kick();
@@ -89,7 +89,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
   async onApplicationShutdown(): Promise<void> {
     this.shuttingDown = true;
     if (this.timer) clearInterval(this.timer);
-    const ids = this.runner.cancelAll();
+    const ids = this.cancellation.abortAll('shutdown');
     if (ids.length > 0) {
       this.logger.warn(`Apagado: ${ids.length} escaneo(s) en curso se devolverán a la cola`);
     }
@@ -168,94 +168,118 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     }
   }
 
-  private async execute(scanId: string): Promise<void> {
-    const scan = await this.prisma.scan.findUnique({
-      where: { id: scanId },
-      include: { asset: true },
+  /** Puertos abiertos según el último escaneo de puertos completado del activo. */
+  private async openPortsHint(assetId: string): Promise<OpenPortHint[]> {
+    const last = await this.prisma.scan.findFirst({
+      where: { assetId, type: ScanType.PORT_SCAN, status: ScanStatus.COMPLETED },
+      orderBy: { finishedAt: 'desc' },
+      select: {
+        ports: {
+          where: { state: 'open' },
+          select: { port: true, protocol: true, serviceName: true, tunnel: true },
+        },
+      },
     });
+    return last?.ports ?? [];
+  }
+
+  private async execute(scanId: string): Promise<void> {
+    const scan = await this.prisma.scan.findUnique({ where: { id: scanId }, include: { asset: true } });
     if (!scan) return;
 
     const { asset } = scan;
-    this.logger.log(`Escaneo ${scanId}: iniciando sobre ${asset.value}`);
+    const timeoutMs = this.timeoutSeconds * 1000;
+    const signal = this.cancellation.register(scanId, timeoutMs);
+    this.logger.log(`Escaneo ${scanId} (${scan.type}): iniciando sobre ${asset.value}`);
 
     try {
+      const scanner = this.scanners.get(scan.type);
+      if (!scanner) {
+        throw new ScanExecutionError(`El tipo de escaneo ${scan.type} no está disponible en esta instancia`);
+      }
       if (!asset.isActive || !asset.authorizationConfirmed) {
         throw new ScanExecutionError('El activo está inactivo o no tiene autorización confirmada');
       }
 
       // Revalidación defensiva: el valor pudo cambiar o la política pudo endurecerse.
-      const validation = validateAssetValue(asset.value, asset.type, {
-        allowPrivate: this.allowPrivate,
-      });
+      const validation = validateAssetValue(asset.value, asset.type, { allowPrivate: this.allowPrivate });
       if (!validation.ok) {
         throw new ScanExecutionError(validation.reason);
       }
 
       const target = await resolveScanTarget(validation.value, validation.type, this.allowPrivate);
-      const profile = this.profile;
-      const args = buildNmapArgs(target.address, profile);
+      const openPorts = scan.type === ScanType.PORT_SCAN ? [] : await this.openPortsHint(asset.id);
 
       await this.prisma.scan.update({
         where: { id: scanId },
-        data: {
-          targetAddress: target.address,
-          parameters: {
-            tool: 'nmap',
-            args,
-            profile: { ...profile },
-            timeoutSeconds: this.timeoutSeconds,
-            resolvedAddresses: target.resolvedAddresses,
-          } as Prisma.InputJsonValue,
-        },
+        data: { targetAddress: target.address },
       });
 
-      const output = await this.runner.run(scanId, args, this.timeoutSeconds * 1000);
+      const startedAt = Date.now();
+      const outcome = await scanner.run({
+        scanId,
+        organizationId: scan.organizationId,
+        asset,
+        target,
+        allowPrivate: this.allowPrivate,
+        openPorts,
+        signal,
+        timeoutMs,
+      });
 
-      if (output.cancelled) {
-        await this.handleInterrupted(scanId);
+      if (abortReason(signal)) {
+        await this.handleInterrupted(scanId, signal);
         return;
       }
-      if (output.timedOut) {
-        throw new ScanExecutionError(
-          `El escaneo superó el tiempo máximo permitido (${this.timeoutSeconds} s)`,
-        );
-      }
-      if (output.exitCode !== 0) {
-        const detail = output.stderr.trim().split('\n').slice(-3).join(' ').slice(0, 300);
-        throw new ScanExecutionError(
-          `Nmap terminó con código ${output.exitCode}${detail ? `: ${detail}` : ''}`,
-        );
-      }
 
-      const result = parseNmapXml(output.stdout);
-      await this.persistResult(scanId, asset.id, scan.organizationId, asset.value, target.address, result, output.durationMs);
-      this.logger.log(`Escaneo ${scanId}: completado en ${(output.durationMs / 1000).toFixed(1)} s`);
+      const findings = await this.persistOutcome(scan, target.address, outcome, Date.now() - startedAt);
+      this.logger.log(
+        `Escaneo ${scanId} (${scan.type}): completado en ${((Date.now() - startedAt) / 1000).toFixed(1)} s, ` +
+          `${outcome.findings.length} hallazgo(s) (${findings.created} nuevos, ${findings.resolved} resueltos)`,
+      );
     } catch (err) {
-      const message =
-        err instanceof ScanExecutionError || err instanceof NmapParseError
-          ? err.message
-          : 'Error interno durante el escaneo';
-      if (!(err instanceof ScanExecutionError)) {
-        this.logger.error(`Escaneo ${scanId}: ${(err as Error).stack ?? String(err)}`);
-      } else {
+      if (abortReason(signal)) {
+        await this.handleInterrupted(scanId, signal);
+        return;
+      }
+      const controlled = err instanceof ScanExecutionError || err instanceof NmapParseError;
+      const message = controlled ? (err as Error).message : 'Error interno durante el escaneo';
+      if (controlled) {
         this.logger.warn(`Escaneo ${scanId}: ${message}`);
+      } else {
+        this.logger.error(`Escaneo ${scanId}: ${(err as Error).stack ?? String(err)}`);
       }
       await this.prisma.scan.updateMany({
         where: { id: scanId, status: ScanStatus.RUNNING },
         data: { status: ScanStatus.FAILED, finishedAt: new Date(), errorMessage: message },
       });
+    } finally {
+      this.cancellation.release(scanId);
     }
   }
 
   /**
-   * Proceso detenido: si fue por apagado del servidor se devuelve a la cola;
-   * si fue una cancelación del usuario el estado CANCELLED ya está guardado.
+   * Escaneo interrumpido: por apagado vuelve a la cola; por timeout se marca
+   * FAILED; por cancelación del usuario el estado CANCELLED ya está guardado.
    */
-  private async handleInterrupted(scanId: string): Promise<void> {
-    if (this.shuttingDown) {
+  private async handleInterrupted(scanId: string, signal: AbortSignal): Promise<void> {
+    const reason = abortReason(signal);
+    if (reason === 'shutdown') {
       await this.prisma.scan.updateMany({
         where: { id: scanId, status: ScanStatus.RUNNING },
         data: { status: ScanStatus.PENDING, startedAt: null, targetAddress: null },
+      });
+      return;
+    }
+    if (reason === 'timeout') {
+      this.logger.warn(`Escaneo ${scanId}: tiempo máximo excedido`);
+      await this.prisma.scan.updateMany({
+        where: { id: scanId, status: ScanStatus.RUNNING },
+        data: {
+          status: ScanStatus.FAILED,
+          finishedAt: new Date(),
+          errorMessage: `El escaneo superó el tiempo máximo permitido (${this.timeoutSeconds} s)`,
+        },
       });
       return;
     }
@@ -265,59 +289,29 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     });
   }
 
-  private async persistResult(
-    scanId: string,
-    assetId: string,
-    organizationId: string,
-    assetValue: string,
+  private async persistOutcome(
+    scan: { id: string; assetId: string; organizationId: string; type: ScanType; asset: { value: string } },
     targetAddress: string,
-    result: NmapScanResult,
+    outcome: ScanOutcome,
     durationMs: number,
-  ): Promise<void> {
-    const host = result.hosts[0];
-    const ports = host?.ports ?? [];
-    const openPorts = ports.filter((p) => p.state === 'open');
+  ) {
     const finishedAt = new Date();
-
-    const summary = {
-      target: assetValue,
-      targetAddress,
-      hostStatus: host?.status ?? 'unknown',
-      openPortsCount: openPorts.length,
-      scannedPortsCount:
-        ports.length + (host?.extraPorts ?? []).reduce((acc, e) => acc + e.count, 0),
-      openPorts: openPorts.map((p) => ({
-        port: p.port,
-        protocol: p.protocol,
-        service: p.service?.name ?? null,
-        product: p.service?.product ?? null,
-        version: p.service?.version ?? null,
-        tunnel: p.service?.tunnel ?? null,
-      })),
-      durationSeconds: Math.round(durationMs / 100) / 10,
-      nmapVersion: result.version ?? null,
-    };
-
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // Si el usuario canceló mientras tanto, no se sobrescribe el estado.
       const updated = await tx.scan.updateMany({
-        where: { id: scanId, status: ScanStatus.RUNNING },
-        data: {
-          status: ScanStatus.COMPLETED,
-          finishedAt,
-          rawResult: result as unknown as Prisma.InputJsonValue,
-          summary: summary as Prisma.InputJsonValue,
-          errorMessage: null,
-        },
+        where: { id: scan.id, status: ScanStatus.RUNNING },
+        data: { status: ScanStatus.COMPLETED, finishedAt, parameters: outcome.parameters as Prisma.InputJsonValue },
       });
-      if (updated.count === 0) return;
+      if (updated.count === 0) {
+        return { created: 0, updated: 0, reopened: 0, resolved: 0, bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 } };
+      }
 
-      if (ports.length > 0) {
+      if (outcome.ports && outcome.ports.length > 0) {
         await tx.scanPort.createMany({
-          data: ports.map((p) => ({
-            organizationId,
-            scanId,
-            assetId,
+          data: outcome.ports.map((p) => ({
+            organizationId: scan.organizationId,
+            scanId: scan.id,
+            assetId: scan.assetId,
             port: p.port,
             protocol: p.protocol,
             state: p.state,
@@ -334,7 +328,32 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         });
       }
 
-      await tx.asset.update({ where: { id: assetId }, data: { lastScannedAt: finishedAt } });
+      const findings = await this.findings.syncForScan(tx, {
+        organizationId: scan.organizationId,
+        assetId: scan.assetId,
+        scanId: scan.id,
+        scanType: scan.type,
+        drafts: outcome.findings,
+      });
+
+      const summary = {
+        target: scan.asset.value,
+        targetAddress,
+        durationSeconds: Math.round(durationMs / 100) / 10,
+        ...outcome.summary,
+        findings,
+      };
+
+      await tx.scan.update({
+        where: { id: scan.id },
+        data: {
+          rawResult: outcome.rawResult as Prisma.InputJsonValue,
+          summary: summary as unknown as Prisma.InputJsonValue,
+          errorMessage: null,
+        },
+      });
+      await tx.asset.update({ where: { id: scan.assetId }, data: { lastScannedAt: finishedAt } });
+      return findings;
     });
   }
 }

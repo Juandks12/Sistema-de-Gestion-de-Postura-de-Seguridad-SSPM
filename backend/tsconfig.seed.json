@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist-seed",
+    "rootDir": "./prisma",
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["prisma/seed.ts"]
+}

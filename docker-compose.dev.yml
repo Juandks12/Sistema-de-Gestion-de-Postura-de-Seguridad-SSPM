@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Modo desarrollo: el código de ./backend se monta en el contenedor y Nest
+# recompila y reinicia la API al guardar cambios.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Ejecutar comandos dentro del contenedor (con la API levantada):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm test
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npx prisma migrate dev --name <nombre>
+# ---------------------------------------------------------------------------
+services:
+  api:
+    build:
+      target: development
+    image: sspm-api:dev
+    restart: "no"
+    environment:
+      NODE_ENV: development
+      # Modo laboratorio: permite escanear IPs privadas y host.docker.internal.
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+      # Detección de cambios por sondeo: necesaria en Windows y macOS, donde
+      # los eventos del sistema de archivos no llegan al contenedor.
+      TSC_WATCHFILE: DynamicPriorityPolling
+      TSC_WATCHDIRECTORY: RecursiveDirectoryUsingDynamicPriorityPolling
+    volumes:
+      - ./backend:/app
+      # node_modules propio del contenedor (Linux), aislado del de tu equipo.
+      - /app/node_modules
