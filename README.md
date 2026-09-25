@@ -30,13 +30,18 @@ directorio hermano (`frontend/`) en sprints posteriores.
 - **Escaneo:** Nmap ejecutado de forma asíncrona con `child_process.spawn` (sin shell) y cola de trabajos en PostgreSQL
 - **Parser XML:** `fast-xml-parser` para la salida `-oX` de Nmap
 - **Auditoría web:** `undici` (HTTP con conexión a IP validada) y `node:tls` (certificados)
+- **Contenedores:** Docker multi-etapa (Ubuntu 24.04 LTS, Node 22, Nmap 7.94) y Docker Compose
 
 ## Estructura de carpetas
 
 ```
 .
-├── docker-compose.yml          # PostgreSQL (+ API opcional) para desarrollo
+├── docker-compose.yml          # Base de datos + API (imagen de producción)
+├── docker-compose.dev.yml      # Modo desarrollo: código montado y recarga en caliente
+├── .env.example                # Variables opcionales de docker compose
 └── backend/
+    ├── Dockerfile              # Imagen multi-etapa: development y production
+    ├── docker-entrypoint.sh    # Migraciones y datos de demostración al arrancar
     ├── prisma/
     │   ├── schema.prisma       # Modelo de datos (users, organizations, assets, scans)
     │   ├── migrations/         # Migraciones SQL versionadas
@@ -67,38 +72,138 @@ directorio hermano (`frontend/`) en sprints posteriores.
     └── test/                   # Pruebas end-to-end (supertest)
 ```
 
-## Requisitos previos
+## Puesta en marcha con Docker (recomendado)
 
-- Node.js ≥ 20 y npm
-- PostgreSQL 16 (local o mediante Docker)
-- Docker y Docker Compose (opcional, recomendado para la base de datos)
-- Nmap ≥ 7.80 instalado y accesible en el `PATH` (`sudo apt install nmap`, `brew install nmap` o el instalador oficial en Windows)
+Solo necesitas **Git** y **Docker**. No hace falta instalar Node.js, PostgreSQL
+ni Nmap: todo se ejecuta dentro de contenedores.
 
-## Puesta en marcha (desarrollo)
+- Windows y macOS: [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+  En Windows, activa el motor WSL 2 durante la instalación.
+- Linux: Docker Engine con el plugin `docker compose`.
 
-### 1. Clonar e instalar dependencias
+### 1. Clonar y arrancar
 
 ```bash
 git clone <url-del-repositorio>
+cd Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM
+docker compose up -d --build
+```
+
+La primera vez tarda unos minutos porque construye la imagen. Después, al
+arrancar el contenedor de la API se hace automáticamente lo siguiente:
+
+1. Espera a que PostgreSQL esté listo.
+2. Aplica las migraciones pendientes.
+3. Carga la organización y los usuarios de demostración (ver tabla más abajo).
+4. Arranca la API con el worker de escaneos y Nmap.
+
+Cuando `docker compose ps` muestre la API como `healthy`, ya está disponible:
+
+- API: <http://localhost:3000/api/v1>
+- Swagger UI: <http://localhost:3000/api/docs>
+- Salud: <http://localhost:3000/api/v1/health>
+
+### Comandos habituales
+
+| Acción | Comando |
+|--------|---------|
+| Ver el estado | `docker compose ps` |
+| Ver los logs de la API | `docker compose logs -f api` |
+| Detener (conserva los datos) | `docker compose down` |
+| Detener y borrar la base de datos | `docker compose down -v` |
+| Reconstruir tras un `git pull` | `docker compose up -d --build` |
+| Abrir una consola SQL | `docker compose exec db psql -U postgres -d sspm_db` |
+
+### Modo desarrollo (recarga en caliente)
+
+Para programar en el backend sin instalar nada en tu equipo, usa el archivo
+`docker-compose.dev.yml`. Monta la carpeta `backend/` en el contenedor, y Nest
+recompila y reinicia la API cada vez que guardas un archivo.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Con la API de desarrollo levantada, puedes ejecutar comandos dentro del contenedor:
+
+```bash
+# Alias opcional para no repetir los dos archivos (Git Bash, Linux o macOS)
+alias dc='docker compose -f docker-compose.yml -f docker-compose.dev.yml'
+
+dc exec api npm test                                   # pruebas unitarias
+dc exec api npm run test:e2e                           # pruebas end-to-end
+dc exec api npm run lint                               # linter
+dc exec api npx prisma migrate dev --name <nombre>     # nueva migración tras editar schema.prisma
+```
+
+Para explorar la base de datos con una herramienta gráfica (pgAdmin, DBeaver,
+DataGrip), conéctate a `localhost:5432`, usuario `postgres`, contraseña `admin`,
+base `sspm_db`.
+
+Notas del modo desarrollo:
+
+- `node_modules` vive en un volumen propio del contenedor, con dependencias
+  compiladas para Linux. El `node_modules` de tu equipo, si existe, no se usa.
+- Si `package-lock.json` cambia, por ejemplo tras un `git pull`, el contenedor
+  sincroniza las dependencias automáticamente al arrancar.
+- Los cambios se detectan por sondeo para que funcione en Windows y macOS.
+
+### Configuración opcional
+
+`docker compose` funciona sin configuración. Para cambiar puertos, secretos u
+otras opciones, copia `.env.example` como `.env` en la raíz del repositorio y
+edítalo. Las variables principales son:
+
+| Variable | Por defecto | Uso |
+|----------|-------------|-----|
+| `API_PORT` | `3000` | Puerto de la API en tu equipo |
+| `DB_PORT` | `5432` | Puerto de PostgreSQL en tu equipo |
+| `JWT_SECRET` | valor de desarrollo | Secreto para firmar los tokens |
+| `SEED_DEMO_DATA` | `true` | Crear los usuarios de demostración al arrancar |
+| `ALLOW_PRIVATE_TARGETS` | `false` | Modo laboratorio, solo en modo desarrollo |
+
+Los puertos se publican solo en `127.0.0.1`, así que la API y la base de datos
+no son accesibles desde otros equipos de tu red.
+
+### Escanear servicios de tu propio equipo
+
+Dentro del contenedor, `localhost` es el propio contenedor, no tu equipo. Para
+el caso de estudio con activos controlados:
+
+1. Pon `ALLOW_PRIVATE_TARGETS=true` en el `.env` de la raíz.
+2. Arranca en modo desarrollo; el modo laboratorio no se permite en producción.
+3. Registra el activo `host.docker.internal`, que apunta a tu equipo.
+
+### Solución de problemas
+
+- **"port is already allocated"**: otro programa usa el puerto 3000 o 5432,
+  por ejemplo un PostgreSQL instalado localmente. Cambia `API_PORT` o `DB_PORT`
+  en el `.env` de la raíz.
+- **La API no pasa a `healthy`**: revisa `docker compose logs api`. Si cambiaste
+  `POSTGRES_PASSWORD` después de crear la base, borra el volumen con
+  `docker compose down -v`; la contraseña solo se aplica la primera vez.
+- **`docker-entrypoint.sh: not found` o `$'\r': command not found`**: el script
+  tiene finales de línea de Windows. El repositorio lo evita con `.gitattributes`
+  y la imagen los corrige al construir; reconstruye con `docker compose build --no-cache api`.
+
+## Puesta en marcha sin Docker
+
+Solo si prefieres ejecutar la API directamente en tu equipo.
+
+### Requisitos previos
+
+- Node.js ≥ 20.18 y npm
+- PostgreSQL 16 (local, o solo la base con `docker compose up -d db`)
+- Nmap ≥ 7.80 accesible en el `PATH` (`sudo apt install nmap`, `brew install nmap` o el instalador oficial en Windows)
+
+### 1. Instalar dependencias
+
+```bash
 cd Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend
 npm install
 ```
 
-### 2. Levantar PostgreSQL
-
-Con Docker (desde la raíz del repositorio):
-
-```bash
-docker compose up -d db
-```
-
-O bien usa una instancia local y crea la base de datos:
-
-```sql
-CREATE DATABASE sspm_db;
-```
-
-### 3. Configurar variables de entorno
+### 2. Configurar variables de entorno
 
 ```bash
 cp .env.example .env
@@ -111,14 +216,14 @@ DATABASE_URL="postgresql://postgres:admin@localhost:5432/sspm_db?schema=public"
 JWT_SECRET=cambia-este-secreto-por-uno-largo-y-aleatorio
 ```
 
-### 4. Aplicar migraciones y generar el cliente Prisma
+### 3. Aplicar migraciones y cargar datos de demostración
 
 ```bash
 npx prisma migrate dev      # aplica migraciones y regenera el cliente
 npx prisma db seed          # (opcional) carga una organización de demostración
 ```
 
-### 5. Arrancar la API
+### 4. Arrancar la API
 
 ```bash
 npm run start:dev           # recarga automática
@@ -126,17 +231,9 @@ npm run start:dev           # recarga automática
 npm run build && npm start  # modo producción
 ```
 
-- API: <http://localhost:3000/api/v1>
-- Swagger UI: <http://localhost:3000/api/docs>
-- Salud: <http://localhost:3000/api/v1/health>
+## Usuarios de demostración
 
-### Todo con Docker (base de datos + API)
-
-```bash
-docker compose up -d --build
-```
-
-## Usuarios de demostración (tras `prisma db seed`)
+Se crean automáticamente con Docker, o con `npx prisma db seed` sin Docker.
 
 | Correo | Rol | Contraseña |
 |--------|-----|------------|
@@ -369,7 +466,9 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   así una redirección o un cambio de DNS no pueden desviar las peticiones a la red interna.
 - Los hallazgos de rutas sensibles guardan solo la ruta y el código de estado, nunca el
   contenido del archivo.
-- La imagen Docker ejecuta la API como usuario sin privilegios.
+- La imagen Docker ejecuta la API y Nmap como usuario sin privilegios y desactiva
+  la telemetría de Prisma y de Scarf.
+- `docker compose` publica los puertos solo en `127.0.0.1`.
 
 ## Próximos pasos (Sprint 3)
 

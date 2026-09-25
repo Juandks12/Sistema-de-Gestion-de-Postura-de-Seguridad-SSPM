@@ -1,0 +1,13 @@
+# Normaliza los finales de línea en el repositorio.
+* text=auto
+
+# Scripts y Dockerfile deben usar LF aunque se clone en Windows;
+# con CRLF el contenedor no puede ejecutarlos.
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.docx binary
+*.pdf binary
