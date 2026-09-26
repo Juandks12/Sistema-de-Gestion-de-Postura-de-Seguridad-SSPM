@@ -14,6 +14,7 @@ export type AlertChannelType = 'EMAIL' | 'WEBHOOK';
 export type MonitoringFrequency = 'OFF' | 'DAILY' | 'WEEKLY';
 export type ReportType = 'EXECUTIVE' | 'TECHNICAL';
 export type DeliveryStatus = 'SENT' | 'FAILED' | 'SKIPPED';
+export type VerificationMethod = 'DNS_TXT' | 'HTTP_FILE' | 'INHERITED' | 'PRE_AUTHORIZED';
 
 export type SeverityCounts = Record<Severity, number>;
 
@@ -46,6 +47,9 @@ export interface Asset {
   description: string | null;
   isActive: boolean;
   authorizationConfirmed: boolean;
+  verifiedAt?: string | null;
+  verificationMethod?: VerificationMethod | null;
+  verificationScope?: string | null;
   lastScannedAt: string | null;
   createdAt: string;
   createdBy?: { id: string; fullName: string; email: string } | null;
@@ -168,6 +172,8 @@ export interface DashboardAsset {
   value: string;
   name: string | null;
   isActive: boolean;
+  verified: boolean;
+  verificationMethod: VerificationMethod | null;
   scored: boolean;
   score: number | null;
   grade: Grade | null;
@@ -301,6 +307,7 @@ export interface MonitoringStatus {
     name: string | null;
     isActive: boolean;
     authorizationConfirmed: boolean;
+    verifiedAt: string | null;
     lastScheduledScanAt: string | null;
     lastScannedAt: string | null;
     monitored: boolean;
@@ -320,4 +327,30 @@ export interface ReportRecord {
   createdAt: string;
   asset: { id: string; value: string; name: string | null } | null;
   generatedBy: { id: string; fullName: string } | null;
+}
+
+export interface VerificationAttempt {
+  method: 'DNS_TXT' | 'HTTP_FILE';
+  target: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface AssetVerification {
+  assetId: string;
+  type: AssetType;
+  value: string;
+  required: boolean;
+  verified: boolean;
+  verifiedAt: string | null;
+  method: VerificationMethod | null;
+  scope: string | null;
+  checkedAt: string | null;
+  error: string | null;
+  proof: string;
+  dns: { type: 'TXT'; value: string; recordName: string; alternatives: string[] } | null;
+  file: { content: string; urls: string[] };
+  /** Solo en la respuesta de POST /assets/:id/verify. */
+  attempts?: VerificationAttempt[];
+  success?: boolean;
 }

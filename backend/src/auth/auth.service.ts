@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'node:crypto';
 import { AuthUser, JwtPayload } from '../common/interfaces/auth-user.interface';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { LoginProtectionService } from './login-protection.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -24,6 +26,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly organizations: OrganizationsService,
+    private readonly loginProtection: LoginProtectionService,
   ) {}
 
   /**
@@ -41,7 +44,7 @@ export class AuthService {
 
     const user = await this.prisma.$transaction(async (tx) => {
       const organization = await tx.organization.create({
-        data: { name: dto.organizationName, slug },
+        data: { name: dto.organizationName, slug, verificationToken: randomBytes(16).toString('hex') },
       });
       return tx.user.create({
         data: {
@@ -58,6 +61,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResponse> {
+    // Cuenta bloqueada por intentos fallidos: se responde antes de comprobar la contraseña.
+    await this.loginProtection.assertNotLocked(dto.email);
+
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
       include: { organization: { select: { isActive: true } } },
@@ -68,12 +74,14 @@ export class AuthService {
     const passwordOk = await bcrypt.compare(dto.password, hashToCompare);
 
     if (!user || !passwordOk) {
+      await this.loginProtection.recordFailure(dto.email);
       throw new UnauthorizedException('Credenciales inválidas');
     }
     if (!user.isActive || !user.organization.isActive) {
       throw new UnauthorizedException('Usuario u organización inactivos');
     }
 
+    await this.loginProtection.reset(dto.email);
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },

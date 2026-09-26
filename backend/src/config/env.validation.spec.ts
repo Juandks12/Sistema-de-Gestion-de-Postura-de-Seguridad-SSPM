@@ -50,4 +50,21 @@ describe('validateEnv', () => {
     });
     expect(() => validateEnv({ ...base, SCHEDULER_INTERVAL_MS: '10' })).toThrow();
   });
+
+  it('exige la verificación de propiedad de activos en producción', () => {
+    expect(validateEnv({ ...base }).ASSET_VERIFICATION_REQUIRED).toBe(true);
+    expect(validateEnv({ ...base, ASSET_VERIFICATION_REQUIRED: 'false' }).ASSET_VERIFICATION_REQUIRED).toBe(false);
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production', ASSET_VERIFICATION_REQUIRED: 'false' })).toThrow(
+      /ASSET_VERIFICATION_REQUIRED/,
+    );
+  });
+
+  it('valida TRUST_PROXY y los límites del inicio de sesión', () => {
+    for (const ok of ['', '1', 'true', 'loopback', '10.0.0.0/8, 172.16.0.0/12']) {
+      expect(validateEnv({ ...base, TRUST_PROXY: ok }).TRUST_PROXY).toBe(ok);
+    }
+    expect(() => validateEnv({ ...base, TRUST_PROXY: 'cualquiera; rm -rf' })).toThrow(/TRUST_PROXY/);
+    expect(validateEnv({ ...base })).toMatchObject({ AUTH_MAX_FAILED_LOGINS: 5, AUTH_LOCKOUT_MINUTES: 15 });
+    expect(() => validateEnv({ ...base, AUTH_MAX_FAILED_LOGINS: '1' })).toThrow();
+  });
 });

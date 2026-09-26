@@ -20,12 +20,17 @@ import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
+import { VerifyAssetDto } from './dto/verify-asset.dto';
+import { AssetVerificationService } from './verification/asset-verification.service';
 
 @ApiTags('assets')
 @ApiBearerAuth()
 @Controller('assets')
 export class AssetsController {
-  constructor(private readonly assets: AssetsService) {}
+  constructor(
+    private readonly assets: AssetsService,
+    private readonly verification: AssetVerificationService,
+  ) {}
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.ANALYST)
@@ -51,6 +56,26 @@ export class AssetsController {
   @ApiResponse({ status: 404, description: 'No existe o pertenece a otra organización.' })
   findOne(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.assets.findOne(user.organizationId, id);
+  }
+
+  @Get(':id/verification')
+  @ApiOperation({
+    summary: 'Estado de la verificación de propiedad del activo e instrucciones (registro DNS TXT o archivo HTTP)',
+  })
+  verificationStatus(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.verification.status(user.organizationId, id);
+  }
+
+  @Post(':id/verify')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Comprobar la prueba de propiedad publicada',
+    description:
+      'Sin `method` se intenta primero el registro DNS TXT y después el archivo HTTP. Devuelve el resultado de cada comprobación; un fallo no retira una verificación anterior.',
+  })
+  verify(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: VerifyAssetDto) {
+    return this.verification.verify(user.organizationId, id, dto.method);
   }
 
   @Patch(':id')

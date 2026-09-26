@@ -1,6 +1,6 @@
-import { Plus, Radar, Server, ShieldCheck } from 'lucide-react';
+import { Plus, Radar, Server, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { Alert } from '@/components/ui/Alert';
 import { GradeBadge } from '@/components/ui/Badge';
@@ -17,7 +17,7 @@ import { useCreateAsset, useDashboardAssets, useRequestScan } from '@/hooks/quer
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SEVERITY_LABEL, timeAgo } from '@/lib/format';
-import type { DashboardAsset } from '@/lib/types';
+import type { Asset, DashboardAsset } from '@/lib/types';
 
 export function AssetsPage() {
   const { canEdit } = useAuth();
@@ -25,6 +25,8 @@ export function AssetsPage() {
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const requestScan = useRequestScan();
+  const navigate = useNavigate();
+  const verificationRequired = assets.data?.verificationRequired ?? true;
 
   const audit = async (a: DashboardAsset) => {
     setNotice(null);
@@ -71,6 +73,11 @@ export function AssetsPage() {
                         {a.value} · {a.type === 'DOMAIN' ? 'Dominio' : 'IP'}
                         {!a.isActive ? ' · inactivo' : ''}
                       </span>
+                      {!a.verified ? (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-warning/18 px-1.5 py-0.5 text-xs font-medium text-[#8a5b00] dark:text-warning">
+                          <ShieldQuestion className="size-3" aria-hidden /> Sin verificar
+                        </span>
+                      ) : null}
                     </Link>
                   </Td>
                   <Td>
@@ -86,7 +93,10 @@ export function AssetsPage() {
                   <Td className="text-right">
                     <div className="flex justify-end gap-1">
                       {canEdit ? (
-                        <Button size="sm" variant="secondary" icon={<Radar className="size-3.5" />} onClick={() => audit(a)} disabled={!a.isActive || requestScan.isPending} title="Encola puertos, cabeceras, TLS y rutas sensibles">
+                        <Button size="sm" variant="secondary" icon={<Radar className="size-3.5" />} onClick={() => audit(a)}
+                          disabled={!a.isActive || (verificationRequired && !a.verified) || requestScan.isPending}
+                          title={verificationRequired && !a.verified ? 'Verifica la propiedad del activo para poder escanearlo' : 'Encola puertos, cabeceras, TLS y rutas sensibles'}
+                        >
                           Auditar
                         </Button>
                       ) : null}
@@ -102,7 +112,15 @@ export function AssetsPage() {
         )}
       </Card>
 
-      <CreateAssetModal open={open} onClose={() => setOpen(false)} onCreated={(name) => setNotice({ kind: 'success', text: `Activo ${name} registrado. Lanza una auditoría para evaluarlo.` })} />
+      <CreateAssetModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onCreated={(asset) =>
+          asset.verifiedAt
+            ? setNotice({ kind: 'success', text: `Activo ${asset.name ?? asset.value} registrado y ya verificado por su dominio superior. Lanza una auditoría para evaluarlo.` })
+            : navigate(`/assets/${asset.id}`)
+        }
+      />
     </>
   );
 }
@@ -125,7 +143,7 @@ function SeverityChips({ counts }: { counts: DashboardAsset['bySeverity'] }) {
   );
 }
 
-function CreateAssetModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (name: string) => void }) {
+function CreateAssetModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (asset: Asset) => void }) {
   const create = useCreateAsset();
   const [value, setValue] = useState('');
   const [name, setName] = useState('');
@@ -144,7 +162,7 @@ function CreateAssetModal({ open, onClose, onCreated }: { open: boolean; onClose
     setError(null);
     try {
       const asset = await create.mutateAsync({ value: value.trim(), name: name.trim() || undefined, authorizationConfirmed: true });
-      onCreated(asset.name ?? asset.value);
+      onCreated(asset);
       reset();
       onClose();
     } catch (err) {

@@ -108,7 +108,11 @@ function MonitoringCard() {
                       <span className="min-w-0 flex-1 truncate text-ink">{a.name ?? a.value}</span>
                       <span className="shrink-0 text-xs text-ink-2">
                         {!a.monitored
-                          ? a.isActive ? 'Sin autorización de escaneo' : 'Inactivo: excluido'
+                          ? !a.isActive
+                            ? 'Inactivo: excluido'
+                            : !a.verifiedAt
+                              ? 'Sin verificar: excluido hasta verificar su propiedad'
+                              : 'Sin autorización de escaneo'
                           : a.due
                             ? 'Pendiente: se auditará en breve'
                             : `Próxima: ${formatDateTime(a.nextRunAt)}`}

@@ -28,6 +28,8 @@ equipo.
 | `SEED_DEMO_DATA=false` | No crear usuarios de demostración en producción. |
 | `APP_URL` | URL pública de la web: se usa en los enlaces de las alertas. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor de correo para las alertas (p. ej. Amazon SES, SendGrid o Postmark por SMTP). Sin `SMTP_HOST` los canales de correo se omiten. |
+| `TRUST_PROXY` | Número de proxies delante de la API (1 con el Nginx de la imagen web; 2 si además hay un balanceador). Sin él, los límites por IP del login tratarían a todos los clientes como uno solo. No lo pongas si la API está expuesta sin proxy: el cliente podría falsear su IP. |
+| `ASSET_VERIFICATION_REQUIRED` | Siempre `true` (la aplicación no arranca con `false` en producción). |
 | `SCHEDULER_ENABLED` | Puede quedar en `true` en varias réplicas: cada activo se reclama una sola vez por periodo. Si el planificador se separa en un proceso propio, pon `false` en las instancias de la API. |
 
 ## 3. Migraciones en despliegue
@@ -47,6 +49,7 @@ por defecto).
       `findings` es el activo de valor del producto).
 - [ ] Límites de escaneo (`SCAN_MAX_PER_HOUR_PER_ORG`, concurrencia)
       revisados para el volumen de clientes esperado.
+- [ ] `TRUST_PROXY` coherente con la cadena de proxies real (ver tabla).
 - [ ] SMTP configurado y probado con el botón "Probar" de Configuración (o al menos un webhook).
 - [ ] Logs centralizados (ver roadmap DevOps en `docs/roadmap.md`).
 - [ ] Página de estado / health check (`/api/v1/health`) monitoreada

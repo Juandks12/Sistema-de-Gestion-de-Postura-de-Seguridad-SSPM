@@ -98,6 +98,7 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
     return {
       isActive: true,
       authorizationConfirmed: true,
+      ...(this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false ? { verifiedAt: { not: null } } : {}),
       organization: { isActive: true, monitoringFrequency: frequency },
       OR: [{ lastScheduledScanAt: null }, { lastScheduledScanAt: { lt: cutoff } }],
     };

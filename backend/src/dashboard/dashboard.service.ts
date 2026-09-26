@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FindingStatus, Prisma, RiskScoreScope, ScanStatus, ScanType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
@@ -30,6 +31,7 @@ export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly riskScores: RiskScoresService,
+    private readonly config: ConfigService,
   ) {}
 
   /** 8.1 Vista general. */
@@ -145,6 +147,8 @@ export class DashboardService {
         value: true,
         name: true,
         isActive: true,
+        verifiedAt: true,
+        verificationMethod: true,
         lastScannedAt: true,
         findings: { where: { status: FindingStatus.OPEN }, select: { severity: true } },
         scans: {
@@ -173,6 +177,8 @@ export class DashboardService {
         value: a.value,
         name: a.name,
         isActive: a.isActive,
+        verified: a.verifiedAt !== null,
+        verificationMethod: a.verificationMethod,
         scored,
         score,
         grade: score === null ? null : gradeFor(score).grade,
@@ -191,7 +197,11 @@ export class DashboardService {
       if (y.score === null) return -1;
       return x.score - y.score;
     });
-    return { items, total: items.length };
+    return {
+      items,
+      total: items.length,
+      verificationRequired: this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false,
+    };
   }
 
   /** 8.4 Vista detallada por activo. */
@@ -206,6 +216,9 @@ export class DashboardService {
         description: true,
         isActive: true,
         authorizationConfirmed: true,
+        verifiedAt: true,
+        verificationMethod: true,
+        verificationScope: true,
         lastScannedAt: true,
         createdAt: true,
       },

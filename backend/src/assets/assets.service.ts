@@ -8,6 +8,7 @@ import { RiskScoresService } from '../risk/risk-scores.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
+import { AssetVerificationService } from './verification/asset-verification.service';
 
 const assetInclude = {
   createdBy: { select: { id: true, fullName: true, email: true } },
@@ -25,6 +26,7 @@ export class AssetsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly riskScores: RiskScoresService,
+    private readonly verification: AssetVerificationService,
   ) {}
 
   async create(actor: AuthUser, dto: CreateAssetDto) {
@@ -34,6 +36,14 @@ export class AssetsService {
     if (!validation.ok) {
       throw new BadRequestException(validation.reason);
     }
+
+    // Un subdominio de un dominio ya verificado por DNS hereda la verificación.
+    const inherited = await this.verification.inheritedVerification(
+      this.prisma,
+      actor.organizationId,
+      validation.type,
+      validation.value,
+    );
 
     // La unicidad (organization_id, value) la garantiza la BD; un duplicado
     // produce P2002 que el filtro global traduce a 409 Conflict.
@@ -47,6 +57,7 @@ export class AssetsService {
         description: dto.description,
         authorizationConfirmed: true,
         authorizedAt: new Date(),
+        ...(inherited ?? {}),
       },
       include: assetInclude,
     });

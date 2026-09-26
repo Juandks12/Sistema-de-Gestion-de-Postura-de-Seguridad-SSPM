@@ -7,6 +7,7 @@ import type {
   AlertsSummary,
   AlertType,
   Asset,
+  AssetVerification,
   DeliveryResult,
   MonitoringFrequency,
   MonitoringStatus,
@@ -34,6 +35,7 @@ export const keys = {
   history: (days: number) => ['dashboard', 'history', days] as const,
   dashboardAssets: ['dashboard', 'assets'] as const,
   dashboardAsset: (id: string) => ['dashboard', 'asset', id] as const,
+  verification: (id: string) => ['assets', id, 'verification'] as const,
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
@@ -55,7 +57,11 @@ export function useOrgHistory(days = 30) {
 }
 
 export function useDashboardAssets() {
-  return useQuery({ queryKey: keys.dashboardAssets, queryFn: () => api<{ items: DashboardAsset[]; total: number }>('/dashboard/assets'), refetchInterval: 15000 });
+  return useQuery({
+    queryKey: keys.dashboardAssets,
+    queryFn: () => api<{ items: DashboardAsset[]; total: number; verificationRequired: boolean }>('/dashboard/assets'),
+    refetchInterval: 15000,
+  });
 }
 
 export function useDashboardAsset(id: string) {
@@ -300,4 +306,23 @@ export function useUpdateMonitoring() {
 
 export function useReports() {
   return useQuery({ queryKey: keys.reports, queryFn: () => api<{ items: ReportRecord[] }>('/reports') });
+}
+
+// ------------------------------------------------- verificación de activos
+
+export function useAssetVerification(id: string, enabled = true) {
+  return useQuery({ queryKey: keys.verification(id), queryFn: () => api<AssetVerification>(`/assets/${id}/verification`), enabled });
+}
+
+export function useVerifyAsset() {
+  const invalidate = useInvalidateAll();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, method }: { id: string; method?: 'DNS_TXT' | 'HTTP_FILE' }) =>
+      api<AssetVerification>(`/assets/${id}/verify`, { method: 'POST', json: method ? { method } : {} }),
+    onSuccess: (data, { id }) => {
+      qc.setQueryData(keys.verification(id), data);
+      invalidate();
+    },
+  });
 }
