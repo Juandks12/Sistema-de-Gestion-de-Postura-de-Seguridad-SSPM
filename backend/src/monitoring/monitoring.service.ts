@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MonitoringFrequency, ScanSource } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
+import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { FREQUENCY_PERIOD_MS, nextRunAt } from './monitoring.scheduler';
 
@@ -8,6 +10,7 @@ import { FREQUENCY_PERIOD_MS, nextRunAt } from './monitoring.scheduler';
 export class MonitoringService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
     private readonly config: ConfigService,
   ) {}
 
@@ -64,8 +67,23 @@ export class MonitoringService {
     };
   }
 
-  async update(organizationId: string, frequency: MonitoringFrequency) {
-    await this.prisma.organization.update({ where: { id: organizationId }, data: { monitoringFrequency: frequency } });
-    return this.status(organizationId);
+  async update(actor: AuthUser, frequency: MonitoringFrequency) {
+    const previous = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: actor.organizationId },
+      select: { monitoringFrequency: true },
+    });
+    await this.prisma.organization.update({
+      where: { id: actor.organizationId },
+      data: { monitoringFrequency: frequency },
+    });
+    if (previous.monitoringFrequency !== frequency) {
+      this.audit.record({
+        organizationId: actor.organizationId,
+        action: 'monitoring.update',
+        actor,
+        detail: { frequency, previous: previous.monitoringFrequency },
+      });
+    }
+    return this.status(actor.organizationId);
   }
 }

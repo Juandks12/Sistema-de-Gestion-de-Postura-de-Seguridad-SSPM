@@ -1,10 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 
 @Injectable()
 export class OrganizationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async findMine(organizationId: string) {
     const org = await this.prisma.organization.findUnique({
@@ -19,11 +24,20 @@ export class OrganizationsService {
     return org;
   }
 
-  update(organizationId: string, dto: UpdateOrganizationDto) {
-    return this.prisma.organization.update({
+  async update(actor: AuthUser, dto: UpdateOrganizationDto) {
+    const organizationId = actor.organizationId;
+    const updated = await this.prisma.organization.update({
       where: { id: organizationId },
       data: { name: dto.name },
     });
+    this.audit.record({
+      organizationId,
+      action: 'organization.update',
+      actor,
+      target: { type: 'organization', id: organizationId, label: updated.name },
+      detail: { name: dto.name },
+    });
+    return updated;
   }
 
   /** Genera un slug URL-safe único a partir del nombre de la organización. */

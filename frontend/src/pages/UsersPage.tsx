@@ -1,4 +1,4 @@
-import { KeyRound, MoreHorizontal, Plus, UserCheck, UserX, Users } from 'lucide-react';
+import { KeyRound, Mail, MoreHorizontal, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -12,12 +12,12 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useCreateUser, useResetUserPassword, useUpdateUser, useUsers } from '@/hooks/queries';
+import { useCancelInvitation, useCreateUser, useDisableUserMfa, useInvitations, useInviteUser, useResendInvitation, useResetUserPassword, useUpdateUser, useUsers } from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ROLE_DESCRIPTION, ROLE_LABEL, formatDateTime, timeAgo } from '@/lib/format';
 import { isStrongPassword } from '@/lib/password';
-import type { OrgUser, UserRole } from '@/lib/types';
+import type { Invitation, OrgUser, UserRole } from '@/lib/types';
 
 const ROLES: UserRole[] = ['ADMIN', 'ANALYST', 'VIEWER'];
 
@@ -34,7 +34,10 @@ export function UsersPage() {
   const isAdmin = hasRole('ADMIN');
   const users = useUsers(isAdmin);
   const update = useUpdateUser();
+  const invitations = useInvitations(isAdmin);
+  const disableMfa = useDisableUserMfa();
   const [createOpen, setCreateOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [resetFor, setResetFor] = useState<OrgUser | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
 
@@ -58,7 +61,14 @@ export function UsersPage() {
       <PageHeader
         title="Usuarios"
         description={users.data ? `${active} activos de ${list.length} en tu organización.` : 'Personas con acceso a tu organización.'}
-        actions={<Button icon={<Plus className="size-4" />} onClick={() => setCreateOpen(true)}>Nuevo usuario</Button>}
+        actions={
+          <>
+            <Button variant="secondary" icon={<Mail className="size-4" />} onClick={() => setInviteOpen(true)}>
+              Invitar por correo
+            </Button>
+            <Button icon={<Plus className="size-4" />} onClick={() => setCreateOpen(true)}>Nuevo usuario</Button>
+          </>
+        }
       />
       {notice ? <Alert kind={notice.kind} className="mb-4">{notice.text}</Alert> : null}
 
@@ -93,7 +103,14 @@ export function UsersPage() {
                             {u.fullName}
                             {isSelf ? <span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted">Tú</span> : null}
                           </p>
-                          <p className="truncate text-xs text-muted">{u.email}</p>
+                          <p className="flex items-center gap-1.5 truncate text-xs text-muted">
+                            <span className="truncate">{u.email}</span>
+                            {u.mfaEnabled ? (
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-good/12 px-1 py-px text-[11px] font-medium text-good-text" title="Verificación en dos pasos activada">
+                                <ShieldCheck className="size-3" aria-hidden /> 2FA
+                              </span>
+                            ) : null}
+                          </p>
                         </div>
                       </div>
                     </Td>
@@ -129,6 +146,9 @@ export function UsersPage() {
                         <RowMenu
                           user={u}
                           onReset={() => setResetFor(u)}
+                          onDisableMfa={() =>
+                            run(`Verificación en dos pasos de ${u.fullName} desactivada.`, () => disableMfa.mutateAsync(u.id))
+                          }
                           onToggle={() =>
                             run(u.isActive ? `${u.fullName} ya no puede acceder.` : `${u.fullName} puede volver a acceder.`, () =>
                               update.mutateAsync({ id: u.id, isActive: !u.isActive }),
@@ -145,6 +165,12 @@ export function UsersPage() {
         )}
       </Card>
 
+      <InvitationsCard
+        invitations={invitations.data?.items ?? []}
+        emailEnabled={invitations.data?.emailEnabled ?? true}
+        onNotice={setNotice}
+      />
+
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {ROLES.map((r) => (
           <div key={r} className="rounded-card border border-border bg-surface p-4">
@@ -154,6 +180,19 @@ export function UsersPage() {
         ))}
       </div>
 
+      {inviteOpen ? (
+        <InviteModal
+          emailEnabled={invitations.data?.emailEnabled ?? true}
+          onClose={() => setInviteOpen(false)}
+          onInvited={(inv) =>
+            setNotice(
+              inv.deliveryStatus === 'SENT'
+                ? { kind: 'success', text: `Invitación enviada a ${inv.email}.` }
+                : { kind: 'error', text: `La invitación se creó pero el correo no se pudo enviar (${inv.deliveryError ?? 'sin SMTP'}).` },
+            )
+          }
+        />
+      ) : null}
       {createOpen ? <CreateUserModal onClose={() => setCreateOpen(false)} onCreated={(u) => setNotice({ kind: 'success', text: `Usuario ${u.fullName} creado. Comunícale su contraseña por un canal seguro.` })} /> : null}
       {resetFor ? <ResetPasswordModal user={resetFor} onClose={() => setResetFor(null)} onDone={() => setNotice({ kind: 'success', text: `Contraseña de ${resetFor.fullName} restablecida. Sus sesiones abiertas se han cerrado.` })} /> : null}
     </>
@@ -161,14 +200,14 @@ export function UsersPage() {
 }
 
 const MENU_WIDTH = 224;
-const MENU_HEIGHT = 96;
+const MENU_HEIGHT = 140;
 
 /**
  * Menú de acciones por fila. Se posiciona con `position: fixed` a partir del botón
  * para que el contenedor con desplazamiento de la tabla no lo recorte, y se abre
  * hacia arriba cuando no cabe debajo.
  */
-function RowMenu({ user, onReset, onToggle }: { user: OrgUser; onReset: () => void; onToggle: () => void }) {
+function RowMenu({ user, onReset, onToggle, onDisableMfa }: { user: OrgUser; onReset: () => void; onToggle: () => void; onDisableMfa: () => void }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -217,6 +256,11 @@ function RowMenu({ user, onReset, onToggle }: { user: OrgUser; onReset: () => vo
           <button type="button" role="menuitem" onClick={() => { setPos(null); onReset(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-surface-2">
             <KeyRound className="size-4 text-muted" aria-hidden /> Restablecer contraseña
           </button>
+          {user.mfaEnabled ? (
+            <button type="button" role="menuitem" onClick={() => { setPos(null); onDisableMfa(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-surface-2">
+              <ShieldOff className="size-4 text-muted" aria-hidden /> Desactivar dos pasos
+            </button>
+          ) : null}
           <button type="button" role="menuitem" onClick={() => { setPos(null); onToggle(); }} className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-2', user.isActive ? 'text-critical' : 'text-ink')}>
             {user.isActive ? <UserX className="size-4" aria-hidden /> : <UserCheck className="size-4 text-muted" aria-hidden />}
             {user.isActive ? 'Desactivar acceso' : 'Reactivar acceso'}
@@ -320,6 +364,134 @@ function ResetPasswordModal({ user, onClose, onDone }: { user: OrgUser; onClose:
         <PasswordField label="Nueva contraseña" value={password} onChange={setPassword} allowGenerate />
       </div>
       {error ? <Alert kind="error" className="mt-3">{error}</Alert> : null}
+    </Modal>
+  );
+}
+
+/** Invitaciones pendientes: reenviar con un enlace nuevo o cancelar. */
+function InvitationsCard({
+  invitations,
+  emailEnabled,
+  onNotice,
+}: {
+  invitations: Invitation[];
+  emailEnabled: boolean;
+  onNotice: (n: Notice) => void;
+}) {
+  const resend = useResendInvitation();
+  const cancel = useCancelInvitation();
+  if (invitations.length === 0) return null;
+
+  const act = async (label: string, fn: () => Promise<unknown>) => {
+    onNotice(null);
+    try {
+      await fn();
+      onNotice({ kind: 'success', text: label });
+    } catch (err) {
+      onNotice({ kind: 'error', text: err instanceof ApiError ? err.message : 'No se pudo completar la acción.' });
+    }
+  };
+
+  return (
+    <Card className="mt-4">
+      <div className="px-5 pt-4 pb-2">
+        <h2 className="text-[15px] font-semibold text-ink">Invitaciones pendientes</h2>
+        {!emailEnabled ? (
+          <p className="mt-1 text-sm text-ink-2">Este servidor no tiene SMTP configurado: las invitaciones no llegan por correo.</p>
+        ) : null}
+      </div>
+      <ul className="divide-y divide-line">
+        {invitations.map((inv) => (
+          <li key={inv.id} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-ink">{inv.email}</p>
+              <p className="text-xs text-muted">
+                {ROLE_LABEL[inv.role]}
+                {inv.createdBy ? ` · invitó ${inv.createdBy.fullName}` : ''}
+                {inv.expired ? ' · caducada' : ` · caduca ${timeAgo(inv.expiresAt)}`}
+                {inv.deliveryStatus && inv.deliveryStatus !== 'SENT' ? ' · el correo no se envió' : ''}
+              </p>
+            </div>
+            {inv.expired || (inv.deliveryStatus && inv.deliveryStatus !== 'SENT') ? (
+              <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[11px] font-semibold text-[#8a5b00] dark:text-warning">
+                {inv.expired ? 'Caducada' : 'Correo fallido'}
+              </span>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<RefreshCw className="size-4" />}
+              disabled={resend.isPending}
+              onClick={() => act(`Invitación a ${inv.email} reenviada con un enlace nuevo.`, () => resend.mutateAsync(inv.id))}
+            >
+              Reenviar
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Trash2 className="size-4" />}
+              disabled={cancel.isPending}
+              onClick={() => act(`Invitación a ${inv.email} cancelada.`, () => cancel.mutateAsync(inv.id))}
+            >
+              Cancelar
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function InviteModal({ emailEnabled, onClose, onInvited }: { emailEnabled: boolean; onClose: () => void; onInvited: (inv: Invitation) => void }) {
+  const invite = useInviteUser();
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<UserRole>('ANALYST');
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const inv = await invite.mutateAsync({ email: email.trim(), role });
+      onInvited(inv);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo enviar la invitación.');
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Invitar por correo"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" form="invite-user" loading={invite.isPending} disabled={!email.includes('@')}>Enviar invitación</Button>
+        </>
+      }
+    >
+      <form id="invite-user" onSubmit={submit} className="space-y-4">
+        <p className="text-sm text-ink-2">
+          Recibirá un enlace para crear su cuenta con su propia contraseña. La invitación caduca a los 3 días.
+        </p>
+        {!emailEnabled ? (
+          <Alert kind="info">Este servidor no tiene SMTP configurado: la invitación quedará registrada pero el correo no llegará. Usa "Nuevo usuario" para crear la cuenta con contraseña.</Alert>
+        ) : null}
+        <div>
+          <Label htmlFor="i-email">Correo electrónico</Label>
+          <Input id="i-email" type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="carlos@empresa.com" />
+        </div>
+        <div>
+          <Label htmlFor="i-role">Rol</Label>
+          <Select id="i-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+            {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          </Select>
+          <p className="mt-1 text-xs text-muted">{ROLE_DESCRIPTION[role]}</p>
+        </div>
+        {error ? <Alert kind="error">{error}</Alert> : null}
+      </form>
     </Modal>
   );
 }

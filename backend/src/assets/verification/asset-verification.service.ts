@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { AssetType, Prisma, VerificationMethod } from '@prisma/client';
 import { resolveTxt as dnsResolveTxt } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { AuditService } from '../../audit/audit.service';
+import { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { PrismaService } from '../../prisma/prisma.service';
 import { httpProbe } from '../../scans/web/http-client';
 import {
@@ -56,6 +58,7 @@ export class AssetVerificationService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(TXT_RESOLVER) private readonly resolveTxt: TxtResolver,
+    private readonly audit: AuditService,
   ) {}
 
   get required(): boolean {
@@ -208,7 +211,7 @@ export class AssetVerificationService {
    * archivo (las IP solo admiten archivo). Un fallo no retira una
    * verificación anterior: queda registrado para que el usuario lo vea.
    */
-  async verify(organizationId: string, assetId: string, method?: RequestedMethod) {
+  async verify(organizationId: string, assetId: string, method?: RequestedMethod, actor?: AuthUser) {
     const asset = await this.loadAsset(organizationId, assetId);
     if (asset.type === AssetType.IP && method === 'DNS_TXT') {
       throw new BadRequestException('Las direcciones IP solo pueden verificarse con el archivo HTTP');
@@ -241,6 +244,13 @@ export class AssetVerificationService {
         if (success.method === VerificationMethod.DNS_TXT) {
           await this.propagate(tx, organizationId, success.scope, now);
         }
+      });
+      this.audit.record({
+        organizationId,
+        action: 'asset.verified',
+        actor: actor ?? null,
+        target: { type: 'asset', id: asset.id, label: asset.value },
+        detail: { method: success.method, scope: success.scope },
       });
     } else {
       const summary = attempts

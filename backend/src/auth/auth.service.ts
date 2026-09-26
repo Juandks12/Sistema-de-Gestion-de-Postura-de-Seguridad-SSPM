@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User, UserRole } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { AuthUser, JwtPayload } from '../common/interfaces/auth-user.interface';
@@ -11,6 +12,13 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginProtectionService } from './login-protection.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+
+/** Respuesta del primer paso del login cuando la cuenta exige el segundo factor. */
+export interface MfaChallenge {
+  mfaRequired: true;
+  /** Token intermedio (5 minutos) que solo sirve para POST /auth/login/mfa. */
+  mfaToken: string;
+}
 
 export interface AuthResponse {
   accessToken: string;
@@ -27,6 +35,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly organizations: OrganizationsService,
     private readonly loginProtection: LoginProtectionService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -57,10 +66,21 @@ export class AuthService {
       });
     });
 
+    this.audit.record({
+      organizationId: user.organizationId,
+      action: 'auth.register',
+      actor: { id: user.id, email: user.email, fullName: user.fullName },
+      target: { type: 'organization', id: user.organizationId, label: dto.organizationName },
+    });
     return this.buildAuthResponse(user);
   }
 
-  async login(dto: LoginDto): Promise<AuthResponse> {
+  /**
+   * Primer paso del login. Con la verificación en dos pasos activada no
+   * devuelve el token de acceso: devuelve `mfaRequired` y un token intermedio
+   * que el segundo paso (`POST /auth/login/mfa`) canjea junto con el código.
+   */
+  async login(dto: LoginDto): Promise<AuthResponse | MfaChallenge> {
     // Cuenta bloqueada por intentos fallidos: se responde antes de comprobar la contraseña.
     await this.loginProtection.assertNotLocked(dto.email);
 
@@ -81,13 +101,29 @@ export class AuthService {
       throw new UnauthorizedException('Usuario u organización inactivos');
     }
 
+    if (user.mfaEnabled) {
+      // El contador de fallos no se reinicia hasta completar el segundo paso.
+      return { mfaRequired: true, mfaToken: this.issueMfaToken(user) };
+    }
+
     await this.loginProtection.reset(dto.email);
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
+    this.audit.record({
+      organizationId: user.organizationId,
+      action: 'auth.login',
+      actor: { id: user.id, email: user.email, fullName: user.fullName },
+      detail: { mfa: false },
+    });
 
     return this.buildAuthResponse(user);
+  }
+
+  /** Token intermedio de 5 minutos que solo sirve para completar el segundo paso del login. */
+  issueMfaToken(user: User): string {
+    return this.jwt.sign({ sub: user.id, purpose: 'mfa', ver: user.tokenVersion }, { expiresIn: '5m' });
   }
 
   /**
@@ -117,6 +153,12 @@ export class AuthService {
         tokenVersion: { increment: 1 },
       },
     });
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'auth.password_change',
+      actor,
+      target: { type: 'user', id: actor.id, label: actor.email },
+    });
     return this.buildAuthResponse(updated);
   }
 
@@ -125,7 +167,7 @@ export class AuthService {
     return bcrypt.hash(plain, rounds);
   }
 
-  private buildAuthResponse(user: User): AuthResponse {
+  buildAuthResponse(user: User): AuthResponse {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,

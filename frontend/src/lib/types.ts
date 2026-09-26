@@ -248,6 +248,7 @@ export interface OrgUser {
   fullName: string;
   role: UserRole;
   isActive: boolean;
+  mfaEnabled: boolean;
   lastLoginAt: string | null;
   passwordChangedAt: string | null;
   organizationId: string;
@@ -416,4 +417,58 @@ export interface CveEvidence {
   kevDueDate: string | null;
   description: string;
   url: string;
+}
+
+/** Respuesta del primer paso del login cuando la cuenta exige el segundo factor. */
+export interface MfaChallenge {
+  mfaRequired: true;
+  mfaToken: string;
+}
+
+export interface MfaStatus {
+  enabled: boolean;
+  enabledAt: string | null;
+  recoveryCodesLeft: number;
+}
+
+export interface MfaSetup {
+  secret: string;
+  otpauthUrl: string;
+  digits: number;
+  periodSeconds: number;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: UserRole;
+  expiresAt: string;
+  usedAt: string | null;
+  deliveryStatus: 'SENT' | 'FAILED' | 'SKIPPED' | null;
+  deliveryError: string | null;
+  createdAt: string;
+  createdBy: { id: string; fullName: string } | null;
+  expired: boolean;
+}
+
+export interface InvitationInfo {
+  email: string;
+  role: UserRole;
+  organizationName: string;
+  expiresAt: string;
+}
+
+/** Fila del registro de auditoría (RNF-06). */
+export interface AuditEntry {
+  id: string;
+  action: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorName: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  targetLabel: string | null;
+  detail: Record<string, unknown> | null;
+  ip: string | null;
+  createdAt: string;
 }

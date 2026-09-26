@@ -23,7 +23,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
    * para que la desactivación de cuentas/organizaciones o cambios de rol
    * tengan efecto inmediato aunque el token siga vigente.
    */
-  async validate(payload: JwtPayload): Promise<AuthUser> {
+  async validate(payload: JwtPayload & { purpose?: string }): Promise<AuthUser> {
+    // El token intermedio del segundo paso del login nunca vale como token de acceso.
+    if (payload.purpose) {
+      throw new UnauthorizedException('Token no válido como sesión');
+    }
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: { organization: { select: { isActive: true } } },

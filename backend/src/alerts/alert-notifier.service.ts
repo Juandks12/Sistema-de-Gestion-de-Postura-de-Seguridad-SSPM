@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AlertChannelType } from '@prisma/client';
-import { createTransport, Transporter } from 'nodemailer';
+import { escapeHtml, MailerService } from '../common/mail/mailer.service';
 import { buildWebhookBody, NotificationMessage, postWebhook, severityTag, webhookFormat } from './webhook';
 
 export type DeliveryStatus = 'SENT' | 'FAILED' | 'SKIPPED';
@@ -23,15 +23,6 @@ export interface ChannelTarget {
   target: string;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 export function parseRecipients(target: string): string[] {
   return target
     .split(/[,;\s]+/)
@@ -43,9 +34,11 @@ export function parseRecipients(target: string): string[] {
 @Injectable()
 export class AlertNotifierService {
   private readonly logger = new Logger(AlertNotifierService.name);
-  private transporter?: Transporter;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly mailer: MailerService,
+  ) {}
 
   private get timeoutMs(): number {
     return this.config.get<number>('ALERT_DELIVERY_TIMEOUT_MS') ?? 10000;
@@ -56,26 +49,7 @@ export class AlertNotifierService {
   }
 
   get emailEnabled(): boolean {
-    return Boolean(this.config.get<string>('SMTP_HOST'));
-  }
-
-  private mailer(): Transporter {
-    if (!this.transporter) {
-      const user = this.config.get<string>('SMTP_USER');
-      this.transporter = createTransport({
-        host: this.config.get<string>('SMTP_HOST'),
-        port: this.config.get<number>('SMTP_PORT') ?? 587,
-        secure: this.config.get<boolean>('SMTP_SECURE') === true,
-        auth: user ? { user, pass: this.config.get<string>('SMTP_PASSWORD') } : undefined,
-        connectionTimeout: this.timeoutMs,
-        greetingTimeout: this.timeoutMs,
-        socketTimeout: this.timeoutMs,
-        // El contenido lo genera la plataforma: nunca se leen archivos ni URLs al construir el mensaje.
-        disableFileAccess: true,
-        disableUrlAccess: true,
-      });
-    }
-    return this.transporter;
+    return this.mailer.enabled;
   }
 
   async send(channel: ChannelTarget, msg: NotificationMessage): Promise<DeliveryResult> {
@@ -83,14 +57,10 @@ export class AlertNotifierService {
     const at = () => new Date().toISOString();
     try {
       if (channel.type === AlertChannelType.EMAIL) {
-        if (!this.emailEnabled) {
-          return { ...base, status: 'SKIPPED', error: 'El servidor de correo (SMTP) no está configurado', at: at() };
-        }
         const recipients = parseRecipients(channel.target);
-        const info = await this.mailer().sendMail({
-          from: this.config.get<string>('SMTP_FROM'),
+        const result = await this.mailer.send({
           to: recipients,
-          subject: `[SSPM][${severityTag(msg.severity)}] ${msg.title}`.replace(/[\r\n]+/g, ' ').slice(0, 250),
+          subject: `[SSPM][${severityTag(msg.severity)}] ${msg.title}`,
           text: `${msg.title}\n\n${msg.message}\n\nOrganización: ${msg.organizationName}\nVer en la plataforma: ${msg.url}\n`,
           html:
             `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937">` +
@@ -100,7 +70,9 @@ export class AlertNotifierService {
             `<p><a href="${escapeHtml(msg.url)}" style="color:#2563eb">Ver en la plataforma</a></p>` +
             `</div>`,
         });
-        return { ...base, status: 'SENT', detail: `Aceptado para ${recipients.length} destinatario(s) (${info.messageId ?? 'sin id'})`, at: at() };
+        return result.ok
+          ? { ...base, status: 'SENT', detail: result.detail, at: at() }
+          : { ...base, status: result.status, error: result.error, at: at() };
       }
 
       const result = await postWebhook(channel.target, buildWebhookBody(webhookFormat(new URL(channel.target)), msg), {

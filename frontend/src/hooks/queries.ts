@@ -5,12 +5,16 @@ import type {
   AlertChannelType,
   AlertItem,
   AlertsSummary,
+  AuditEntry,
   AlertType,
   Asset,
   AssetVerification,
   DeliveryResult,
   DiscoveredHosts,
   ImportDiscoveredResult,
+  Invitation,
+  MfaSetup,
+  MfaStatus,
   MonitoringFrequency,
   MonitoringStatus,
   ReportRecord,
@@ -43,6 +47,10 @@ export const keys = {
   findings: (f: FindingsFilter) => ['findings', f] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
   users: ['users'] as const,
+  invitations: ['users', 'invitations'] as const,
+  mfa: ['auth', 'mfa'] as const,
+  audit: (f: AuditFilter) => ['audit', f] as const,
+  auditActions: ['audit', 'actions'] as const,
   organization: ['organization'] as const,
   alerts: (f: AlertsFilter) => ['alerts', 'list', f] as const,
   alertsSummary: ['alerts', 'summary'] as const,
@@ -353,5 +361,93 @@ export function useImportDiscoveredHosts() {
     mutationFn: (ids: string[]) =>
       api<ImportDiscoveredResult>('/discovered-hosts/import', { method: 'POST', json: { ids, authorizationConfirmed: true } }),
     onSuccess: invalidate,
+  });
+}
+
+// ------------------------------------------------ cuentas: MFA, invitaciones y auditoría
+
+export function useMfaStatus() {
+  return useQuery({ queryKey: keys.mfa, queryFn: () => api<MfaStatus>('/auth/me/mfa') });
+}
+
+export function useMfaSetup() {
+  return useMutation({ mutationFn: () => api<MfaSetup>('/auth/me/mfa/setup', { method: 'POST' }) });
+}
+
+export function useMfaEnable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => api<{ enabled: true; recoveryCodes: string[] }>('/auth/me/mfa/enable', { method: 'POST', json: { code } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.mfa }),
+  });
+}
+
+export function useMfaDisable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { password: string; code: string }) => api<{ enabled: false }>('/auth/me/mfa', { method: 'DELETE', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.mfa }),
+  });
+}
+
+export function useInvitations(enabled = true) {
+  return useQuery({
+    queryKey: keys.invitations,
+    queryFn: () => api<{ items: Invitation[]; emailEnabled: boolean }>('/users/invitations'),
+    enabled,
+  });
+}
+
+export function useInviteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { email: string; role: UserRole }) => api<Invitation>('/users/invitations', { method: 'POST', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invitations }),
+  });
+}
+
+export function useResendInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<Invitation>(`/users/invitations/${id}/resend`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invitations }),
+  });
+}
+
+export function useCancelInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/users/invitations/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invitations }),
+  });
+}
+
+export function useDisableUserMfa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<OrgUser>(`/users/${id}/disable-mfa`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export interface AuditFilter {
+  action?: string;
+  actorId?: string;
+  page?: number;
+}
+
+export function useAuditLog(filter: AuditFilter) {
+  return useQuery({
+    queryKey: keys.audit(filter),
+    queryFn: () => api<Paginated<AuditEntry>>(`/audit-log${qs({ ...filter, pageSize: 25 })}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useAuditActions() {
+  return useQuery({
+    queryKey: keys.auditActions,
+    queryFn: () => api<{ actions: Record<string, string> }>('/audit-log/actions'),
+    staleTime: Infinity,
   });
 }

@@ -24,6 +24,7 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 | Sprint 4 | Reportes PDF (RF-09), alertas por correo y webhook (RF-10), monitoreo continuo programado (10.4) | ✅ Implementado |
 | Bloque 1 (SaaS) | Verificación de propiedad de activos, protección del inicio de sesión y del registro | ✅ Implementado |
 | Bloque 2 (SaaS) | CVE de las versiones detectadas (NVD + KEV), seguridad del correo (SPF/DMARC/DKIM), descubrimiento de subdominios (Certificate Transparency) | ✅ Implementado |
+| Bloque 3 (SaaS) | Registro de auditoría (RNF-06), recuperación de contraseña por correo, invitaciones de usuarios, verificación en dos pasos (TOTP) | ✅ Implementado |
 
 ## Stack tecnológico
 
@@ -218,7 +219,8 @@ edítalo. Las variables principales son:
 | `ASSET_VERIFICATION_REQUIRED` | `true` | Exigir la verificación de propiedad antes de escanear (no desactivable en producción) |
 | `TRUST_PROXY` | `1` en Compose | Saltos de proxy de confianza para conocer la IP real del cliente |
 | `AUTH_MAX_FAILED_LOGINS`, `AUTH_LOCKOUT_MINUTES` | `5`, `15` | Bloqueo temporal de una cuenta por intentos fallidos |
-| `AUTH_LOGIN_RATE_PER_MINUTE`, `AUTH_REGISTER_RATE_PER_HOUR` | `20`, `5` | Límites por IP en login y registro |
+| `AUTH_LOGIN_RATE_PER_MINUTE`, `AUTH_REGISTER_RATE_PER_HOUR`, `AUTH_FORGOT_RATE_PER_HOUR` | `20`, `5`, `10` | Límites por IP en login, registro y solicitudes de restablecimiento de contraseña |
+| `PASSWORD_RESET_TTL_MINUTES`, `INVITATION_TTL_HOURS` | `30`, `72` | Caducidad de los enlaces de restablecimiento de contraseña e invitación |
 | `CVE_LOOKUP_ENABLED`, `NVD_API_KEY`, `CVE_CACHE_HOURS` | `true`, vacío, `24` | Correlación de versiones con CVE de NVD; la clave gratuita de NVD sube el límite de peticiones |
 | `SUBDOMAIN_DISCOVERY_ENABLED`, `SUBDOMAIN_DISCOVERY_MAX_HOSTS` | `true`, `500` | Descubrimiento de subdominios en Certificate Transparency |
 | `APP_URL` | `http://localhost:8080` | URL de la web usada en los enlaces de las alertas |
@@ -364,12 +366,28 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | POST | `/api/v1/auth/login` | público | Devuelve un JWT |
 | GET | `/api/v1/auth/me` | todos | Usuario autenticado |
 | PATCH | `/api/v1/auth/me/password` | todos | Cambiar mi contraseña (exige la actual); cierra mis otras sesiones y devuelve un token nuevo |
+| POST | `/api/v1/auth/login/mfa` | público | Segundo paso del login: canjea el token intermedio con un código TOTP o de recuperación |
+| POST | `/api/v1/auth/forgot-password` | público | Solicitar el restablecimiento de la contraseña por correo (misma respuesta exista o no la cuenta) |
+| POST | `/api/v1/auth/reset-password` | público | Fijar una contraseña nueva con el token del correo |
+| GET | `/api/v1/auth/invitations/info` | público | Datos de una invitación vigente (`token`), para la pantalla de aceptación |
+| POST | `/api/v1/auth/invitations/accept` | público | Aceptar una invitación: crea la cuenta e inicia sesión |
+| GET | `/api/v1/auth/me/mfa` | todos | Estado de mi verificación en dos pasos |
+| POST | `/api/v1/auth/me/mfa/setup` | todos | Iniciar la activación: secreto y URL `otpauth://` para el código QR |
+| POST | `/api/v1/auth/me/mfa/enable` | todos | Confirmar el primer código; devuelve los códigos de recuperación una sola vez |
+| DELETE | `/api/v1/auth/me/mfa` | todos | Desactivar mi verificación en dos pasos (exige contraseña y un código vigente) |
 | GET | `/api/v1/organizations/me` | todos | Organización del usuario |
 | PATCH | `/api/v1/organizations/me` | ADMIN | Renombrar la organización |
 | GET | `/api/v1/users` | ADMIN | Usuarios de la organización |
 | POST | `/api/v1/users` | ADMIN | Crear usuario en la organización |
 | PATCH | `/api/v1/users/:id` | ADMIN | Cambiar rol / activar / desactivar |
 | POST | `/api/v1/users/:id/reset-password` | ADMIN | Asignar una contraseña nueva a otro usuario; cierra sus sesiones |
+| POST | `/api/v1/users/:id/disable-mfa` | ADMIN | Desactivar la verificación en dos pasos de otro usuario (dispositivo perdido) |
+| GET | `/api/v1/users/invitations` | ADMIN | Invitaciones pendientes de la organización |
+| POST | `/api/v1/users/invitations` | ADMIN | Invitar por correo con un rol (caduca a las 72 h) |
+| POST | `/api/v1/users/invitations/:id/resend` | ADMIN | Reenviar con un enlace nuevo (el anterior caduca) |
+| DELETE | `/api/v1/users/invitations/:id` | ADMIN | Cancelar una invitación pendiente |
+| GET | `/api/v1/audit-log` | ADMIN | RNF-06: registro de auditoría paginado (`action`, `actorId`, `from`, `to`) |
+| GET | `/api/v1/audit-log/actions` | ADMIN | Catálogo de acciones auditadas, con su etiqueta |
 | **POST** | **`/api/v1/assets`** | ADMIN, ANALYST | **RF-01: registrar un dominio o IP** |
 | GET | `/api/v1/assets` | todos | Listado paginado (`type`, `isActive`, `search`, `page`, `pageSize`) |
 | GET | `/api/v1/assets/:id` | todos | Detalle de un activo |
@@ -791,6 +809,9 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   `token_version` (revocación de sesiones) y `password_changed_at`.
 - **assets**: `type`, `value` (único por organización), `authorization_confirmed`,
   `created_by_id`, `last_scanned_at`.
+- **users**: además de lo anterior, `mfa_enabled`, `mfa_secret` (base32, solo servidor),
+  `mfa_pending_secret` (durante el alta), `mfa_enabled_at` y `mfa_recovery_codes`
+  (hashes sha256 de los códigos no usados).
 - **scans**: `asset_id`, `type` (`PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`,
   `SENSITIVE_PATHS`, `EMAIL_SECURITY`, `SUBDOMAIN_DISCOVERY`), `status` (`PENDING` → `RUNNING` → `COMPLETED`/`FAILED`/`CANCELLED`),
   `target_address` (IP escaneada), `parameters`, `raw_result` y `summary` en JSONB.
@@ -814,6 +835,12 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   `last_certificate_at`, `ignored_at`, `first_seen_at` y `last_seen_at`.
 - **cve_product_cache**: caché global de NVD por producto (`vendor:product`) con los CVE
   reducidos a id, CVSS, KEV, descripción y rangos de versiones afectadas.
+- **audit_log**: registro de auditoría (RNF-06): `action`, actor desnormalizado
+  (`actor_id`, `actor_email`, `actor_name`), objeto afectado (`target_type`,
+  `target_id`, `target_label`), `detail` (JSONB), `ip` y `created_at`.
+- **account_tokens**: tokens de un solo uso enviados por correo (`type`:
+  `PASSWORD_RESET` o `INVITATION`), con `token_hash` (sha256, nunca el valor en
+  claro), `expires_at`, `used_at` y el resultado del envío.
 - **login_attempts**: intentos fallidos de inicio de sesión por cuenta (clave sha256 del
   correo), con `failures` y `locked_until`.
 - **reports**: registro de reportes generados: `type`, `asset_id` (nulo = organización),
@@ -837,6 +864,43 @@ npx prisma studio     # explorador visual de la base de datos
 npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.prisma
 ```
 
+## Auditoría, recuperación de cuenta, invitaciones y verificación en dos pasos
+
+**Registro de auditoría (RNF-06).** Cada acción sensible (inicios de sesión, altas y
+cambios de usuarios, invitaciones, activos, verificación de propiedad, revisión de
+hallazgos, canales de alerta, monitoreo y datos de la organización) se guarda en
+`audit_log` con quién la hizo (nombre y correo, aunque el usuario se elimine después),
+qué objeto afectó, detalles legibles (nunca contraseñas ni secretos) y la IP del
+cliente. Solo el ADMIN puede consultarlo (`GET /audit-log`, filtrable por acción,
+usuario y fecha). El registro nunca bloquea ni retrasa la acción auditada: si falla,
+se registra en el log del servidor y la operación sigue su curso.
+
+**Recuperación de contraseña por correo.** `POST /auth/forgot-password` responde
+siempre el mismo mensaje exista o no la cuenta, para no revelar qué correos están
+registrados. Si existe, se envía un enlace de un solo uso (token de 32 bytes, se
+guarda solo su hash sha256) que caduca en `PASSWORD_RESET_TTL_MINUTES` (30 min);
+emitir uno nuevo caduca el anterior. Al canjearlo se cierran las demás sesiones y se
+desbloquea la cuenta si estaba bloqueada por intentos fallidos. Límite propio por IP
+(`AUTH_FORGOT_RATE_PER_HOUR`).
+
+**Invitaciones.** Un ADMIN invita por correo con un rol (`POST /users/invitations`);
+la persona recibe un enlace de un solo uso (caduca en `INVITATION_TTL_HOURS`, 72 h)
+para crear su cuenta con su propia contraseña, sin que nadie más la conozca. Se puede
+reenviar (el enlace anterior caduca) o cancelar mientras esté pendiente. Sin SMTP
+configurado la invitación queda registrada pero el correo no llega; queda visible en
+la interfaz para que el ADMIN cree el usuario por la vía manual.
+
+**Verificación en dos pasos (TOTP, RFC 6238).** Cada usuario puede activarla desde
+"Mi cuenta": genera un secreto, muestra un código QR (`otpauth://`) compatible con
+Google Authenticator, Microsoft Authenticator, 1Password, etc., y se confirma con el
+primer código antes de activarse. Entrega 10 códigos de recuperación de un solo uso
+(solo se muestran una vez; se guarda su hash). Con el MFA activo, `POST /auth/login`
+no devuelve el token de acceso: devuelve un token intermedio de 5 minutos que se
+canjea junto con el código en `POST /auth/login/mfa`. Los códigos incorrectos cuentan
+para el bloqueo de la cuenta, igual que una contraseña incorrecta. Si se pierde el
+dispositivo y se agotan los códigos de recuperación, un ADMIN puede desactivar el MFA
+de otro usuario (`POST /users/:id/disable-mfa`), acción que queda auditada.
+
 ## Seguridad del propio sistema
 
 - Contraseñas con bcrypt; login con comparación de tiempo constante.
@@ -846,10 +910,13 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   hash sha256 del correo como clave), sirve con varias instancias y se aplica también a correos
   que no existen, así que no revela qué cuentas hay. Restablecer la contraseña desde
   administración desbloquea la cuenta.
-- **Límites por IP:** `AUTH_LOGIN_RATE_PER_MINUTE` (20) intentos de login por minuto y
-  `AUTH_REGISTER_RATE_PER_HOUR` (5) registros de organización por hora. Detrás de un
-  proxy hay que definir `TRUST_PROXY` (en Docker Compose ya vale `1`, por el Nginx de la
-  web); si no, todos los clientes compartirían la IP del proxy.
+- **Límites por IP:** `AUTH_LOGIN_RATE_PER_MINUTE` (20) intentos de login por minuto,
+  `AUTH_REGISTER_RATE_PER_HOUR` (5) registros de organización por hora y
+  `AUTH_FORGOT_RATE_PER_HOUR` (10) solicitudes de restablecimiento de contraseña.
+  Detrás de un proxy hay que definir `TRUST_PROXY` (en Docker Compose ya vale `1`, por
+  el Nginx de la web); si no, todos los clientes compartirían la IP del proxy.
+- **Verificación en dos pasos (TOTP) opcional por usuario** y **registro de auditoría**
+  de las acciones sensibles (ver arriba).
 - **Solo se escanean activos verificados** (ver
   [Verificación de propiedad](#verificación-de-propiedad-de-activos)).
 - Política de contraseñas única para todos los formularios: 8 a 72 caracteres, con

@@ -27,7 +27,7 @@ equipo.
 | `CORS_ORIGINS` | Dominio(s) reales del frontend, nunca `*`. |
 | `SEED_DEMO_DATA=false` | No crear usuarios de demostración en producción. |
 | `APP_URL` | URL pública de la web: se usa en los enlaces de las alertas. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor de correo para las alertas (p. ej. Amazon SES, SendGrid o Postmark por SMTP). Sin `SMTP_HOST` los canales de correo se omiten. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor de correo para las alertas y para la recuperación de contraseña e invitaciones (p. ej. Amazon SES, SendGrid o Postmark por SMTP). Sin `SMTP_HOST` esos correos no se envían: la recuperación de contraseña queda sin vía y las invitaciones hay que crearlas a mano desde Usuarios. |
 | `TRUST_PROXY` | Número de proxies delante de la API (1 con el Nginx de la imagen web; 2 si además hay un balanceador). Sin él, los límites por IP del login tratarían a todos los clientes como uno solo. No lo pongas si la API está expuesta sin proxy: el cliente podría falsear su IP. |
 | `ASSET_VERIFICATION_REQUIRED` | Siempre `true` (la aplicación no arranca con `false` en producción). |
 | `NVD_API_KEY` | Recomendada: con varios clientes, el límite sin clave de NVD (5 peticiones cada 30 s) ralentiza los escaneos de puertos que consultan productos nuevos. Es gratuita. |

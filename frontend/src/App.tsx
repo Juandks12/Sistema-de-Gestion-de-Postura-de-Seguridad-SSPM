@@ -8,6 +8,10 @@ import { AssetsPage } from './pages/AssetsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { FindingsPage } from './pages/FindingsPage';
 import { LoginPage } from './pages/LoginPage';
+import { AuditPage } from './pages/AuditPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
+import { InvitationPage } from './pages/auth/InvitationPage';
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ScansPage } from './pages/ScansPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -17,6 +21,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/invitation" element={<InvitationPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route index element={<DashboardPage />} />
@@ -28,6 +35,7 @@ export function App() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="audit" element={<AuditPage />} />
           <Route path="account" element={<AccountPage />} />
         </Route>
       </Route>
