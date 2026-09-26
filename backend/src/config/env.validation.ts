@@ -274,6 +274,27 @@ class EnvironmentVariables {
   @IsOptional()
   AUTH_REGISTER_RATE_PER_HOUR: number = 5;
 
+  /** Solicitudes de restablecimiento de contraseña por hora desde una misma IP. */
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  @IsOptional()
+  AUTH_FORGOT_RATE_PER_HOUR: number = 10;
+
+  /** Minutos de validez del enlace para restablecer la contraseña. */
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  @IsOptional()
+  PASSWORD_RESET_TTL_MINUTES: number = 30;
+
+  /** Horas de validez de una invitación. */
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  @IsOptional()
+  INVITATION_TTL_HOURS: number = 72;
+
   /**
    * Proxies de confianza delante de la API (valor de `trust proxy` de Express):
    * vacío = ninguno; un número = saltos (1 con el Nginx de la imagen web);

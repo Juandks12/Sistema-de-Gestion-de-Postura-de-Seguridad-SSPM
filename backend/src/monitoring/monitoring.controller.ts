@@ -29,6 +29,6 @@ export class MonitoringController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Cambiar la frecuencia del monitoreo continuo (OFF, DAILY o WEEKLY)' })
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdateMonitoringDto) {
-    return this.monitoring.update(user.organizationId, dto.frequency);
+    return this.monitoring.update(user, dto.frequency);
   }
 }

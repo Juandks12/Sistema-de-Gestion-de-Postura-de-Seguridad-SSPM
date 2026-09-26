@@ -1,8 +1,11 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { hours, minutes, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { validateEnv } from './config/env.validation';
+import { AuditModule } from './audit/audit.module';
+import { RequestContextMiddleware } from './common/context/request-context';
+import { MailerModule } from './common/mail/mailer.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -30,10 +33,13 @@ import { ReportsModule } from './reports/reports.module';
         throttlers: [
           { name: 'login', ttl: minutes(1), limit: config.get<number>('AUTH_LOGIN_RATE_PER_MINUTE') ?? 20 },
           { name: 'register', ttl: hours(1), limit: config.get<number>('AUTH_REGISTER_RATE_PER_HOUR') ?? 5 },
+          { name: 'forgot', ttl: hours(1), limit: config.get<number>('AUTH_FORGOT_RATE_PER_HOUR') ?? 10 },
         ],
       }),
     }),
     PrismaModule,
+    MailerModule,
+    AuditModule,
     HealthModule,
     AuthModule,
     OrganizationsModule,
@@ -53,4 +59,9 @@ import { ReportsModule } from './reports/reports.module';
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // Contexto por petición (IP del cliente) para el registro de auditoría.
+    consumer.apply(RequestContextMiddleware).forRoutes('{*path}');
+  }
+}

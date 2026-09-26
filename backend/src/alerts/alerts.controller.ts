@@ -52,7 +52,7 @@ export class AlertsController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Editar nombre, destino, severidad mínima o estado de un canal' })
   updateChannel(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAlertChannelDto) {
-    return this.alerts.updateChannel(user.organizationId, id, dto);
+    return this.alerts.updateChannel(user, id, dto);
   }
 
   @Delete('channels/:id')
@@ -60,7 +60,7 @@ export class AlertsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Eliminar un canal de notificación' })
   deleteChannel(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.alerts.deleteChannel(user.organizationId, id);
+    return this.alerts.deleteChannel(user, id);
   }
 
   @Post('channels/:id/test')

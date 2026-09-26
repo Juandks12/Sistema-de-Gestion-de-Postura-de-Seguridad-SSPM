@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicati
 import { ConfigService } from '@nestjs/config';
 import { AlertChannelType, FindingSeverity, Prisma, ScanStatus, ScanType } from '@prisma/client';
 import { isEmail } from 'class-validator';
+import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import type { OpenedFinding } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,6 +70,7 @@ export class AlertsService implements OnApplicationShutdown {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly notifier: AlertNotifierService,
+    private readonly audit: AuditService,
   ) {}
 
   async onApplicationShutdown(): Promise<void> {
@@ -351,6 +353,13 @@ export class AlertsService implements OnApplicationShutdown {
       },
       select: channelSelect,
     });
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'alert_channel.create',
+      actor,
+      target: { type: 'alert_channel', id: channel.id, label: channel.name },
+      detail: { type: dto.type, minSeverity: channel.minSeverity },
+    });
     return this.present(channel);
   }
 
@@ -363,7 +372,8 @@ export class AlertsService implements OnApplicationShutdown {
     return channel;
   }
 
-  async updateChannel(organizationId: string, id: string, dto: UpdateAlertChannelDto) {
+  async updateChannel(actor: AuthUser, id: string, dto: UpdateAlertChannelDto) {
+    const organizationId = actor.organizationId;
     const existing = await this.findChannel(organizationId, id);
     const channel = await this.prisma.alertChannel.update({
       where: { id },
@@ -375,12 +385,30 @@ export class AlertsService implements OnApplicationShutdown {
       },
       select: channelSelect,
     });
+    this.audit.record({
+      organizationId,
+      action: 'alert_channel.update',
+      actor,
+      target: { type: 'alert_channel', id: channel.id, label: channel.name },
+      detail: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.target !== undefined ? { target: true } : {}),
+        ...(dto.minSeverity !== undefined ? { minSeverity: dto.minSeverity } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
     return this.present(channel);
   }
 
-  async deleteChannel(organizationId: string, id: string) {
-    await this.findChannel(organizationId, id);
+  async deleteChannel(actor: AuthUser, id: string) {
+    const existing = await this.findChannel(actor.organizationId, id);
     await this.prisma.alertChannel.delete({ where: { id } });
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'alert_channel.delete',
+      actor,
+      target: { type: 'alert_channel', id, label: existing.name },
+    });
   }
 
   /** Envía una notificación de prueba por el canal y devuelve el resultado. */

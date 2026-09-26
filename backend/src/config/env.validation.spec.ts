@@ -84,4 +84,14 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...base, NVD_API_URL: 'ftp://nvd' })).toThrow(/NVD_API_URL/);
     expect(() => validateEnv({ ...base, CVE_CACHE_HOURS: '0' })).toThrow();
   });
+
+  it('aplica los valores por defecto de recuperación e invitaciones', () => {
+    expect(validateEnv({ ...base })).toMatchObject({
+      AUTH_FORGOT_RATE_PER_HOUR: 10,
+      PASSWORD_RESET_TTL_MINUTES: 30,
+      INVITATION_TTL_HOURS: 72,
+    });
+    expect(() => validateEnv({ ...base, PASSWORD_RESET_TTL_MINUTES: '1' })).toThrow();
+    expect(() => validateEnv({ ...base, INVITATION_TTL_HOURS: '0' })).toThrow();
+  });
 });

@@ -75,7 +75,7 @@ export class AssetsController {
       'Sin `method` se intenta primero el registro DNS TXT y después el archivo HTTP. Devuelve el resultado de cada comprobación; un fallo no retira una verificación anterior.',
   })
   verify(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: VerifyAssetDto) {
-    return this.verification.verify(user.organizationId, id, dto.method);
+    return this.verification.verify(user.organizationId, id, dto.method, user);
   }
 
   @Patch(':id')
@@ -86,7 +86,7 @@ export class AssetsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAssetDto,
   ) {
-    return this.assets.update(user.organizationId, id, dto);
+    return this.assets.update(user, id, dto);
   }
 
   @Delete(':id')
@@ -94,6 +94,6 @@ export class AssetsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Eliminar un activo y sus escaneos (solo ADMIN)' })
   remove(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.assets.remove(user.organizationId, id);
+    return this.assets.remove(user, id);
   }
 }

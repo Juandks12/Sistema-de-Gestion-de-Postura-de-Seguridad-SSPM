@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { FindingCategory, FindingSeverity, FindingStatus, Prisma, RiskScoreTrigger, ScanType } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { FindingDraft } from '../scans/scanner.interface';
@@ -100,6 +101,7 @@ export class FindingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly riskScores: RiskScoresService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -223,7 +225,7 @@ export class FindingsService {
 
   async review(actor: AuthUser, id: string, dto: ReviewFindingDto) {
     const existing = await this.findOne(actor.organizationId, id);
-    return this.prisma.$transaction(async (tx) => {
+    const reviewed = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.finding.update({
         where: { id },
         data: { status: dto.status, reviewNote: dto.note ?? null, reviewedById: actor.id },
@@ -239,6 +241,14 @@ export class FindingsService {
       }
       return updated;
     });
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'finding.review',
+      actor,
+      target: { type: 'finding', id: reviewed.id, label: `${reviewed.ruleId} · ${reviewed.location}` },
+      detail: { status: dto.status, previousStatus: existing.status, ...(dto.note ? { note: dto.note } : {}) },
+    });
+    return reviewed;
   }
 
   /** Conteo de hallazgos abiertos por severidad y categoría (base del Security Score). */
