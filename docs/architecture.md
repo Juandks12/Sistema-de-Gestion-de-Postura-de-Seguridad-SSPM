@@ -18,20 +18,22 @@ sistema) con la vista de **por qué está construido así** y hacia dónde escal
                     └────────────┬────────────┘
                                  │ /api (proxy)
                                  ▼
-                    ┌─────────────────────────┐
-                    │   Backend (NestJS API)  │
-                    │  - Auth/RBAC (JWT)       │
-                    │  - Assets / Findings     │
-                    │  - Risk Engine           │
-                    │  - Scan Worker (cola)    │
-                    └───┬───────────────┬─────┘
-                        │               │
-             ┌──────────▼───┐   ┌───────▼────────────────┐
-             │ PostgreSQL    │   │ Herramientas externas   │
-             │ (Prisma)      │   │ - Nmap (child_process)  │
-             │ - multi-tenant│   │ - HTTP/TLS probes       │
-             └───────────────┘   │   (undici, node:tls)    │
-                                  └─────────────────────────┘
+                    ┌──────────────────────────┐
+                    │   Backend (NestJS API)   │
+                    │  - Auth/RBAC (JWT)        │
+                    │  - Assets / Findings      │
+                    │  - Risk Engine            │
+                    │  - Scan Worker (cola)     │
+                    │  - Scheduler (10.4)       │
+                    │  - Alerts + Reports (PDF) │
+                    └───┬────────────┬───────┬─┘
+                        │            │       │
+             ┌──────────▼───┐ ┌──────▼─────┐ ┌▼──────────────────────┐
+             │ PostgreSQL    │ │ Nmap y     │ │ Notificaciones         │
+             │ (Prisma)      │ │ sondas     │ │ - SMTP (correo)        │
+             │ - multi-tenant│ │ HTTP/TLS   │ │ - Webhooks (Slack,     │
+             │ - cola scans  │ │ (undici)   │ │   Discord, JSON)       │
+             └───────────────┘ └────────────┘ └────────────────────────┘
 ```
 
 Todo corre hoy como **dos servicios** (`api`, `web`) más `db`, orquestados con
@@ -70,7 +72,8 @@ puntos de escalado, en orden de necesidad real (no especulativa):
 | Cuello de botella | Cuándo aparece | Solución |
 |---|---|---|
 | Un solo worker de escaneos por instancia | Al superar decenas de organizaciones activas simultáneamente | Escalar instancias de `api` (la cola en Postgres ya soporta múltiples workers, ver `SCAN_WORKER_ENABLED`) |
-| Escaneos bajo demanda únicamente | Cuando se venda "monitoreo continuo" (RF real de SSPM) | Job programado (cron / GitHub Actions runner / worker dedicado) que encole auditorías periódicas por activo |
+| Planificador y worker en el mismo proceso que la API | Cuando los escaneos compitan en CPU con las peticiones HTTP | Ya soportado: una instancia con `SCAN_WORKER_ENABLED=true` y `SCHEDULER_ENABLED=true` como proceso dedicado, y las de API con ambos en `false` |
+| Notificaciones en proceso | Si el volumen de alertas o la latencia de proveedores externos crece | Mover la entrega a una cola (ver ADR-0004); el modelo `alerts.deliveries` no cambia |
 | Aislamiento lógico multi-tenant | Si un cliente enterprise exige aislamiento físico contractual | Esquema por tenant en Postgres, o base separada, sin cambiar el modelo de datos |
 | Sin observabilidad (logs planos) | Al operar para terceros, no solo para el equipo | OpenTelemetry + logs estructurados + dashboard de salud (ver roadmap DevOps) |
 

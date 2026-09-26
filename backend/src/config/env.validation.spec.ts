@@ -36,4 +36,18 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...base, SCAN_PORTS: '22;rm -rf' })).toThrow(/SCAN_PORTS/);
     expect(validateEnv({ ...base, SCAN_PORTS: '22,80,8000-8100' }).SCAN_PORTS).toBe('22,80,8000-8100');
   });
+
+  it('aplica los valores por defecto de monitoreo y alertas', () => {
+    const env = validateEnv({ ...base });
+    expect(env.SCHEDULER_ENABLED).toBe(true);
+    expect(env.SCHEDULER_INTERVAL_MS).toBe(60000);
+    expect(env.SMTP_HOST).toBe('');
+    expect(env.SMTP_PORT).toBe(587);
+    expect(env.SMTP_SECURE).toBe(false);
+    expect(validateEnv({ ...base, SCHEDULER_ENABLED: 'false', SMTP_SECURE: 'true' })).toMatchObject({
+      SCHEDULER_ENABLED: false,
+      SMTP_SECURE: true,
+    });
+    expect(() => validateEnv({ ...base, SCHEDULER_INTERVAL_MS: '10' })).toThrow();
+  });
 });

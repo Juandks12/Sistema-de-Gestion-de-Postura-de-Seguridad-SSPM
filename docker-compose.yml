@@ -62,6 +62,18 @@ services:
       SCAN_PORTS: ${SCAN_PORTS:-}
       WEB_HTTP_PORTS: ${WEB_HTTP_PORTS:-80}
       WEB_HTTPS_PORTS: ${WEB_HTTPS_PORTS:-443}
+      # Monitoreo continuo (sección 10.4)
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INTERVAL_MS: ${SCHEDULER_INTERVAL_MS:-60000}
+      # Alertas (RF-10): enlaces de las notificaciones y servidor de correo.
+      # Sin SMTP_HOST los canales de correo se omiten; los webhooks funcionan igual.
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-SSPM Alertas <alertas@sspm.local>}
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
     extra_hosts:

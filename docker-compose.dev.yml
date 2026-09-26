@@ -4,6 +4,7 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #   Aplicación web: http://localhost:5173
+#   Correos de alerta (Mailpit): http://localhost:8025
 #
 # Ejecutar comandos dentro del contenedor (con la API levantada):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm test
@@ -23,10 +24,25 @@ services:
       # los eventos del sistema de archivos no llegan al contenedor.
       TSC_WATCHFILE: DynamicPriorityPolling
       TSC_WATCHDIRECTORY: RecursiveDirectoryUsingDynamicPriorityPolling
+      # Los correos de alerta se capturan en Mailpit en lugar de enviarse.
+      APP_URL: http://localhost:${WEB_PORT:-5173}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_SECURE: "false"
+    depends_on:
+      mailpit:
+        condition: service_started
     volumes:
       - ./backend:/app
       # node_modules propio del contenedor (Linux), aislado del de tu equipo.
       - /app/node_modules
+
+  # Servidor SMTP de pruebas: recibe los correos de alerta y los muestra en una web.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    restart: "no"
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
 
   web:
     build:

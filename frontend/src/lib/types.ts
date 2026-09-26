@@ -8,6 +8,12 @@ export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
 export type FindingStatus = 'OPEN' | 'RESOLVED' | 'ACCEPTED' | 'FALSE_POSITIVE';
 export type FindingCategory = 'EXPOSED_SERVICE' | 'HTTP_HEADERS' | 'TLS_CERTIFICATE' | 'SENSITIVE_PATH';
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
+export type ScanSource = 'MANUAL' | 'SCHEDULED';
+export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING';
+export type AlertChannelType = 'EMAIL' | 'WEBHOOK';
+export type MonitoringFrequency = 'OFF' | 'DAILY' | 'WEEKLY';
+export type ReportType = 'EXECUTIVE' | 'TECHNICAL';
+export type DeliveryStatus = 'SENT' | 'FAILED' | 'SKIPPED';
 
 export type SeverityCounts = Record<Severity, number>;
 
@@ -58,6 +64,7 @@ export interface Scan {
   assetId: string;
   type: ScanType;
   status: ScanStatus;
+  source: ScanSource;
   targetAddress: string | null;
   summary: (Record<string, unknown> & { findings?: ScanSummaryFindings; openPortsCount?: number; findingsCount?: number }) | null;
   errorMessage: string | null;
@@ -235,4 +242,82 @@ export interface Organization {
   isActive: boolean;
   createdAt: string;
   _count: { users: number; assets: number; scans: number };
+}
+
+export interface DeliveryResult {
+  channelId: string;
+  channelType: AlertChannelType;
+  channelName: string;
+  status: DeliveryStatus;
+  detail?: string;
+  error?: string;
+  at: string;
+}
+
+export interface AlertItem {
+  id: string;
+  type: AlertType;
+  severity: Severity;
+  title: string;
+  message: string;
+  data: Record<string, unknown> | null;
+  deliveries: DeliveryResult[] | null;
+  acknowledgedAt: string | null;
+  createdAt: string;
+  scanId: string | null;
+  asset: { id: string; value: string; name: string | null; type: AssetType } | null;
+  acknowledgedBy: { id: string; fullName: string; email: string } | null;
+}
+
+export interface AlertsSummary {
+  unacknowledged: number;
+  bySeverity: SeverityCounts;
+  lastAlertAt: string | null;
+}
+
+export interface AlertChannel {
+  id: string;
+  type: AlertChannelType;
+  name: string;
+  /** Las URL de webhook llegan enmascaradas. */
+  target: string;
+  minSeverity: Severity;
+  isActive: boolean;
+  lastDeliveryAt: string | null;
+  lastDeliveryStatus: DeliveryStatus | null;
+  lastDeliveryError: string | null;
+  createdAt: string;
+  createdBy: { id: string; fullName: string } | null;
+}
+
+export interface MonitoringStatus {
+  frequency: MonitoringFrequency;
+  periodHours: number | null;
+  schedulerEnabled: boolean;
+  lastScheduledScanAt: string | null;
+  assets: Array<{
+    id: string;
+    value: string;
+    name: string | null;
+    isActive: boolean;
+    authorizationConfirmed: boolean;
+    lastScheduledScanAt: string | null;
+    lastScannedAt: string | null;
+    monitored: boolean;
+    nextRunAt: string | null;
+    due: boolean;
+  }>;
+}
+
+export interface ReportRecord {
+  id: string;
+  type: ReportType;
+  score: number | null;
+  grade: Grade | null;
+  openFindings: number;
+  pages: number;
+  sizeBytes: number;
+  createdAt: string;
+  asset: { id: string; value: string; name: string | null } | null;
+  generatedBy: { id: string; fullName: string } | null;
 }

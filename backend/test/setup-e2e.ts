@@ -6,3 +6,6 @@ process.env.SCAN_MAX_CONCURRENCY = '2';
 process.env.SCAN_MAX_CONCURRENCY_PER_ORG = '1';
 process.env.SCAN_MAX_PER_HOUR_PER_ORG = '100';
 process.env.ALLOW_PRIVATE_TARGETS = 'false';
+// El planificador se invoca explícitamente en las pruebas (MonitoringScheduler.runOnce).
+process.env.SCHEDULER_ENABLED = 'false';
+process.env.SMTP_HOST = '';
