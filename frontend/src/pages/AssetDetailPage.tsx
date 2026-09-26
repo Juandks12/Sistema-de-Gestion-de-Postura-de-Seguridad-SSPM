@@ -2,6 +2,7 @@ import { ArrowLeft, Radar, Server, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { Alert } from '@/components/ui/Alert';
 import { ScanStatusBadge, SeverityBadge } from '@/components/ui/Badge';
@@ -57,16 +58,19 @@ export function AssetDetailPage() {
           </>
         }
         actions={
-          canEdit ? (
-            <>
-              <Button variant="secondary" size="md" onClick={() => update.mutate({ id: asset.id, isActive: !asset.isActive })} loading={update.isPending}>
-                {asset.isActive ? 'Desactivar' : 'Activar'}
-              </Button>
-              <Button icon={<Radar className="size-4" />} onClick={() => run()} loading={requestScan.isPending} disabled={!asset.isActive}>
-                Auditoría completa
-              </Button>
-            </>
-          ) : null
+          <>
+            <ReportButtons assetId={asset.id} />
+            {canEdit ? (
+              <>
+                <Button variant="secondary" size="md" onClick={() => update.mutate({ id: asset.id, isActive: !asset.isActive })} loading={update.isPending}>
+                  {asset.isActive ? 'Desactivar' : 'Activar'}
+                </Button>
+                <Button icon={<Radar className="size-4" />} onClick={() => run()} loading={requestScan.isPending} disabled={!asset.isActive}>
+                  Auditoría completa
+                </Button>
+              </>
+            ) : null}
+          </>
         }
       />
       {notice ? <Alert kind={notice.kind} className="mb-4">{notice.text}</Alert> : null}

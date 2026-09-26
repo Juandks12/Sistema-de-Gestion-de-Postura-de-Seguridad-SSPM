@@ -38,10 +38,13 @@ export class MonitoringService {
       lastScheduledScanAt: lastScheduled?.createdAt ?? null,
       assets: assets.map((a) => {
         const monitored = frequency !== MonitoringFrequency.OFF && a.isActive && a.authorizationConfirmed;
+        const next = monitored ? nextRunAt(a.lastScheduledScanAt, frequency, now) : null;
         return {
           ...a,
           monitored,
-          nextRunAt: monitored ? nextRunAt(a.lastScheduledScanAt, frequency, now) : null,
+          nextRunAt: next,
+          /** Vencido: el planificador lo tomará en su próxima revisión. */
+          due: next !== null && next.getTime() <= now.getTime(),
         };
       }),
     };

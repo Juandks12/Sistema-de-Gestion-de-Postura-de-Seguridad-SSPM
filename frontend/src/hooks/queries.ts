@@ -1,7 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, qs } from '@/lib/api';
 import type {
+  AlertChannel,
+  AlertChannelType,
+  AlertItem,
+  AlertsSummary,
+  AlertType,
   Asset,
+  DeliveryResult,
+  MonitoringFrequency,
+  MonitoringStatus,
+  ReportRecord,
   AssetDashboard,
   DashboardAsset,
   AuthResponse,
@@ -30,6 +39,11 @@ export const keys = {
   scans: (f: ScansFilter) => ['scans', f] as const,
   users: ['users'] as const,
   organization: ['organization'] as const,
+  alerts: (f: AlertsFilter) => ['alerts', 'list', f] as const,
+  alertsSummary: ['alerts', 'summary'] as const,
+  alertChannels: ['alert-channels'] as const,
+  monitoring: ['monitoring'] as const,
+  reports: ['reports'] as const,
 };
 
 export function useOverview() {
@@ -85,6 +99,8 @@ function useInvalidateAll() {
     void qc.invalidateQueries({ queryKey: ['findings'] });
     void qc.invalidateQueries({ queryKey: ['scans'] });
     void qc.invalidateQueries({ queryKey: ['assets'] });
+    void qc.invalidateQueries({ queryKey: ['alerts'] });
+    void qc.invalidateQueries({ queryKey: keys.monitoring });
   };
 }
 
@@ -178,4 +194,110 @@ export function useChangeOwnPassword() {
   return useMutation({
     mutationFn: (input: { currentPassword: string; newPassword: string }) => api<AuthResponse>('/auth/me/password', { method: 'PATCH', json: input }),
   });
+}
+
+// ------------------------------------------------------------------ alertas
+
+export interface AlertsFilter {
+  acknowledged?: 'true' | 'false' | '';
+  severity?: Severity | '';
+  type?: AlertType | '';
+  page?: number;
+}
+
+export function useAlerts(filter: AlertsFilter) {
+  return useQuery({
+    queryKey: keys.alerts(filter),
+    queryFn: () => api<Paginated<AlertItem>>(`/alerts${qs({ ...filter, pageSize: 20 })}`),
+    placeholderData: (prev) => prev,
+    refetchInterval: 30000,
+  });
+}
+
+export function useAlertsSummary() {
+  return useQuery({ queryKey: keys.alertsSummary, queryFn: () => api<AlertsSummary>('/alerts/summary'), refetchInterval: 30000 });
+}
+
+export function useAcknowledgeAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<AlertItem>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+}
+
+export function useAcknowledgeAllAlerts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ acknowledged: number }>('/alerts/acknowledge-all', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+}
+
+export function useAlertChannels(enabled = true) {
+  return useQuery({
+    queryKey: keys.alertChannels,
+    queryFn: () => api<{ items: AlertChannel[]; emailEnabled: boolean }>('/alerts/channels'),
+    enabled,
+  });
+}
+
+export interface ChannelInput {
+  type: AlertChannelType;
+  name: string;
+  target: string;
+  minSeverity: Severity;
+}
+
+export function useCreateChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ChannelInput) => api<AlertChannel>('/alerts/channels', { method: 'POST', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+export function useUpdateChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; name?: string; target?: string; minSeverity?: Severity; isActive?: boolean }) =>
+      api<AlertChannel>(`/alerts/channels/${id}`, { method: 'PATCH', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+export function useDeleteChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/alerts/channels/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+export function useTestChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<DeliveryResult>(`/alerts/channels/${id}/test`, { method: 'POST' }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+// ------------------------------------------------------- monitoreo continuo
+
+export function useMonitoring() {
+  return useQuery({ queryKey: keys.monitoring, queryFn: () => api<MonitoringStatus>('/monitoring') });
+}
+
+export function useUpdateMonitoring() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (frequency: MonitoringFrequency) => api<MonitoringStatus>('/monitoring', { method: 'PATCH', json: { frequency } }),
+    onSuccess: (data) => qc.setQueryData(keys.monitoring, data),
+  });
+}
+
+// ----------------------------------------------------------------- reportes
+
+export function useReports() {
+  return useQuery({ queryKey: keys.reports, queryFn: () => api<{ items: ReportRecord[] }>('/reports') });
 }

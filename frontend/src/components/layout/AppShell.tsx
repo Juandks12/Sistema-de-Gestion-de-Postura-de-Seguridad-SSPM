@@ -1,7 +1,8 @@
-import { Activity, LayoutDashboard, LogOut, Menu, Radar, Server, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
+import { Activity, BellRing, FileText, LayoutDashboard, LogOut, Menu, Radar, Server, Settings, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { useAlertsSummary } from '@/hooks/queries';
 import { cn } from '@/lib/cn';
 
 const nav = [
@@ -9,7 +10,10 @@ const nav = [
   { to: '/assets', label: 'Activos', icon: Server, adminOnly: false },
   { to: '/findings', label: 'Hallazgos', icon: ShieldAlert, adminOnly: false },
   { to: '/scans', label: 'Escaneos', icon: Radar, adminOnly: false },
+  { to: '/alerts', label: 'Alertas', icon: BellRing, adminOnly: false, badge: 'alerts' as const },
+  { to: '/reports', label: 'Reportes', icon: FileText, adminOnly: false },
   { to: '/users', label: 'Usuarios', icon: Users, adminOnly: true },
+  { to: '/settings', label: 'Configuración', icon: Settings, adminOnly: true },
 ];
 
 const roleLabel = { ADMIN: 'Administrador', ANALYST: 'Analista', VIEWER: 'Gerencia' } as const;
@@ -17,6 +21,8 @@ const roleLabel = { ADMIN: 'Administrador', ANALYST: 'Analista', VIEWER: 'Gerenc
 export function AppShell() {
   const { user, logout, hasRole } = useAuth();
   const [open, setOpen] = useState(false);
+  const alerts = useAlertsSummary();
+  const pendingAlerts = alerts.data?.unacknowledged ?? 0;
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -30,7 +36,7 @@ export function AppShell() {
         </div>
       </div>
       <nav className="flex-1 space-y-1 px-3" aria-label="Principal">
-        {nav.filter((item) => !item.adminOnly || hasRole('ADMIN')).map(({ to, label, icon: Icon, end }) => (
+        {nav.filter((item) => !item.adminOnly || hasRole('ADMIN')).map(({ to, label, icon: Icon, end, badge }) => (
           <NavLink
             key={to}
             to={to}
@@ -45,6 +51,11 @@ export function AppShell() {
           >
             <Icon className="size-[18px]" aria-hidden />
             {label}
+            {badge === 'alerts' && pendingAlerts > 0 ? (
+              <span className="ml-auto rounded-full bg-critical px-1.5 py-0.5 text-[11px] leading-none font-semibold text-white" aria-label={`${pendingAlerts} alertas pendientes`}>
+                {pendingAlerts > 99 ? '99+' : pendingAlerts}
+              </span>
+            ) : null}
           </NavLink>
         ))}
       </nav>
@@ -93,7 +104,13 @@ export function AppShell() {
           <span className="flex items-center gap-2 font-semibold text-ink">
             <ShieldCheck className="size-5 text-accent" aria-hidden /> SSPM
           </span>
-          <Activity className="ml-auto size-4 text-muted" aria-hidden />
+          {pendingAlerts > 0 ? (
+            <Link to="/alerts" className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-critical hover:bg-surface-2" aria-label={`${pendingAlerts} alertas pendientes`}>
+              <BellRing className="size-4" aria-hidden /> {pendingAlerts}
+            </Link>
+          ) : (
+            <Activity className="ml-auto size-4 text-muted" aria-hidden />
+          )}
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <Outlet />

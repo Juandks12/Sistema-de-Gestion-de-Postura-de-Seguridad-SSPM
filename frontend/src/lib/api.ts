@@ -92,3 +92,40 @@ export function qs(params: Record<string, string | number | boolean | undefined 
   const s = search.toString();
   return s ? `?${s}` : '';
 }
+
+function filenameFrom(disposition: string | null, fallback: string): string {
+  const match = disposition?.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : fallback;
+}
+
+/** Descarga un archivo protegido (p. ej. un reporte PDF) con el token de la sesión. */
+export async function downloadFile(path: string, fallbackName: string): Promise<string> {
+  const headers = new Headers();
+  const token = tokenStore.get();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    if (res.status === 401 && token) {
+      tokenStore.clear();
+      unauthorizedListeners.forEach((fn) => fn());
+    }
+    throw new ApiError(res.status, extractMessage(body, `Error ${res.status}`), body);
+  }
+  const blob = await res.blob();
+  const name = filenameFrom(res.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return name;
+}

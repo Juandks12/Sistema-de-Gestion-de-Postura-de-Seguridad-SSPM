@@ -1,4 +1,4 @@
-import type { FindingCategory, FindingStatus, Grade, ScanStatus, ScanType, Severity, UserRole } from './types';
+import type { AlertType, FindingCategory, FindingStatus, Grade, MonitoringFrequency, ScanStatus, ScanType, Severity, UserRole } from './types';
 
 const dateTime = new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeStyle: 'short' });
 const dateOnly = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
@@ -106,3 +106,27 @@ export const ROLE_DESCRIPTION: Record<UserRole, string> = {
   ANALYST: 'Registra activos, lanza escaneos y revisa hallazgos.',
   VIEWER: 'Consulta el dashboard, los activos y los hallazgos sin modificar nada.',
 };
+
+export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
+  NEW_OPEN_PORT: 'Puerto nuevo',
+  CERT_EXPIRING: 'Certificado por vencer',
+  CRITICAL_FINDING: 'Hallazgo crítico',
+};
+
+export const FREQUENCY_LABEL: Record<MonitoringFrequency, string> = {
+  OFF: 'Desactivado',
+  DAILY: 'Diario',
+  WEEKLY: 'Semanal',
+};
+
+export const FREQUENCY_DESCRIPTION: Record<MonitoringFrequency, string> = {
+  OFF: 'Los activos solo se auditan cuando alguien lanza un escaneo.',
+  DAILY: 'Cada activo se reaudita por completo una vez al día. Recomendado para sitios con cambios frecuentes.',
+  WEEKLY: 'Cada activo se reaudita por completo una vez por semana.',
+};
+
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
