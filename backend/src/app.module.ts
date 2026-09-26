@@ -14,6 +14,9 @@ import { ScansModule } from './scans/scans.module';
 import { FindingsModule } from './findings/findings.module';
 import { RiskModule } from './risk/risk.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AlertsModule } from './alerts/alerts.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { DashboardModule } from './dashboard/dashboard.module';
     FindingsModule,
     RiskModule,
     DashboardModule,
+    AlertsModule,
+    MonitoringModule,
+    ReportsModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).

@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, RiskScoreTrigger, ScanStatus, ScanType } from '@prisma/client';
+import { AlertsService } from '../alerts/alerts.service';
 import { validateAssetValue } from '../common/utils/network.util';
-import { FindingsService } from '../findings/findings.service';
+import { FindingsService, OpenedFinding, SyncFindingsResult } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { NmapParseError } from './nmap/nmap-xml.parser';
@@ -43,6 +44,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     private readonly cancellation: ScanCancellationService,
     private readonly findings: FindingsService,
     private readonly riskScores: RiskScoresService,
+    private readonly alerts: AlertsService,
     @Inject(SCANNERS) scanners: Scanner[],
   ) {
     this.scanners = new Map(scanners.map((s) => [s.type, s]));
@@ -234,11 +236,22 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         return;
       }
 
-      const findings = await this.persistOutcome(scan, target.address, outcome, Date.now() - startedAt);
+      const persisted = await this.persistOutcome(scan, target.address, outcome, Date.now() - startedAt);
+      if (!persisted) return;
+      const { result: findings, opened } = persisted;
       this.logger.log(
         `Escaneo ${scanId} (${scan.type}): completado en ${((Date.now() - startedAt) / 1000).toFixed(1)} s, ` +
           `${outcome.findings.length} hallazgo(s) (${findings.created} nuevos, ${findings.resolved} resueltos)`,
       );
+
+      // RF-10: alertas tempranas. Fuera de la transacción y sin propagar errores.
+      await this.alerts.handleScanCompleted({
+        organizationId: scan.organizationId,
+        assetId: scan.assetId,
+        scanId,
+        scanType: scan.type,
+        opened,
+      });
     } catch (err) {
       if (abortReason(signal)) {
         await this.handleInterrupted(scanId, signal);
@@ -296,7 +309,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     targetAddress: string,
     outcome: ScanOutcome,
     durationMs: number,
-  ) {
+  ): Promise<{ result: SyncFindingsResult; opened: OpenedFinding[] } | null> {
     const finishedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       // Si el usuario canceló mientras tanto, no se sobrescribe el estado.
@@ -305,7 +318,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         data: { status: ScanStatus.COMPLETED, finishedAt, parameters: outcome.parameters as Prisma.InputJsonValue },
       });
       if (updated.count === 0) {
-        return { created: 0, updated: 0, reopened: 0, resolved: 0, bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 } };
+        return null;
       }
 
       if (outcome.ports && outcome.ports.length > 0) {
@@ -330,7 +343,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         });
       }
 
-      const findings = await this.findings.syncForScan(tx, {
+      const { result: findings, opened } = await this.findings.syncForScan(tx, {
         organizationId: scan.organizationId,
         assetId: scan.assetId,
         scanId: scan.id,
@@ -363,7 +376,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         trigger: RiskScoreTrigger.SCAN_COMPLETED,
         scanId: scan.id,
       });
-      return findings;
+      return { result: findings, opened };
     });
   }
 }

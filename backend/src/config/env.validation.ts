@@ -159,6 +159,75 @@ class EnvironmentVariables {
   @IsBoolean()
   @IsOptional()
   ALLOW_PRIVATE_TARGETS: boolean = false;
+
+  // ------------------------------------------------------------------
+  // Monitoreo continuo (sección 10.4)
+  // ------------------------------------------------------------------
+
+  /** Activa el planificador que encola auditorías periódicas en este proceso. */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  SCHEDULER_ENABLED: boolean = true;
+
+  /** Cada cuánto revisa el planificador qué activos toca reauditar. */
+  @IsInt()
+  @Min(1000)
+  @Max(3600000)
+  @IsOptional()
+  SCHEDULER_INTERVAL_MS: number = 60000;
+
+  /** Activos que se encolan como máximo en cada revisión del planificador. */
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  @IsOptional()
+  SCHEDULER_BATCH_SIZE: number = 20;
+
+  // ------------------------------------------------------------------
+  // Alertas (RF-10): correo y webhooks
+  // ------------------------------------------------------------------
+
+  /** URL pública de la aplicación web, usada en los enlaces de las notificaciones. */
+  @IsString()
+  @IsOptional()
+  APP_URL: string = 'http://localhost:8080';
+
+  /** Servidor SMTP. Vacío = los canales de correo se omiten (estado SKIPPED). */
+  @IsString()
+  @IsOptional()
+  SMTP_HOST: string = '';
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  @IsOptional()
+  SMTP_PORT: number = 587;
+
+  /** true = TLS implícito (puerto 465); false = STARTTLS si el servidor lo ofrece. */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  SMTP_SECURE: boolean = false;
+
+  @IsString()
+  @IsOptional()
+  SMTP_USER: string = '';
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASSWORD: string = '';
+
+  @IsString()
+  @IsOptional()
+  SMTP_FROM: string = 'SSPM Alertas <alertas@sspm.local>';
+
+  /** Tiempo máximo de una notificación por webhook o correo. */
+  @IsInt()
+  @Min(1000)
+  @Max(60000)
+  @IsOptional()
+  ALERT_DELIVERY_TIMEOUT_MS: number = 10000;
 }
 
 function toBoolean(value: unknown): unknown {

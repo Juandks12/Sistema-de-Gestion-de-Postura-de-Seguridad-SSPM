@@ -1,8 +1,7 @@
 // ---------------------------------------------------------------------------
-// SSPM - SaaS Lite | Modelo de datos (Sprint 1)
-// Tablas de la sección 6.2 del documento: users, organizations, assets, scans.
-// Las tablas findings, risk_scores, reports y alerts se añadirán en sprints
-// posteriores (Sprint 2 en adelante).
+// SSPM - SaaS Lite | Modelo de datos
+// Tablas de la sección 6.2 del documento: users, organizations, assets, scans,
+// findings, risk_scores, reports y alerts (más scan_ports y alert_channels).
 // ---------------------------------------------------------------------------
 
 generator client {
@@ -82,6 +81,38 @@ enum RiskScoreTrigger {
   MANUAL
 }
 
+/// Origen de un escaneo: solicitado por un usuario o por el monitoreo continuo.
+enum ScanSource {
+  MANUAL
+  SCHEDULED
+}
+
+/// Frecuencia del monitoreo continuo de una organización (sección 10.4).
+enum MonitoringFrequency {
+  OFF
+  DAILY
+  WEEKLY
+}
+
+/// Evento que genera una alerta temprana (RF-10, sección 10.1).
+enum AlertType {
+  NEW_OPEN_PORT
+  CERT_EXPIRING
+  CRITICAL_FINDING
+}
+
+/// Canal por el que se notifica una alerta (secciones 10.2 y 10.3).
+enum AlertChannelType {
+  EMAIL
+  WEBHOOK
+}
+
+/// Tipo de reporte PDF (RF-09, sección 9).
+enum ReportType {
+  EXECUTIVE
+  TECHNICAL
+}
+
 /// Ciclo de vida de un escaneo asíncrono.
 enum ScanStatus {
   PENDING
@@ -94,43 +125,51 @@ enum ScanStatus {
 /// Organización (tenant). Toda entidad de negocio cuelga de una organización
 /// y cualquier consulta debe filtrarse por `organization_id`.
 model Organization {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(150)
-  slug      String   @unique @db.VarChar(80)
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String              @id @default(uuid()) @db.Uuid
+  name                String              @db.VarChar(150)
+  slug                String              @unique @db.VarChar(80)
+  isActive            Boolean             @default(true) @map("is_active")
+  /// Frecuencia con la que se reaudita cada activo de forma automática.
+  monitoringFrequency MonitoringFrequency @default(OFF) @map("monitoring_frequency")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users     User[]
-  assets    Asset[]
-  scans     Scan[]
-  scanPorts  ScanPort[]
-  findings   Finding[]
-  riskScores RiskScore[]
+  users         User[]
+  assets        Asset[]
+  scans         Scan[]
+  scanPorts     ScanPort[]
+  findings      Finding[]
+  riskScores    RiskScore[]
+  alerts        Alert[]
+  alertChannels AlertChannel[]
+  reports       Report[]
 
   @@map("organizations")
 }
 
 /// Usuario de la plataforma. Pertenece a exactamente una organización.
 model User {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  email          String    @unique @db.VarChar(254)
-  passwordHash   String    @map("password_hash") @db.VarChar(255)
-  fullName       String    @map("full_name") @db.VarChar(150)
-  role           UserRole  @default(VIEWER)
-  isActive       Boolean   @default(true) @map("is_active")
-  lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  email             String    @unique @db.VarChar(254)
+  passwordHash      String    @map("password_hash") @db.VarChar(255)
+  fullName          String    @map("full_name") @db.VarChar(150)
+  role              UserRole  @default(VIEWER)
+  isActive          Boolean   @default(true) @map("is_active")
+  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(6)
   /// Se incrementa al cambiar o restablecer la contraseña; invalida los JWT emitidos antes.
   tokenVersion      Int       @default(0) @map("token_version")
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdAssets   Asset[]      @relation("AssetCreatedBy")
-  requestedScans  Scan[]       @relation("ScanRequestedBy")
-  reviewedFindings Finding[]   @relation("FindingReviewedBy")
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAssets      Asset[]        @relation("AssetCreatedBy")
+  requestedScans     Scan[]         @relation("ScanRequestedBy")
+  reviewedFindings   Finding[]      @relation("FindingReviewedBy")
+  acknowledgedAlerts Alert[]        @relation("AlertAcknowledgedBy")
+  createdChannels    AlertChannel[] @relation("AlertChannelCreatedBy")
+  generatedReports   Report[]       @relation("ReportGeneratedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -151,6 +190,8 @@ model Asset {
   authorizedAt           DateTime? @map("authorized_at") @db.Timestamptz(6)
   createdById            String?   @map("created_by_id") @db.Uuid
   lastScannedAt          DateTime? @map("last_scanned_at") @db.Timestamptz(6)
+  /// Última auditoría completa encolada por el monitoreo continuo.
+  lastScheduledScanAt    DateTime? @map("last_scheduled_scan_at") @db.Timestamptz(6)
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -160,6 +201,8 @@ model Asset {
   scanPorts    ScanPort[]
   findings     Finding[]
   riskScores   RiskScore[]
+  alerts       Alert[]
+  reports      Report[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -173,6 +216,7 @@ model Scan {
   assetId        String     @map("asset_id") @db.Uuid
   type           ScanType   @default(PORT_SCAN)
   status         ScanStatus @default(PENDING)
+  source         ScanSource @default(MANUAL)
   requestedById  String?    @map("requested_by_id") @db.Uuid
   /// Dirección IP efectivamente escaneada (el dominio se resuelve y valida antes de lanzar Nmap).
   targetAddress  String?    @map("target_address") @db.VarChar(45)
@@ -194,6 +238,7 @@ model Scan {
   ports        ScanPort[]
   /// Hallazgos detectados por última vez en este escaneo.
   findings     Finding[]
+  alerts       Alert[]
 
   @@index([organizationId, assetId])
   @@index([status, createdAt])
@@ -312,4 +357,85 @@ model RiskScore {
   @@index([organizationId, scope, computedAt])
   @@index([assetId, computedAt])
   @@map("risk_scores")
+}
+
+/// Alerta temprana (RF-10): evento relevante detectado al completar un escaneo.
+/// Se muestra en la plataforma y se notifica por los canales activos de la
+/// organización. `deliveries` guarda el resultado de cada envío.
+model Alert {
+  id               String          @id @default(uuid()) @db.Uuid
+  organizationId   String          @map("organization_id") @db.Uuid
+  assetId          String?         @map("asset_id") @db.Uuid
+  scanId           String?         @map("scan_id") @db.Uuid
+  type             AlertType
+  severity         FindingSeverity
+  title            String          @db.VarChar(200)
+  message          String
+  /// Detalle estructurado: puertos nuevos, hallazgos, fechas de caducidad...
+  data             Json?
+  /// [{ channelId, channelType, channelName, status: SENT|FAILED|SKIPPED, error?, at }]
+  deliveries       Json?
+  acknowledgedAt   DateTime?       @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedById String?         @map("acknowledged_by_id") @db.Uuid
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset          Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  scan           Scan?        @relation(fields: [scanId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?        @relation("AlertAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, acknowledgedAt])
+  @@map("alerts")
+}
+
+/// Canal de notificación de alertas de una organización: correo o webhook
+/// (Slack, Discord o JSON genérico). Solo lo gestionan los ADMIN.
+model AlertChannel {
+  id                 String           @id @default(uuid()) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  type               AlertChannelType
+  name               String           @db.VarChar(100)
+  /// EMAIL: destinatarios separados por coma. WEBHOOK: URL https.
+  target             String           @db.VarChar(1000)
+  /// Severidad mínima de las alertas que se envían por este canal.
+  minSeverity        FindingSeverity  @default(HIGH) @map("min_severity")
+  isActive           Boolean          @default(true) @map("is_active")
+  createdById        String?          @map("created_by_id") @db.Uuid
+  lastDeliveryAt     DateTime?        @map("last_delivery_at") @db.Timestamptz(6)
+  lastDeliveryStatus String?          @map("last_delivery_status") @db.VarChar(10)
+  lastDeliveryError  String?          @map("last_delivery_error") @db.VarChar(500)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AlertChannelCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("alert_channels")
+}
+
+/// Registro de los reportes PDF generados (RF-09). El PDF se genera bajo
+/// demanda y no se almacena: la fila deja constancia de quién lo generó,
+/// cuándo y con qué postura.
+model Report {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  /// Nulo si el reporte cubre toda la organización.
+  assetId        String?    @map("asset_id") @db.Uuid
+  type           ReportType
+  generatedById  String?    @map("generated_by_id") @db.Uuid
+  score          Int?
+  grade          String?    @db.VarChar(1)
+  openFindings   Int        @default(0) @map("open_findings")
+  pages          Int        @default(0)
+  sizeBytes      Int        @default(0) @map("size_bytes")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  generatedBy  User?        @relation("ReportGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("reports")
 }

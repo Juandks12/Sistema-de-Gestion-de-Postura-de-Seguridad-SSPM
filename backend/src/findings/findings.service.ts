@@ -33,6 +33,18 @@ export interface SyncFindingsResult {
   bySeverity: Record<FindingSeverity, number>;
 }
 
+/** Hallazgo que pasó a OPEN en este escaneo (nuevo o reabierto). Alimenta las alertas. */
+export interface OpenedFinding {
+  id: string;
+  ruleId: string;
+  category: FindingCategory;
+  severity: FindingSeverity;
+  title: string;
+  location: string;
+  evidence: Record<string, unknown>;
+  reopened: boolean;
+}
+
 const findingSelect = {
   id: true,
   organizationId: true,
@@ -92,9 +104,13 @@ export class FindingsService {
    * - marca RESOLVED los OPEN de la misma categoría que ya no se detectan.
    * Los hallazgos ACCEPTED o FALSE_POSITIVE conservan su estado.
    */
-  async syncForScan(tx: Prisma.TransactionClient, input: SyncFindingsInput): Promise<SyncFindingsResult> {
+  async syncForScan(
+    tx: Prisma.TransactionClient,
+    input: SyncFindingsInput,
+  ): Promise<{ result: SyncFindingsResult; opened: OpenedFinding[] }> {
     const now = new Date();
     const result: SyncFindingsResult = { created: 0, updated: 0, reopened: 0, resolved: 0, bySeverity: emptyCounts() };
+    const opened: OpenedFinding[] = [];
     const seen = new Set<string>();
 
     for (const draft of input.drafts) {
@@ -123,17 +139,28 @@ export class FindingsService {
         select: { id: true, status: true },
       });
 
+      const openedInfo = {
+        ruleId: data.ruleId,
+        category: data.category,
+        severity,
+        title: data.title,
+        location: data.location,
+        evidence: draft.evidence ?? {},
+      };
       if (!existing) {
-        await tx.finding.create({
+        const created = await tx.finding.create({
           data: { ...data, organizationId: input.organizationId, assetId: input.assetId, fingerprint, firstSeenAt: now },
+          select: { id: true },
         });
         result.created += 1;
+        opened.push({ id: created.id, ...openedInfo, reopened: false });
       } else if (existing.status === FindingStatus.RESOLVED) {
         await tx.finding.update({
           where: { id: existing.id },
           data: { ...data, status: FindingStatus.OPEN, resolvedAt: null },
         });
         result.reopened += 1;
+        opened.push({ id: existing.id, ...openedInfo, reopened: true });
       } else {
         await tx.finding.update({ where: { id: existing.id }, data });
         result.updated += 1;
@@ -152,7 +179,7 @@ export class FindingsService {
       data: { status: FindingStatus.RESOLVED, resolvedAt: now },
     });
     result.resolved = resolved.count;
-    return result;
+    return { result, opened };
   }
 
   async findAll(organizationId: string, query: ListFindingsQuery) {

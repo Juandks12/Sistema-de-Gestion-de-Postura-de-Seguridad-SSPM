@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AlertsModule } from '../alerts/alerts.module';
 import { FindingsModule } from '../findings/findings.module';
 import { RiskModule } from '../risk/risk.module';
 import { NmapRunner } from './nmap/nmap.runner';
@@ -13,7 +14,7 @@ import { ScansController } from './scans.controller';
 import { ScansService } from './scans.service';
 
 @Module({
-  imports: [FindingsModule, RiskModule],
+  imports: [FindingsModule, RiskModule, AlertsModule],
   controllers: [ScansController],
   providers: [
     ScansService,
