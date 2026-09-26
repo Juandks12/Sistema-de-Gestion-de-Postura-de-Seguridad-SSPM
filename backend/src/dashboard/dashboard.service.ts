@@ -251,7 +251,7 @@ export class DashboardService {
         where: { assetId, organizationId },
         orderBy: { createdAt: 'desc' },
         distinct: ['type'],
-        select: { id: true, type: true, status: true, createdAt: true, finishedAt: true, errorMessage: true },
+        select: { id: true, type: true, status: true, createdAt: true, finishedAt: true, errorMessage: true, summary: true },
       }),
     ]);
 

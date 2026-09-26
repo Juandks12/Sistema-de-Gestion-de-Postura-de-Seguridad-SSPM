@@ -1,15 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ScanType } from '@prisma/client';
+import { FindingCategory, ScanType } from '@prisma/client';
+import { CveLookupService } from '../../vulnerabilities/cve-lookup.service';
 import { analyzePorts } from '../analyzers/ports.analyzer';
 import { buildNmapArgs } from '../nmap/nmap-args';
 import { parseNmapXml } from '../nmap/nmap-xml.parser';
 import { NmapRunner } from '../nmap/nmap.runner';
 import { NmapProfile } from '../nmap/nmap.types';
 import { ScanExecutionError } from '../scan.errors';
-import { abortReason, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
+import { abortReason, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
 
-/** RF-02 / RF-03: puertos abiertos y versiones de servicios con Nmap. */
+/**
+ * RF-02 / RF-03: puertos abiertos y versiones de servicios con Nmap, y los CVE
+ * conocidos de esas versiones (NVD).
+ */
 @Injectable()
 export class PortScanScanner implements Scanner {
   readonly type = ScanType.PORT_SCAN;
@@ -17,6 +21,7 @@ export class PortScanScanner implements Scanner {
   constructor(
     private readonly runner: NmapRunner,
     private readonly config: ConfigService,
+    private readonly cves: CveLookupService,
   ) {}
 
   private profile(timeoutMs: number): NmapProfile {
@@ -32,7 +37,7 @@ export class PortScanScanner implements Scanner {
 
   async run(ctx: ScanContext): Promise<ScanOutcome> {
     const profile = this.profile(ctx.timeoutMs);
-    const args = buildNmapArgs(ctx.target.address, profile);
+    const args = buildNmapArgs(requireTarget(ctx).address, profile);
     const output = await this.runner.run(args, { timeoutMs: ctx.timeoutMs, signal: ctx.signal });
 
     if (output.cancelled || abortReason(ctx.signal)) {
@@ -50,12 +55,14 @@ export class PortScanScanner implements Scanner {
     const host = result.hosts[0];
     const ports = host?.ports ?? [];
     const openPorts = ports.filter((p) => p.state === 'open');
+    const cve = await this.cves.analyze(openPorts, ctx.signal);
 
     return {
       parameters: { tool: 'nmap', args, profile: { ...profile } },
       rawResult: result,
       ports,
-      findings: analyzePorts(ports),
+      findings: [...analyzePorts(ports), ...cve.findings],
+      incompleteCategories: cve.complete ? [] : [FindingCategory.VULNERABLE_SOFTWARE],
       summary: {
         hostStatus: host?.status ?? 'unknown',
         openPortsCount: openPorts.length,
@@ -70,6 +77,7 @@ export class PortScanScanner implements Scanner {
         })),
         durationSeconds: Math.round(output.durationMs / 100) / 10,
         nmapVersion: result.version ?? null,
+        cve: cve.summary,
       },
     };
   }

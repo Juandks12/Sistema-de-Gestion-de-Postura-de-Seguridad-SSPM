@@ -12,7 +12,13 @@ import { SEVERITY_ORDER } from '../risk/scoring';
  *   (solo cuando el hallazgo aparece o se reabre, no en cada escaneo).
  * - CRITICAL_FINDING: hallazgos críticos nuevos o reabiertos que no estén ya
  *   cubiertos por las dos alertas anteriores.
+ * - NEW_SUBDOMAIN: subdominios que aparecen por primera vez en Certificate
+ *   Transparency y no están en el inventario. El primer descubrimiento es la
+ *   línea base y no alerta.
  */
+
+/** Subdominios que se enumeran en el texto de la alerta (el resto se resume). */
+const MAX_HOSTS_IN_MESSAGE = 10;
 
 export const CERT_EXPIRY_RULES = ['TLS-EXPIRED', 'TLS-EXPIRING-7D', 'TLS-EXPIRING-30D'] as const;
 
@@ -31,6 +37,8 @@ export interface AlertDetectionInput {
   opened: OpenedFinding[];
   /** Puertos abiertos nuevos frente al escaneo de puertos anterior; null si no hay anterior (línea base). */
   newOpenPorts: PortInfo[] | null;
+  /** Subdominios nuevos fuera del inventario; null o ausente si no aplica (o es la línea base). */
+  newHosts?: string[] | null;
 }
 
 export interface AlertDraft {
@@ -124,6 +132,26 @@ export function detectAlerts(input: AlertDetectionInput): AlertDraft[] {
         : `El certificado de ${f.location} caduca${when ? ` el ${when}` : ''}${days !== null ? ` (quedan ${days} día(s))` : ''}. ` +
           'Renuévelo antes de esa fecha para evitar una interrupción del servicio.',
       data: { findingId: f.id, ruleId: f.ruleId, location: f.location, validTo, daysUntilExpiry: days },
+    });
+  }
+
+  if (input.scan.type === ScanType.SUBDOMAIN_DISCOVERY && input.newHosts && input.newHosts.length > 0) {
+    const hosts = input.newHosts;
+    const shown = hosts.slice(0, MAX_HOSTS_IN_MESSAGE).join(', ');
+    const rest = hosts.length > MAX_HOSTS_IN_MESSAGE ? ` y ${hosts.length - MAX_HOSTS_IN_MESSAGE} más` : '';
+    alerts.push({
+      type: AlertType.NEW_SUBDOMAIN,
+      severity: FindingSeverity.MEDIUM,
+      title:
+        hosts.length === 1
+          ? `Nuevo subdominio de ${input.asset.value}: ${hosts[0]}`
+          : `${hosts.length} subdominios nuevos de ${input.asset.value}`,
+      message:
+        `Se emitieron certificados TLS para ${hosts.length === 1 ? 'un subdominio' : 'subdominios'} de ${label} ` +
+        `que no están en el inventario: ${shown}${rest}. ` +
+        'Confirme que son de su organización y regístrelos como activos para auditarlos; si no los reconoce, ' +
+        'revise quién los está publicando (puede ser shadow IT o una emisión no autorizada).',
+      data: { hosts },
     });
   }
 

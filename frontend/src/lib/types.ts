@@ -2,14 +2,20 @@
 
 export type UserRole = 'ADMIN' | 'ANALYST' | 'VIEWER';
 export type AssetType = 'DOMAIN' | 'IP';
-export type ScanType = 'PORT_SCAN' | 'WEB_HEADERS' | 'SSL_CERT' | 'SENSITIVE_PATHS';
+export type ScanType = 'PORT_SCAN' | 'WEB_HEADERS' | 'SSL_CERT' | 'SENSITIVE_PATHS' | 'EMAIL_SECURITY' | 'SUBDOMAIN_DISCOVERY';
 export type ScanStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
 export type FindingStatus = 'OPEN' | 'RESOLVED' | 'ACCEPTED' | 'FALSE_POSITIVE';
-export type FindingCategory = 'EXPOSED_SERVICE' | 'HTTP_HEADERS' | 'TLS_CERTIFICATE' | 'SENSITIVE_PATH';
+export type FindingCategory =
+  | 'EXPOSED_SERVICE'
+  | 'VULNERABLE_SOFTWARE'
+  | 'HTTP_HEADERS'
+  | 'TLS_CERTIFICATE'
+  | 'SENSITIVE_PATH'
+  | 'EMAIL_SECURITY';
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
 export type ScanSource = 'MANUAL' | 'SCHEDULED';
-export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING';
+export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING' | 'NEW_SUBDOMAIN';
 export type AlertChannelType = 'EMAIL' | 'WEBHOOK';
 export type MonitoringFrequency = 'OFF' | 'DAILY' | 'WEEKLY';
 export type ReportType = 'EXECUTIVE' | 'TECHNICAL';
@@ -220,7 +226,15 @@ export interface AssetDashboard {
   history: HistoryPoint[];
   findings: { open: number; byCategory: Partial<Record<FindingCategory, number>>; items: TopFinding[] };
   exposure: { scanId: string | null; scannedAt: string | null; targetAddress: string | null; openPorts: OpenPort[] };
-  latestScans: Array<{ id: string; type: ScanType; status: ScanStatus; createdAt: string; finishedAt: string | null; errorMessage: string | null }>;
+  latestScans: Array<{
+    id: string;
+    type: ScanType;
+    status: ScanStatus;
+    createdAt: string;
+    finishedAt: string | null;
+    errorMessage: string | null;
+    summary: Record<string, unknown> | null;
+  }>;
 }
 
 export interface OrgHistory {
@@ -353,4 +367,53 @@ export interface AssetVerification {
   /** Solo en la respuesta de POST /assets/:id/verify. */
   attempts?: VerificationAttempt[];
   success?: boolean;
+}
+
+/** Subdominio descubierto en Certificate Transparency. */
+export interface DiscoveredHost {
+  id: string;
+  hostname: string;
+  resolves: boolean;
+  addresses: string[];
+  /** Resuelve a una IP privada: el certificado revela infraestructura interna. */
+  internal: boolean;
+  wildcard: boolean;
+  lastCertificateAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  ignored: boolean;
+  inventoryAssetId: string | null;
+}
+
+export interface DiscoveredHosts {
+  asset: { id: string; type: AssetType; value: string };
+  lastDiscovery: { scanId: string; finishedAt: string | null; summary: { source?: string; truncated?: boolean } | null } | null;
+  summary: { total: number; resolving: number; pending: number; ignored: number; inInventory: number };
+  items: DiscoveredHost[];
+}
+
+export interface ImportDiscoveredResult {
+  created: Array<{ hostname: string; assetId: string; verified: boolean }>;
+  failed: Array<{ hostname: string; reason: string }>;
+}
+
+/** Resumen del escaneo EMAIL_SECURITY. */
+export interface EmailSecuritySummary {
+  receivesMail: boolean;
+  mx: string[];
+  spf: { record: string | null; records: number; lookups: number | null; all: string | null; errors: string[] };
+  dmarc: { status: 'missing' | 'invalid' | 'ok'; record: string | null; domain: string | null; inherited: boolean; policy: string | null };
+  dkim: { checked: boolean; selectors: Array<{ selector: string; keyType: string; bits: number | null }> };
+}
+
+/** Un CVE en la evidencia de un hallazgo VULN-KNOWN-CVE. */
+export interface CveEvidence {
+  id: string;
+  cvss: number | null;
+  severity: Severity;
+  published: string | null;
+  kev: boolean;
+  kevDueDate: string | null;
+  description: string;
+  url: string;
 }

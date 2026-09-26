@@ -62,9 +62,11 @@ export const STATUS_LABEL: Record<FindingStatus, string> = {
 
 export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   EXPOSED_SERVICE: 'Servicio expuesto',
+  VULNERABLE_SOFTWARE: 'Software vulnerable (CVE)',
   HTTP_HEADERS: 'Cabeceras HTTP',
   TLS_CERTIFICATE: 'Certificado TLS',
   SENSITIVE_PATH: 'Ruta sensible',
+  EMAIL_SECURITY: 'Seguridad del correo',
 };
 
 export const SCAN_TYPE_LABEL: Record<ScanType, string> = {
@@ -72,7 +74,22 @@ export const SCAN_TYPE_LABEL: Record<ScanType, string> = {
   WEB_HEADERS: 'Cabeceras HTTP',
   SSL_CERT: 'Certificado TLS',
   SENSITIVE_PATHS: 'Rutas sensibles',
+  EMAIL_SECURITY: 'Seguridad del correo',
+  SUBDOMAIN_DISCOVERY: 'Subdominios',
 };
+
+/** Qué revisa cada tipo de escaneo (ayuda en la ficha del activo). */
+export const SCAN_TYPE_HINT: Record<ScanType, string> = {
+  PORT_SCAN: 'Nmap y CVE de las versiones',
+  WEB_HEADERS: 'HSTS, CSP y otras cabeceras',
+  SSL_CERT: 'Certificado y protocolos',
+  SENSITIVE_PATHS: '.env, .git, paneles…',
+  EMAIL_SECURITY: 'SPF, DMARC y DKIM',
+  SUBDOMAIN_DISCOVERY: 'Certificate Transparency',
+};
+
+/** Escaneos que solo aplican a dominios. */
+export const DOMAIN_ONLY_SCANS: ScanType[] = ['EMAIL_SECURITY', 'SUBDOMAIN_DISCOVERY'];
 
 export const SCAN_STATUS_LABEL: Record<ScanStatus, string> = {
   PENDING: 'En cola',
@@ -111,6 +128,7 @@ export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
   NEW_OPEN_PORT: 'Puerto nuevo',
   CERT_EXPIRING: 'Certificado por vencer',
   CRITICAL_FINDING: 'Hallazgo crítico',
+  NEW_SUBDOMAIN: 'Subdominio nuevo',
 };
 
 export const FREQUENCY_LABEL: Record<MonitoringFrequency, string> = {

@@ -18,7 +18,29 @@ hallazgos, Security Score con histórico, dashboard, y en el Sprint 4:
   convierte el producto en una suscripción de vigilancia, no en un análisis puntual.
 - **CI** en cada PR: lint, pruebas unitarias y e2e con PostgreSQL, build de imágenes.
 
+Después del MVP, dos bloques pensados para la venta como SaaS:
+
+- **Bloque 1 — confianza:** verificación de propiedad de los activos antes de
+  escanearlos (DNS TXT o archivo) y protección del login y el registro
+  ([ADR-0005](adr/0005-verificacion-propiedad-y-proteccion-login.md)).
+- **Bloque 2 — inteligencia de amenazas:** CVE de las versiones detectadas (NVD, con
+  prioridad a los explotados activamente según CISA KEV), seguridad del correo
+  (SPF, DMARC, DKIM) y descubrimiento de subdominios en Certificate Transparency con
+  alerta de los nuevos ([ADR-0006](adr/0006-cve-correo-y-subdominios.md)). Es lo que
+  lleva el producto de "puertos abiertos" a "riesgos concretos que un gerente entiende".
+
 Ver README para el detalle funcional completo.
+
+## Siguiente en el sistema
+
+1. **Registro de auditoría** (RNF-06): quién hizo qué (altas de activos, revisiones de
+   hallazgos, cambios de usuarios) con consulta para el administrador.
+2. **Ciclo de vida de cuentas:** recuperar contraseña por correo, verificación del
+   correo, invitaciones y MFA (TOTP).
+3. **Criticidad de activos** en el Security Score, **seguimiento de la remediación**
+   (responsable y fecha objetivo), **exportación CSV** y reporte ejecutivo programado.
+4. **Retención de datos** y **reintentos** en la entrega de alertas.
+5. Selectores DKIM declarados por el cliente y MTA-STS/TLS-RPT en la seguridad del correo.
 
 ## Fase 2 — DevOps (para poder vender con confianza)
 
