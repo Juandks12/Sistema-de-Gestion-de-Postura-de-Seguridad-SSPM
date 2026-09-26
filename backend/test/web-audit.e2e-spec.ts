@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { PrismaClientExceptionFilter } from '../src/common/filters/prisma-exception.filter';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { ScanWorkerService } from '../src/scans/scan-worker.service';
 
 /**
  * Auditoría web (RF-04, RF-05, RF-06) y ciclo de vida de hallazgos (RF-08)
@@ -261,15 +262,26 @@ describe('Web audit (e2e) - cabeceras, TLS, rutas sensibles y hallazgos', () => 
   });
 
   it('la auditoría completa encola todos los tipos y omite los que ya están en curso', async () => {
-    const res = await http_().post(`/api/v1/assets/${assetId}/scans/all`).set('Authorization', `Bearer ${token}`).expect(202);
-    expect(res.body.queued.map((s: { type: string }) => s.type).sort()).toEqual(
-      ['PORT_SCAN', 'SENSITIVE_PATHS', 'SSL_CERT', 'WEB_HEADERS'].sort(),
-    );
-    const second = await http_().post(`/api/v1/assets/${assetId}/scans/all`).set('Authorization', `Bearer ${token}`).expect(202);
-    expect(second.body.queued).toHaveLength(0);
-    expect(second.body.skipped).toHaveLength(4);
-    for (const s of res.body.queued) {
-      await http_().post(`/api/v1/scans/${s.id}/cancel`).set('Authorization', `Bearer ${token}`);
+    // El worker real puede completar el escaneo más rápido (típicamente PORT_SCAN
+    // contra localhost) antes de la segunda petición, liberando el cupo de
+    // concurrencia por organización y haciendo la prueba no determinista. Se
+    // pausa el worker durante la ventana de la aserción para probar únicamente
+    // la lógica de "omitir si ya está en curso", no el tiempo real de escaneo.
+    const worker = app.get(ScanWorkerService);
+    const kickSpy = jest.spyOn(worker, 'kick').mockImplementation(() => {});
+    try {
+      const res = await http_().post(`/api/v1/assets/${assetId}/scans/all`).set('Authorization', `Bearer ${token}`).expect(202);
+      expect(res.body.queued.map((s: { type: string }) => s.type).sort()).toEqual(
+        ['PORT_SCAN', 'SENSITIVE_PATHS', 'SSL_CERT', 'WEB_HEADERS'].sort(),
+      );
+      const second = await http_().post(`/api/v1/assets/${assetId}/scans/all`).set('Authorization', `Bearer ${token}`).expect(202);
+      expect(second.body.queued).toHaveLength(0);
+      expect(second.body.skipped).toHaveLength(4);
+      for (const s of res.body.queued) {
+        await http_().post(`/api/v1/scans/${s.id}/cancel`).set('Authorization', `Bearer ${token}`);
+      }
+    } finally {
+      kickSpy.mockRestore();
     }
   });
 
