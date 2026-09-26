@@ -51,6 +51,10 @@ export class ScansService {
     private readonly config: ConfigService,
   ) {}
 
+  private get verificationRequired(): boolean {
+    return this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false;
+  }
+
   /** Encola un escaneo (puertos, cabeceras, TLS o rutas sensibles) solicitado por un usuario. */
   request(actor: AuthUser, assetId: string, dto: CreateScanDto) {
     return this.enqueue({
@@ -98,6 +102,11 @@ export class ScansService {
       }
       if (!asset.authorizationConfirmed) {
         throw new BadRequestException('El activo no tiene autorización de escaneo confirmada');
+      }
+      if (this.verificationRequired && !asset.verifiedAt) {
+        throw new BadRequestException(
+          'Verifica que el activo es de tu organización (registro DNS o archivo de verificación) antes de escanearlo',
+        );
       }
 
       const inProgress = await tx.scan.findFirst({

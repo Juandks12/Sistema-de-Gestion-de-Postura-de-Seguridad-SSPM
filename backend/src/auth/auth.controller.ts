@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, UseGuards } from '@nestjs/common';
+import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -14,20 +15,26 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Public()
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ login: true })
   @Post('register')
   @ApiOperation({ summary: 'Registrar una nueva organización y su usuario administrador' })
   @ApiResponse({ status: 201, description: 'Organización creada. Devuelve el token de acceso.' })
   @ApiResponse({ status: 409, description: 'El correo ya está registrado.' })
+  @ApiResponse({ status: 429, description: 'Demasiados registros desde la misma IP.' })
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
   }
 
   @Public()
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ register: true })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Iniciar sesión y obtener un JWT' })
   @ApiResponse({ status: 200, description: 'Token de acceso emitido.' })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
+  @ApiResponse({ status: 429, description: 'Cuenta bloqueada temporalmente por intentos fallidos o demasiadas peticiones desde la misma IP.' })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
   }

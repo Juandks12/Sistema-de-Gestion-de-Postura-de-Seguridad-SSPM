@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { hours, minutes, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +22,17 @@ import { ReportsModule } from './reports/reports.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    // Límites por IP solo para las rutas que usan ThrottlerGuard (login y registro).
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        errorMessage: 'Demasiadas solicitudes desde tu red. Espera un momento e inténtalo de nuevo.',
+        throttlers: [
+          { name: 'login', ttl: minutes(1), limit: config.get<number>('AUTH_LOGIN_RATE_PER_MINUTE') ?? 20 },
+          { name: 'register', ttl: hours(1), limit: config.get<number>('AUTH_REGISTER_RATE_PER_HOUR') ?? 5 },
+        ],
+      }),
+    }),
     PrismaModule,
     HealthModule,
     AuthModule,

@@ -21,7 +21,16 @@ export class MonitoringService {
       this.prisma.asset.findMany({
         where: { organizationId },
         orderBy: { createdAt: 'asc' },
-        select: { id: true, value: true, name: true, isActive: true, authorizationConfirmed: true, lastScheduledScanAt: true, lastScannedAt: true },
+        select: {
+          id: true,
+          value: true,
+          name: true,
+          isActive: true,
+          authorizationConfirmed: true,
+          verifiedAt: true,
+          lastScheduledScanAt: true,
+          lastScannedAt: true,
+        },
       }),
       this.prisma.scan.findFirst({
         where: { organizationId, source: ScanSource.SCHEDULED },
@@ -31,13 +40,18 @@ export class MonitoringService {
     ]);
     const frequency = org.monitoringFrequency;
     const now = new Date();
+    const verificationRequired = this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false;
     return {
       frequency,
       periodHours: frequency === MonitoringFrequency.OFF ? null : FREQUENCY_PERIOD_MS[frequency] / 3600000,
       schedulerEnabled: this.config.get<boolean>('SCHEDULER_ENABLED') !== false,
       lastScheduledScanAt: lastScheduled?.createdAt ?? null,
       assets: assets.map((a) => {
-        const monitored = frequency !== MonitoringFrequency.OFF && a.isActive && a.authorizationConfirmed;
+        const monitored =
+          frequency !== MonitoringFrequency.OFF &&
+          a.isActive &&
+          a.authorizationConfirmed &&
+          (!verificationRequired || a.verifiedAt !== null);
         const next = monitored ? nextRunAt(a.lastScheduledScanAt, frequency, now) : null;
         return {
           ...a,

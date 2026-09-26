@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthService } from '../auth/auth.service';
+import { loginAttemptKey } from '../auth/login-protection.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -84,10 +85,12 @@ export class UsersService {
    * Para la propia cuenta debe usarse el cambio de contraseña, que exige la actual.
    */
   async resetPassword(actor: AuthUser, id: string, dto: ResetPasswordDto) {
-    await this.findOne(actor.organizationId, id);
+    const target = await this.findOne(actor.organizationId, id);
     if (id === actor.id) {
       throw new BadRequestException('Para tu propia cuenta usa "Cambiar mi contraseña"');
     }
+    // Una contraseña nueva asignada por un administrador desbloquea la cuenta.
+    await this.prisma.loginAttempt.deleteMany({ where: { key: loginAttemptKey(target.email) } });
     return this.prisma.user.update({
       where: { id },
       data: {

@@ -228,6 +228,63 @@ class EnvironmentVariables {
   @Max(60000)
   @IsOptional()
   ALERT_DELIVERY_TIMEOUT_MS: number = 10000;
+
+  // ------------------------------------------------------------------
+  // Verificación de propiedad de activos (sección 1.6.3)
+  // ------------------------------------------------------------------
+
+  /**
+   * Exige demostrar que la organización controla el activo antes de escanearlo.
+   * Solo puede desactivarse fuera de producción (pruebas y laboratorio).
+   */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  ASSET_VERIFICATION_REQUIRED: boolean = true;
+
+  // ------------------------------------------------------------------
+  // Protección del inicio de sesión y del registro (sección 11.1)
+  // ------------------------------------------------------------------
+
+  /** Intentos fallidos seguidos que bloquean temporalmente una cuenta. */
+  @IsInt()
+  @Min(3)
+  @Max(50)
+  @IsOptional()
+  AUTH_MAX_FAILED_LOGINS: number = 5;
+
+  /** Minutos que dura el bloqueo de una cuenta. */
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  @IsOptional()
+  AUTH_LOCKOUT_MINUTES: number = 15;
+
+  /** Intentos de inicio de sesión por minuto desde una misma IP. */
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  @IsOptional()
+  AUTH_LOGIN_RATE_PER_MINUTE: number = 20;
+
+  /** Organizaciones que se pueden registrar por hora desde una misma IP. */
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  @IsOptional()
+  AUTH_REGISTER_RATE_PER_HOUR: number = 5;
+
+  /**
+   * Proxies de confianza delante de la API (valor de `trust proxy` de Express):
+   * vacío = ninguno; un número = saltos (1 con el Nginx de la imagen web);
+   * o una lista de IPs/subredes. Necesario para limitar por la IP real del cliente.
+   */
+  @IsString()
+  @Matches(/^$|^(true|false|\d{1,2}|[0-9a-fA-F:.,/ ]+|loopback|linklocal|uniquelocal)$/, {
+    message: 'TRUST_PROXY debe ser vacío, true, false, un número de saltos o una lista de IPs/subredes',
+  })
+  @IsOptional()
+  TRUST_PROXY: string = '';
 }
 
 function toBoolean(value: unknown): unknown {
@@ -247,6 +304,9 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
   const errors = validateSync(validated, { skipMissingProperties: false });
   if (validated.NODE_ENV === NodeEnv.Production && validated.ALLOW_PRIVATE_TARGETS) {
     throw new Error('ALLOW_PRIVATE_TARGETS no puede activarse con NODE_ENV=production');
+  }
+  if (validated.NODE_ENV === NodeEnv.Production && !validated.ASSET_VERIFICATION_REQUIRED) {
+    throw new Error('ASSET_VERIFICATION_REQUIRED no puede desactivarse con NODE_ENV=production');
   }
   if (errors.length > 0) {
     const details = errors
