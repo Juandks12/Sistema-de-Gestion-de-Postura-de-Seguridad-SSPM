@@ -2,6 +2,7 @@ import { ArrowLeft, Radar, Server, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { AssetVerificationCard } from '@/components/AssetVerificationCard';
 import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { Alert } from '@/components/ui/Alert';
@@ -13,7 +14,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { ScoreHero } from '@/components/ui/ScoreHero';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useDashboardAsset, useRequestScan, useUpdateAsset } from '@/hooks/queries';
+import { useAssetVerification, useDashboardAsset, useRequestScan, useUpdateAsset } from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
 import { SCAN_TYPE_LABEL, SEVERITY_LABEL, formatDateTime, timeAgo } from '@/lib/format';
 import type { ScanType } from '@/lib/types';
@@ -24,6 +25,7 @@ export function AssetDetailPage() {
   const { id = '' } = useParams();
   const { canEdit } = useAuth();
   const q = useDashboardAsset(id);
+  const verification = useAssetVerification(id);
   const requestScan = useRequestScan();
   const update = useUpdateAsset();
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
@@ -33,6 +35,8 @@ export function AssetDetailPage() {
 
   const { asset, securityScore, history, findings, exposure, latestScans } = q.data;
   const inProgress = latestScans.some((s) => s.status === 'PENDING' || s.status === 'RUNNING');
+  // Sin verificar no se puede escanear (a menos que el servidor lo tenga desactivado).
+  const canScan = asset.isActive && (!!asset.verifiedAt || verification.data?.required === false);
 
   const run = async (type?: ScanType) => {
     setNotice(null);
@@ -65,7 +69,13 @@ export function AssetDetailPage() {
                 <Button variant="secondary" size="md" onClick={() => update.mutate({ id: asset.id, isActive: !asset.isActive })} loading={update.isPending}>
                   {asset.isActive ? 'Desactivar' : 'Activar'}
                 </Button>
-                <Button icon={<Radar className="size-4" />} onClick={() => run()} loading={requestScan.isPending} disabled={!asset.isActive}>
+                <Button
+                  icon={<Radar className="size-4" />}
+                  onClick={() => run()}
+                  loading={requestScan.isPending}
+                  disabled={!canScan}
+                  title={asset.verifiedAt ? undefined : 'Verifica la propiedad del activo para poder escanearlo'}
+                >
                   Auditoría completa
                 </Button>
               </>
@@ -74,6 +84,7 @@ export function AssetDetailPage() {
         }
       />
       {notice ? <Alert kind={notice.kind} className="mb-4">{notice.text}</Alert> : null}
+      <AssetVerificationCard assetId={asset.id} canEdit={canEdit} />
       {inProgress ? <Alert kind="info" className="mb-4">Hay escaneos en curso. Esta vista se actualiza automáticamente.</Alert> : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -113,7 +124,7 @@ export function AssetDetailPage() {
                       <p className="truncate text-xs text-muted">{last ? (last.finishedAt ? timeAgo(last.finishedAt) : timeAgo(last.createdAt)) : 'Nunca ejecutado'}</p>
                     </div>
                     {last ? <ScanStatusBadge status={last.status} /> : null}
-                    {canEdit && asset.isActive ? (
+                    {canEdit && canScan ? (
                       <Button size="sm" variant="ghost" onClick={() => run(type)} disabled={requestScan.isPending} aria-label={`Ejecutar ${SCAN_TYPE_LABEL[type]}`}>
                         <Radar className="size-4" />
                       </Button>

@@ -27,7 +27,13 @@ export function LoginPage() {
       const from = (location.state as { from?: string } | null)?.from ?? '/';
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? 'Correo o contraseña incorrectos.' : 'No se pudo iniciar sesión. Comprueba que la API esté disponible.');
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? 'Correo o contraseña incorrectos.'
+          : err instanceof ApiError && err.status === 429
+            ? err.message
+            : 'No se pudo iniciar sesión. Comprueba que la API esté disponible.',
+      );
     } finally {
       setLoading(false);
     }
