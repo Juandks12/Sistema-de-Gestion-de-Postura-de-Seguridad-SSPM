@@ -74,6 +74,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-SSPM Alertas <alertas@sspm.local>}
+      # La web (Nginx) hace de proxy: un salto de confianza para conocer la IP
+      # real del cliente en los límites del inicio de sesión.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      AUTH_MAX_FAILED_LOGINS: ${AUTH_MAX_FAILED_LOGINS:-5}
+      AUTH_LOCKOUT_MINUTES: ${AUTH_LOCKOUT_MINUTES:-15}
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
     extra_hosts:

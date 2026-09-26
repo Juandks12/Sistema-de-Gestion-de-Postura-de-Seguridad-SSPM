@@ -213,6 +213,10 @@ edítalo. Las variables principales son:
 | `SEED_DEMO_DATA` | `true` | Crear los usuarios de demostración al arrancar |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Modo laboratorio, solo en modo desarrollo |
 | `SCHEDULER_ENABLED` | `true` | Planificador del monitoreo continuo |
+| `ASSET_VERIFICATION_REQUIRED` | `true` | Exigir la verificación de propiedad antes de escanear (no desactivable en producción) |
+| `TRUST_PROXY` | `1` en Compose | Saltos de proxy de confianza para conocer la IP real del cliente |
+| `AUTH_MAX_FAILED_LOGINS`, `AUTH_LOCKOUT_MINUTES` | `5`, `15` | Bloqueo temporal de una cuenta por intentos fallidos |
+| `AUTH_LOGIN_RATE_PER_MINUTE`, `AUTH_REGISTER_RATE_PER_HOUR` | `20`, `5` | Límites por IP en login y registro |
 | `APP_URL` | `http://localhost:8080` | URL de la web usada en los enlaces de las alertas |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | vacío | Servidor de correo para las alertas; sin `SMTP_HOST` los canales de correo se omiten |
 
@@ -227,6 +231,9 @@ el caso de estudio con activos controlados:
 1. Pon `ALLOW_PRIVATE_TARGETS=true` en el `.env` de la raíz.
 2. Arranca en modo desarrollo; el modo laboratorio no se permite en producción.
 3. Registra el activo `host.docker.internal`, que apunta a tu equipo.
+4. Verifícalo: sirve el archivo `/.well-known/sspm-verification.txt` que indica la
+   plataforma desde tu servidor local (en un puerto de `WEB_HTTP_PORTS`), o bien pon
+   `ASSET_VERIFICATION_REQUIRED=false` en el `.env` (solo fuera de producción).
 
 ### Solución de problemas
 
@@ -321,7 +328,7 @@ Se adapta a móvil y escritorio y respeta el modo claro u oscuro del sistema.
 | Inicio de sesión | Acceso con la cuenta de la organización; la sesión se guarda en el navegador |
 | Vista general | Security Score con calificación y tendencia, hallazgos por severidad, activos monitoreados, escaneos en curso, evolución de la postura, activos con peor postura, hallazgos prioritarios y escaneos recientes |
 | Activos | Tabla ordenada por peor postura con score, hallazgos abiertos y último escaneo; alta de activos con declaración de autorización; auditoría completa con un clic |
-| Detalle de activo | Score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
+| Detalle de activo | Verificación de propiedad con las instrucciones (DNS o archivo) y su comprobación; score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
 | Hallazgos | Filtros por estado, severidad y categoría; cada fila se expande con descripción, recomendación, evidencia y acciones para aceptar el riesgo, marcar falso positivo o reabrir |
 | Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación. Los del monitoreo continuo llevan la marca "Programado" |
 | Alertas | Avisos de puertos nuevos, certificados por vencer y hallazgos críticos, con el resultado de entrega por canal; revisión individual o masiva. El menú muestra cuántas hay pendientes |
@@ -362,6 +369,8 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | **POST** | **`/api/v1/assets`** | ADMIN, ANALYST | **RF-01: registrar un dominio o IP** |
 | GET | `/api/v1/assets` | todos | Listado paginado (`type`, `isActive`, `search`, `page`, `pageSize`) |
 | GET | `/api/v1/assets/:id` | todos | Detalle de un activo |
+| GET | `/api/v1/assets/:id/verification` | todos | Estado de la verificación de propiedad e instrucciones (registro DNS o archivo) |
+| POST | `/api/v1/assets/:id/verify` | ADMIN, ANALYST | Comprobar la prueba publicada (`method` opcional: `DNS_TXT` o `HTTP_FILE`) |
 | PATCH | `/api/v1/assets/:id` | ADMIN, ANALYST | Editar nombre, descripción o estado |
 | DELETE | `/api/v1/assets/:id` | ADMIN | Eliminar activo y sus escaneos |
 | **POST** | **`/api/v1/assets/:id/scans`** | ADMIN, ANALYST | **Encolar un escaneo: `PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT` o `SENSITIVE_PATHS` (responde 202)** |
@@ -423,6 +432,9 @@ Reglas aplicadas al registrar:
   (RFC 1918, loopback, link-local, etc.) y hosts como `localhost` o `*.local`.
 - `authorizationConfirmed` debe ser `true`: el usuario declara que tiene
   autorización para analizar el activo (sección 1.6.3 de la documentación).
+- La declaración no basta para escanear: hay que **verificar la propiedad** del activo
+  (ver [Verificación de propiedad](#verificación-de-propiedad-de-activos)). Un
+  subdominio de un dominio ya verificado por DNS queda verificado al registrarse.
 - La unicidad es **por organización** (`organization_id` + `value`); un duplicado
   responde `409 Conflict`.
 
@@ -586,6 +598,34 @@ con `NODE_ENV=production`.
 ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm run start:dev
 ```
 
+## Verificación de propiedad de activos
+
+Declarar que se tiene autorización no impide registrar el dominio de otra empresa y
+escanearlo desde nuestros servidores. Por eso **no se escanea ningún activo cuya
+propiedad no se haya demostrado** (sección 1.6.3): ni por petición manual, ni en la
+auditoría completa, ni en el monitoreo continuo. El worker vuelve a comprobarlo antes
+de ejecutar.
+
+Cada organización tiene un token secreto y publica el valor
+`sspm-verification=<token>` de una de estas formas:
+
+| Método | Dónde | Alcance |
+|--------|-------|---------|
+| `DNS_TXT` (recomendado) | Registro TXT en `_sspm-verification.<dominio>` | El dominio y **todos sus subdominios**: los que ya estén registrados y los que se registren después quedan verificados (`INHERITED`) |
+| `HTTP_FILE` | Archivo `/.well-known/sspm-verification.txt` con ese contenido exacto, servido por el propio host en `WEB_HTTPS_PORTS` o `WEB_HTTP_PORTS` | Solo ese host. Es la única opción para direcciones IP |
+
+- La prueba DNS se busca desde el nombre del activo hacia los dominios superiores
+  (`a.tienda.example.com`, `tienda.example.com`, `example.com`).
+- El archivo no sigue redirecciones: una redirección abierta del sitio no puede
+  usarse para "demostrar" la propiedad con un archivo alojado en otro dominio.
+- La verificación es por organización: la de una no sirve para otra.
+- Un intento fallido no retira una verificación anterior; queda registrado con el
+  detalle de cada comprobación para que el usuario vea qué falta.
+- `scanme.nmap.org`, que el proyecto Nmap ofrece públicamente para practicar, viene
+  pre-autorizado en los datos de demostración.
+- `ASSET_VERIFICATION_REQUIRED=false` desactiva la exigencia en pruebas o
+  laboratorio; la aplicación se niega a arrancar así con `NODE_ENV=production`.
+
 ## Alertas tempranas (RF-10)
 
 Al completar cada escaneo se evalúan tres reglas (`backend/src/alerts/alert-rules.ts`):
@@ -690,11 +730,16 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   hallazgos, fechas), `deliveries` (resultado por canal), `acknowledged_at`/`acknowledged_by_id`.
 - **alert_channels**: canales de notificación por organización: `type` (`EMAIL` o
   `WEBHOOK`), `target`, `min_severity`, `is_active` y el resultado del último envío.
+- **login_attempts**: intentos fallidos de inicio de sesión por cuenta (clave sha256 del
+  correo), con `failures` y `locked_until`.
 - **reports**: registro de reportes generados: `type`, `asset_id` (nulo = organización),
   `generated_by_id`, `score`, `grade`, `open_findings`, `pages`, `size_bytes`.
 
 Además, `organizations.monitoring_frequency`, `assets.last_scheduled_scan_at` y
-`scans.source` (`MANUAL` o `SCHEDULED`) soportan el monitoreo continuo.
+`scans.source` (`MANUAL` o `SCHEDULED`) soportan el monitoreo continuo, y
+`organizations.verification_token` junto con `assets.verified_at`,
+`verification_method`, `verification_scope`, `verification_checked_at` y
+`verification_error` soportan la verificación de propiedad.
 
 ## Scripts útiles
 
@@ -711,6 +756,18 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
 ## Seguridad del propio sistema
 
 - Contraseñas con bcrypt; login con comparación de tiempo constante.
+- **Bloqueo por fuerza bruta:** tras `AUTH_MAX_FAILED_LOGINS` fallos seguidos (5) la
+  cuenta queda bloqueada `AUTH_LOCKOUT_MINUTES` (15) y responde `429` aunque la
+  contraseña sea correcta. El contador vive en PostgreSQL (`login_attempts`, con el
+  hash sha256 del correo como clave), sirve con varias instancias y se aplica también a correos
+  que no existen, así que no revela qué cuentas hay. Restablecer la contraseña desde
+  administración desbloquea la cuenta.
+- **Límites por IP:** `AUTH_LOGIN_RATE_PER_MINUTE` (20) intentos de login por minuto y
+  `AUTH_REGISTER_RATE_PER_HOUR` (5) registros de organización por hora. Detrás de un
+  proxy hay que definir `TRUST_PROXY` (en Docker Compose ya vale `1`, por el Nginx de la
+  web); si no, todos los clientes compartirían la IP del proxy.
+- **Solo se escanean activos verificados** (ver
+  [Verificación de propiedad](#verificación-de-propiedad-de-activos)).
 - Política de contraseñas única para todos los formularios: 8 a 72 caracteres, con
   mayúscula, minúscula y número. La aplicación web muestra los requisitos mientras se escribe.
 - Cambio de contraseña y restablecimiento por un administrador, que cierran las demás sesiones.

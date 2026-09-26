@@ -20,6 +20,8 @@ services:
       NODE_ENV: development
       # Modo laboratorio: permite escanear IPs privadas y host.docker.internal.
       ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+      # Verificación de propiedad antes de escanear. Se puede desactivar solo en desarrollo.
+      ASSET_VERIFICATION_REQUIRED: ${ASSET_VERIFICATION_REQUIRED:-true}
       # Detección de cambios por sondeo: necesaria en Windows y macOS, donde
       # los eventos del sistema de archivos no llegan al contenedor.
       TSC_WATCHFILE: DynamicPriorityPolling
