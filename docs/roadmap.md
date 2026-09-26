@@ -28,19 +28,24 @@ Después del MVP, dos bloques pensados para la venta como SaaS:
   (SPF, DMARC, DKIM) y descubrimiento de subdominios en Certificate Transparency con
   alerta de los nuevos ([ADR-0006](adr/0006-cve-correo-y-subdominios.md)). Es lo que
   lleva el producto de "puertos abiertos" a "riesgos concretos que un gerente entiende".
+- **Bloque 3 — confianza operativa y ciclo de vida de cuentas:** registro de auditoría
+  (RNF-06), recuperación de contraseña por correo, invitaciones de usuarios y
+  verificación en dos pasos (TOTP)
+  ([ADR-0007](adr/0007-auditoria-recuperacion-invitaciones-mfa.md)). Cierra lo que un
+  cliente con varias personas en su equipo da por sentado en cualquier SaaS.
 
 Ver README para el detalle funcional completo.
 
 ## Siguiente en el sistema
 
-1. **Registro de auditoría** (RNF-06): quién hizo qué (altas de activos, revisiones de
-   hallazgos, cambios de usuarios) con consulta para el administrador.
-2. **Ciclo de vida de cuentas:** recuperar contraseña por correo, verificación del
-   correo, invitaciones y MFA (TOTP).
-3. **Criticidad de activos** en el Security Score, **seguimiento de la remediación**
+1. Verificación del correo del propio usuario al registrarse o cambiarlo (hoy solo se
+   valida el formato).
+2. **Criticidad de activos** en el Security Score, **seguimiento de la remediación**
    (responsable y fecha objetivo), **exportación CSV** y reporte ejecutivo programado.
-4. **Retención de datos** y **reintentos** en la entrega de alertas.
-5. Selectores DKIM declarados por el cliente y MTA-STS/TLS-RPT en la seguridad del correo.
+3. **Retención de datos** y **reintentos** en la entrega de alertas.
+4. Selectores DKIM declarados por el cliente y MTA-STS/TLS-RPT en la seguridad del correo.
+5. SSO (SAML/OIDC) como alternativa al login con contraseña para empresas medianas
+   (relacionado con la fase 4).
 
 ## Fase 2 — DevOps (para poder vender con confianza)
 
