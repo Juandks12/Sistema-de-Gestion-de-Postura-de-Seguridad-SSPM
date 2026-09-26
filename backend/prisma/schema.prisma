@@ -29,12 +29,16 @@ enum AssetType {
   IP
 }
 
-/// Tipo de escaneo soportado. En Sprint 1 solo se implementa PORT_SCAN (Nmap).
+/// Tipo de escaneo soportado.
+/// EMAIL_SECURITY y SUBDOMAIN_DISCOVERY son pasivos (solo DNS y registros públicos)
+/// y solo aplican a dominios.
 enum ScanType {
   PORT_SCAN
   WEB_HEADERS
   SSL_CERT
   SENSITIVE_PATHS
+  EMAIL_SECURITY
+  SUBDOMAIN_DISCOVERY
 }
 
 /// Severidad de un hallazgo (RF-08), alineada con los rangos de CVSS v3.1:
@@ -53,6 +57,10 @@ enum FindingCategory {
   HTTP_HEADERS
   TLS_CERTIFICATE
   SENSITIVE_PATH
+  /// Versión de software con vulnerabilidades conocidas (CVE), detectada en el escaneo de puertos.
+  VULNERABLE_SOFTWARE
+  /// SPF, DMARC y DKIM del dominio.
+  EMAIL_SECURITY
 }
 
 /// Estado de gestión de un hallazgo.
@@ -99,6 +107,7 @@ enum AlertType {
   NEW_OPEN_PORT
   CERT_EXPIRING
   CRITICAL_FINDING
+  NEW_SUBDOMAIN
 }
 
 /// Canal por el que se notifica una alerta (secciones 10.2 y 10.3).
@@ -148,15 +157,16 @@ model Organization {
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users         User[]
-  assets        Asset[]
-  scans         Scan[]
-  scanPorts     ScanPort[]
-  findings      Finding[]
-  riskScores    RiskScore[]
-  alerts        Alert[]
-  alertChannels AlertChannel[]
-  reports       Report[]
+  users           User[]
+  assets          Asset[]
+  scans           Scan[]
+  scanPorts       ScanPort[]
+  findings        Finding[]
+  riskScores      RiskScore[]
+  alerts          Alert[]
+  alertChannels   AlertChannel[]
+  reports         Report[]
+  discoveredHosts DiscoveredHost[]
 
   @@map("organizations")
 }
@@ -216,14 +226,15 @@ model Asset {
   createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?        @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  scans        Scan[]
-  scanPorts    ScanPort[]
-  findings     Finding[]
-  riskScores   RiskScore[]
-  alerts       Alert[]
-  reports      Report[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scans           Scan[]
+  scanPorts       ScanPort[]
+  findings        Finding[]
+  riskScores      RiskScore[]
+  alerts          Alert[]
+  reports         Report[]
+  discoveredHosts DiscoveredHost[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -253,13 +264,14 @@ model Scan {
   createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  requestedBy  User?        @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
-  ports        ScanPort[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset           Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy     User?            @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  ports           ScanPort[]
   /// Hallazgos detectados por última vez en este escaneo.
-  findings     Finding[]
-  alerts       Alert[]
+  findings        Finding[]
+  alerts          Alert[]
+  discoveredHosts DiscoveredHost[]
 
   @@index([organizationId, assetId])
   @@index([status, createdAt])
@@ -471,4 +483,51 @@ model LoginAttempt {
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("login_attempts")
+}
+
+/// Subdominio descubierto en los registros públicos de Certificate Transparency
+/// al analizar un dominio de la organización. Sirve para encontrar activos que
+/// no están en el inventario (shadow IT). Un nombre es único por organización.
+model DiscoveredHost {
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  /// Dominio del inventario cuyo análisis lo encontró.
+  assetId           String    @map("asset_id") @db.Uuid
+  hostname          String    @db.VarChar(253)
+  /// ct (Certificate Transparency).
+  source            String    @default("ct") @db.VarChar(20)
+  /// Resolvía en DNS en el último descubrimiento.
+  resolves          Boolean   @default(false)
+  addresses         String[]  @default([])
+  /// Aparece en certificados comodín (*.hostname).
+  wildcard          Boolean   @default(false)
+  /// Último certificado visto que incluía el nombre.
+  lastCertificateAt DateTime? @map("last_certificate_at") @db.Timestamptz(6)
+  /// El usuario decidió no incorporarlo al inventario.
+  ignoredAt         DateTime? @map("ignored_at") @db.Timestamptz(6)
+  lastScanId        String?   @map("last_scan_id") @db.Uuid
+  firstSeenAt       DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt        DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  lastScan     Scan?        @relation(fields: [lastScanId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, hostname])
+  @@index([assetId])
+  @@map("discovered_hosts")
+}
+
+/// Caché global (no pertenece a ninguna organización: son datos públicos) de
+/// las vulnerabilidades publicadas en NVD para un producto CPE (vendor:product).
+/// Guarda solo lo necesario para decidir qué versiones están afectadas.
+model CveProductCache {
+  /// "vendor:product", p. ej. "openbsd:openssh".
+  product      String   @id @db.VarChar(200)
+  totalResults Int      @default(0) @map("total_results")
+  /// [{ id, published, cvss, severity, vector, kev, description, ranges: [...] }]
+  entries      Json
+  fetchedAt    DateTime @map("fetched_at") @db.Timestamptz(6)
+
+  @@map("cve_product_cache")
 }

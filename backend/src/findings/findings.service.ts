@@ -11,10 +11,13 @@ import { getRule } from './rules.catalog';
 
 /** Categorías de hallazgo que produce cada tipo de escaneo. */
 export const CATEGORIES_BY_SCAN_TYPE: Record<ScanType, FindingCategory[]> = {
-  [ScanType.PORT_SCAN]: [FindingCategory.EXPOSED_SERVICE],
+  [ScanType.PORT_SCAN]: [FindingCategory.EXPOSED_SERVICE, FindingCategory.VULNERABLE_SOFTWARE],
   [ScanType.WEB_HEADERS]: [FindingCategory.HTTP_HEADERS],
   [ScanType.SSL_CERT]: [FindingCategory.TLS_CERTIFICATE],
   [ScanType.SENSITIVE_PATHS]: [FindingCategory.SENSITIVE_PATH],
+  [ScanType.EMAIL_SECURITY]: [FindingCategory.EMAIL_SECURITY],
+  // El descubrimiento de subdominios alimenta el inventario, no genera hallazgos.
+  [ScanType.SUBDOMAIN_DISCOVERY]: [],
 };
 
 export interface SyncFindingsInput {
@@ -23,6 +26,8 @@ export interface SyncFindingsInput {
   scanId: string;
   scanType: ScanType;
   drafts: FindingDraft[];
+  /** Categorías que no se evaluaron por completo: sus hallazgos abiertos no se resuelven. */
+  incompleteCategories?: FindingCategory[];
 }
 
 export interface SyncFindingsResult {
@@ -124,7 +129,7 @@ export class FindingsService {
         category: rule.category,
         ruleId: rule.id,
         severity,
-        cvssScore: new Prisma.Decimal(rule.cvss),
+        cvssScore: new Prisma.Decimal(draft.cvss ?? rule.cvss),
         title: (draft.title ?? rule.title).slice(0, 200),
         description: draft.description ?? rule.description,
         recommendation: draft.recommendation ?? rule.recommendation,
@@ -168,7 +173,9 @@ export class FindingsService {
       result.bySeverity[severity] += 1;
     }
 
-    const categories = CATEGORIES_BY_SCAN_TYPE[input.scanType];
+    const incomplete = new Set(input.incompleteCategories ?? []);
+    const categories = CATEGORIES_BY_SCAN_TYPE[input.scanType].filter((c) => !incomplete.has(c));
+    if (categories.length === 0) return { result, opened };
     const resolved = await tx.finding.updateMany({
       where: {
         assetId: input.assetId,

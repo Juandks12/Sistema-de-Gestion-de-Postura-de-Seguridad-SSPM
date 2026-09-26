@@ -10,6 +10,7 @@ import {
   prioritizedFindings,
   ReportAsset,
   ReportData,
+  DOMAIN_ONLY_SCANS,
   SCAN_TYPE_LABEL,
   SEVERITY_LABEL,
 } from './report-data';
@@ -422,7 +423,10 @@ function assetSection(doc: Doc, a: ReportAsset): void {
       { header: 'Tipo de escaneo', width: 3 },
       { header: 'Fecha', width: 3 },
     ],
-    (Object.keys(SCAN_TYPE_LABEL) as ScanType[]).map((type) => [SCAN_TYPE_LABEL[type], fmtDate(a.lastScanByType[type] ?? null, true)]),
+    (Object.keys(SCAN_TYPE_LABEL) as ScanType[])
+      // El correo y el descubrimiento de subdominios solo aplican a dominios.
+      .filter((type) => a.type !== 'IP' || !DOMAIN_ONLY_SCANS.includes(type))
+      .map((type) => [SCAN_TYPE_LABEL[type], fmtDate(a.lastScanByType[type] ?? null, true)]),
   );
 
   subheading(doc, `Puertos abiertos (${a.openPorts.length})`);

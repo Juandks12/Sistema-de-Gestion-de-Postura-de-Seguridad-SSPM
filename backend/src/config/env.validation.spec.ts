@@ -67,4 +67,21 @@ describe('validateEnv', () => {
     expect(validateEnv({ ...base })).toMatchObject({ AUTH_MAX_FAILED_LOGINS: 5, AUTH_LOCKOUT_MINUTES: 15 });
     expect(() => validateEnv({ ...base, AUTH_MAX_FAILED_LOGINS: '1' })).toThrow();
   });
+
+  it('aplica los valores por defecto de CVE y descubrimiento de subdominios', () => {
+    expect(validateEnv({ ...base })).toMatchObject({
+      CVE_LOOKUP_ENABLED: true,
+      NVD_API_URL: 'https://services.nvd.nist.gov/rest/json/cves/2.0',
+      NVD_API_KEY: '',
+      CVE_CACHE_HOURS: 24,
+      SUBDOMAIN_DISCOVERY_ENABLED: true,
+      SUBDOMAIN_DISCOVERY_MAX_HOSTS: 500,
+    });
+    expect(validateEnv({ ...base, CVE_LOOKUP_ENABLED: 'false', SUBDOMAIN_DISCOVERY_ENABLED: '0' })).toMatchObject({
+      CVE_LOOKUP_ENABLED: false,
+      SUBDOMAIN_DISCOVERY_ENABLED: false,
+    });
+    expect(() => validateEnv({ ...base, NVD_API_URL: 'ftp://nvd' })).toThrow(/NVD_API_URL/);
+    expect(() => validateEnv({ ...base, CVE_CACHE_HOURS: '0' })).toThrow();
+  });
 });

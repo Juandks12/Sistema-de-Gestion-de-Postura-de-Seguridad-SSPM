@@ -51,6 +51,8 @@ export interface ScanCompletedEvent {
   scanId: string;
   scanType: ScanType;
   opened: OpenedFinding[];
+  /** Solo SUBDOMAIN_DISCOVERY: subdominios nuevos fuera del inventario (null = línea base). */
+  newHosts?: string[] | null;
 }
 
 /**
@@ -136,7 +138,13 @@ export class AlertsService implements OnApplicationShutdown {
       if (!asset) return 0;
 
       const newOpenPorts = event.scanType === ScanType.PORT_SCAN ? await this.newOpenPorts(asset.id, event.scanId) : null;
-      const drafts = detectAlerts({ asset, scan: { id: event.scanId, type: event.scanType }, opened: event.opened, newOpenPorts });
+      const drafts = detectAlerts({
+        asset,
+        scan: { id: event.scanId, type: event.scanType },
+        opened: event.opened,
+        newOpenPorts,
+        newHosts: event.newHosts,
+      });
       if (drafts.length === 0) return 0;
 
       const created = await this.prisma.$transaction(

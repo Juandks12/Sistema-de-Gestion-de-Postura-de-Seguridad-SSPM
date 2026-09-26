@@ -29,7 +29,7 @@ export class ScansController {
   @Roles(UserRole.ADMIN, UserRole.ANALYST)
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Encolar un escaneo sobre un activo (PORT_SCAN, WEB_HEADERS, SSL_CERT o SENSITIVE_PATHS)',
+    summary: 'Encolar un escaneo sobre un activo (ver los tipos en CreateScanDto)',
     description:
       'El escaneo se ejecuta de forma asíncrona. Consulta GET /scans/{id} para ver su estado, resultado y hallazgos.',
   })

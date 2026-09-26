@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ScanType } from '@prisma/client';
 import { analyzeHeaders } from '../analyzers/headers.analyzer';
 import { ScanExecutionError } from '../scan.errors';
-import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
+import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
 import { httpProbe, HttpProbeOutcome } from '../web/http-client';
 import { webTargetsFor } from './web-targets';
 
@@ -25,7 +25,7 @@ export class WebHeadersScanner implements Scanner {
         allowPrivate: ctx.allowPrivate,
         signal: ctx.signal,
         timeoutMs,
-        pinnedAddress: ctx.target.address,
+        pinnedAddress: requireTarget(ctx).address,
         maxBodyBytes: 4096,
       });
       probes.push({ target, outcome });
@@ -69,7 +69,7 @@ export class WebHeadersScanner implements Scanner {
     }
 
     return {
-      parameters: { targets: targets.map((t) => t.url), timeoutMs, userAgentPinnedAddress: ctx.target.address },
+      parameters: { targets: targets.map((t) => t.url), timeoutMs, userAgentPinnedAddress: requireTarget(ctx).address },
       rawResult: { probes: audited },
       findings,
       summary: {

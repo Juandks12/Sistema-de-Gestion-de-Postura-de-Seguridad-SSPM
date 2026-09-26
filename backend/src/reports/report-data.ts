@@ -76,7 +76,11 @@ export const SCAN_TYPE_LABEL: Record<ScanType, string> = {
   WEB_HEADERS: 'Cabeceras HTTP',
   SSL_CERT: 'Certificado TLS',
   SENSITIVE_PATHS: 'Rutas sensibles',
+  EMAIL_SECURITY: 'Seguridad del correo',
+  SUBDOMAIN_DISCOVERY: 'Descubrimiento de subdominios',
 };
+
+export const DOMAIN_ONLY_SCANS: ScanType[] = ['EMAIL_SECURITY', 'SUBDOMAIN_DISCOVERY'];
 
 export function severityRank(s: FindingSeverity): number {
   return SEVERITY_ORDER.indexOf(s);

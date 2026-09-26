@@ -97,6 +97,9 @@ export class ScansService {
       if (!asset) {
         throw new NotFoundException('Activo no encontrado');
       }
+      if (!this.worker.typesFor(asset.type).includes(type)) {
+        throw new BadRequestException(`El escaneo ${type} solo aplica a dominios`);
+      }
       if (!asset.isActive) {
         throw new BadRequestException('El activo está inactivo; reactívalo antes de escanearlo');
       }
@@ -157,11 +160,18 @@ export class ScansService {
     return scan;
   }
 
-  /** Encola todos los tipos de escaneo disponibles para un activo (auditoría completa). */
+  /** Encola todos los tipos de escaneo que aplican al activo (auditoría completa). */
   async enqueueAll(input: Omit<EnqueueScanInput, 'type'>) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: input.assetId, organizationId: input.organizationId },
+      select: { type: true },
+    });
+    if (!asset) {
+      throw new NotFoundException('Activo no encontrado');
+    }
     const queued: Awaited<ReturnType<ScansService['enqueue']>>[] = [];
     const skipped: Array<{ type: ScanType; reason: string }> = [];
-    for (const type of this.worker.supportedTypes) {
+    for (const type of this.worker.typesFor(asset.type)) {
       try {
         queued.push(await this.enqueue({ ...input, type }));
       } catch (err) {

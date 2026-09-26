@@ -146,3 +146,23 @@ describe('detectAlerts', () => {
     expect(alerts).toEqual([]);
   });
 });
+
+describe('detectAlerts - subdominios nuevos', () => {
+  const scan = { id: 's5', type: ScanType.SUBDOMAIN_DISCOVERY };
+
+  it('alerta de los subdominios nuevos fuera del inventario', () => {
+    const hosts = Array.from({ length: 12 }, (_, i) => `h${String(i).padStart(2, '0')}.example.com`);
+    const [alert] = detectAlerts({ asset, scan, opened: [], newOpenPorts: null, newHosts: hosts });
+    expect(alert).toMatchObject({ type: AlertType.NEW_SUBDOMAIN, severity: FindingSeverity.MEDIUM, data: { hosts } });
+    expect(alert.title).toBe('12 subdominios nuevos de tienda.example.com');
+    expect(alert.message).toContain('h09.example.com y 2 más');
+
+    const [single] = detectAlerts({ asset, scan, opened: [], newOpenPorts: null, newHosts: ['vpn.example.com'] });
+    expect(single.title).toBe('Nuevo subdominio de tienda.example.com: vpn.example.com');
+  });
+
+  it('no alerta en la línea base ni sin novedades', () => {
+    expect(detectAlerts({ asset, scan, opened: [], newOpenPorts: null, newHosts: null })).toEqual([]);
+    expect(detectAlerts({ asset, scan, opened: [], newOpenPorts: null, newHosts: [] })).toEqual([]);
+  });
+});

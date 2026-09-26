@@ -272,11 +272,12 @@ describe('Web audit (e2e) - cabeceras, TLS, rutas sensibles y hallazgos', () => 
     try {
       const res = await http_().post(`/api/v1/assets/${assetId}/scans/all`).set('Authorization', `Bearer ${token}`).expect(202);
       expect(res.body.queued.map((s: { type: string }) => s.type).sort()).toEqual(
-        ['PORT_SCAN', 'SENSITIVE_PATHS', 'SSL_CERT', 'WEB_HEADERS'].sort(),
+        // localhost es un dominio: incluye la seguridad del correo (el descubrimiento está desactivado en e2e).
+        ['EMAIL_SECURITY', 'PORT_SCAN', 'SENSITIVE_PATHS', 'SSL_CERT', 'WEB_HEADERS'].sort(),
       );
       const second = await http_().post(`/api/v1/assets/${assetId}/scans/all`).set('Authorization', `Bearer ${token}`).expect(202);
       expect(second.body.queued).toHaveLength(0);
-      expect(second.body.skipped).toHaveLength(4);
+      expect(second.body.skipped).toHaveLength(5);
       for (const s of res.body.queued) {
         await http_().post(`/api/v1/scans/${s.id}/cancel`).set('Authorization', `Bearer ${token}`);
       }

@@ -285,6 +285,46 @@ class EnvironmentVariables {
   })
   @IsOptional()
   TRUST_PROXY: string = '';
+
+  // ------------------------------------------------------------------
+  // Inteligencia de amenazas: CVE, subdominios y correo (bloque 2)
+  // ------------------------------------------------------------------
+
+  /** Correlaciona las versiones detectadas por Nmap con los CVE publicados en NVD. */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  CVE_LOOKUP_ENABLED: boolean = true;
+
+  /** Endpoint de la API 2.0 de CVE de NVD (o un espejo compatible). */
+  @Matches(/^https?:\/\/\S+$/, { message: 'NVD_API_URL debe ser una URL http(s)' })
+  @IsOptional()
+  NVD_API_URL: string = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+
+  /** Clave gratuita de NVD: sube el límite de 5 a 50 peticiones cada 30 s. */
+  @IsString()
+  @IsOptional()
+  NVD_API_KEY: string = '';
+
+  /** Horas que se reutilizan los CVE descargados de un producto antes de volver a consultar NVD. */
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  @IsOptional()
+  CVE_CACHE_HOURS: number = 24;
+
+  /** Descubre subdominios de los dominios del inventario en Certificate Transparency. */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  SUBDOMAIN_DISCOVERY_ENABLED: boolean = true;
+
+  /** Máximo de subdominios que se registran por dominio en cada descubrimiento. */
+  @IsInt()
+  @Min(10)
+  @Max(5000)
+  @IsOptional()
+  SUBDOMAIN_DISCOVERY_MAX_HOSTS: number = 500;
 }
 
 function toBoolean(value: unknown): unknown {
