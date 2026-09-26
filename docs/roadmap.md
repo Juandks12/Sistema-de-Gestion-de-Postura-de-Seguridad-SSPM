@@ -5,31 +5,24 @@ en pasos concretos, priorizados por lo que más rápido convierte el sistema
 en algo vendible a PyMEs (y eventualmente a empresas más grandes), no por
 lo más interesante técnicamente.
 
-## Ya completado (Sprints 0-3)
+## Ya completado (Sprints 0-4)
 
 Inventario de activos, escaneo de puertos/servicios (Nmap), auditoría de
 headers HTTP y SSL/TLS, detección de rutas sensibles, clasificación de
-hallazgos, Security Score con histórico, dashboard. Ver README para el
-detalle funcional completo.
+hallazgos, Security Score con histórico, dashboard, y en el Sprint 4:
 
-## Fase 1 — Cerrar el MVP funcional (Sprint 4 del plan original)
+- **Reportes PDF** (RF-09) ejecutivo y técnico, de la organización o de un activo.
+- **Alertas** (RF-10) por puerto nuevo, certificado por vencer y hallazgo crítico,
+  notificadas por correo o webhook (Slack, Discord, JSON) con severidad mínima por canal.
+- **Monitoreo continuo** (sección 10.4) diario o semanal por organización: es lo que
+  convierte el producto en una suscripción de vigilancia, no en un análisis puntual.
+- **CI** en cada PR: lint, pruebas unitarias y e2e con PostgreSQL, build de imágenes.
 
-1. **Reportes PDF** (RF-09): ejecutivo (para gerencia, sin jerga técnica) y
-   técnico (para el administrador de TI, con evidencia y recomendaciones).
-   Es el entregable que un cliente PyME espera poder mostrar a su junta o
-   a un auditor.
-2. **Alertas** (RF-10): tabla `alerts` + notificación por email o webhook
-   ante: nuevo puerto expuesto, certificado por vencer, hallazgo crítico
-   nuevo. Sin esto, el sistema es una foto puntual, no "gestión continua de
-   postura" — que es la promesa del nombre SSPM.
-3. **Escaneos programados** (sección 10.4): un cron (o job periódico del
-   propio worker) que reencole auditorías por activo cada N días según
-   configuración por organización. Esto es lo que justifica cobrar una
-   suscripción recurrente en vez de un análisis puntual.
+Ver README para el detalle funcional completo.
 
 ## Fase 2 — DevOps (para poder vender con confianza)
 
-1. CI en cada PR: lint + test + build (ver `.github/workflows/ci.yml`).
+1. ~~CI en cada PR: lint + test + build~~ (hecho, `.github/workflows/ci.yml`).
 2. Build y publicación de imágenes Docker versionadas (GHCR) en cada
    merge a `main`.
 3. Observabilidad mínima: logs estructurados (JSON) y un dashboard de
@@ -54,7 +47,8 @@ decorativas:
 3. **Detección de anomalías en el histórico de score**: alertar si el
    score de un activo cae de forma atípica respecto a su propia
    tendencia (esto puede empezar como una regla estadística simple antes
-   de justificar un modelo).
+   de justificar un modelo). Encaja como un cuarto tipo en
+   `backend/src/alerts/alert-rules.ts`, reutilizando canales y entrega.
 
 Explícitamente **no** priorizar: "chatbot de seguridad" genérico o
 generación automática de remediación de código — no hay evidencia de que

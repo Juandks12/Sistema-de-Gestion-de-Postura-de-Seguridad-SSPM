@@ -2,8 +2,13 @@
 
 Plataforma SaaS multi-tenant orientada a PyMEs para registrar activos externos
 (dominios e IPs públicas), escanearlos con herramientas automatizadas (Nmap, análisis
-de cabeceras HTTP, certificados SSL/TLS), clasificar hallazgos por criticidad y
-calcular un *Security Score* comprensible para la toma de decisiones.
+de cabeceras HTTP, certificados SSL/TLS), clasificar hallazgos por criticidad,
+calcular un *Security Score* comprensible para la toma de decisiones, vigilar los
+activos de forma continua con alertas tempranas y generar reportes PDF.
+
+La documentación técnica ampliada (arquitectura, decisiones, despliegue y roadmap)
+está en [`docs/`](docs/); la memoria académica y el material de negocio viven en el
+repositorio `sspm-docs`.
 
 Este repositorio contiene el **backend** (API REST, en `backend/`) y el **frontend**
 (dashboard web, en `frontend/`).
@@ -16,7 +21,7 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 | Sprint 1 | Registro de activos (RF-01), integración Nmap, detección de puertos/servicios (RF-02, RF-03) | ✅ Implementado |
 | Sprint 2 | Cabeceras HTTP (RF-04), SSL/TLS (RF-05), rutas sensibles (RF-06), clasificación por severidad (RF-08) | ✅ Implementado |
 | Sprint 3 | Security Score (RF-07), histórico de postura (RF-11), endpoints del dashboard y base del frontend | ✅ Implementado |
-| Sprint 4 | Reportes PDF y alertas | ⏳ |
+| Sprint 4 | Reportes PDF (RF-09), alertas por correo y webhook (RF-10), monitoreo continuo programado (10.4) | ✅ Implementado |
 
 ## Stack tecnológico
 
@@ -31,7 +36,10 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 - **Parser XML:** `fast-xml-parser` para la salida `-oX` de Nmap
 - **Auditoría web:** `undici` (HTTP con conexión a IP validada) y `node:tls` (certificados)
 - **Contenedores:** Docker multi-etapa (Ubuntu 24.04 LTS, Node 22, Nmap 7.94) y Docker Compose
+- **Reportes PDF:** [PDFKit](https://pdfkit.org/) (sin navegador headless: la imagen no crece)
+- **Notificaciones:** [Nodemailer](https://nodemailer.com/) (SMTP) y webhooks con `undici`
 - **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4 y Recharts, servido por Nginx en Docker
+- **CI:** GitHub Actions (lint, pruebas unitarias y e2e con PostgreSQL, build de las imágenes Docker)
 
 ## Estructura de carpetas
 
@@ -81,6 +89,9 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
     │   ├── findings/           # RF-08: hallazgos, catálogo de reglas y severidad
     │   ├── risk/               # RF-07/RF-11: motor de riesgo, Security Score e histórico
     │   ├── dashboard/          # Datos agregados para el dashboard (sección 8)
+    │   ├── alerts/             # RF-10: reglas de alerta, canales, correo y webhooks
+    │   ├── monitoring/         # Sección 10.4: planificador del monitoreo continuo
+    │   ├── reports/            # RF-09: datos y renderizado de los reportes PDF
     │   └── health/             # Endpoint de salud
     └── test/                   # Pruebas end-to-end (supertest)
 ```
@@ -140,7 +151,9 @@ contenedores: Nest reinicia la API y Vite recarga la web cada vez que guardas un
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-En este modo la aplicación web está en <http://localhost:5173>.
+En este modo la aplicación web está en <http://localhost:5173> y los correos de
+alerta no salen a Internet: los captura [Mailpit](https://mailpit.axllent.org/),
+visible en <http://localhost:8025>.
 
 Con la API de desarrollo levantada, puedes ejecutar comandos dentro del contenedor:
 
@@ -199,6 +212,9 @@ edítalo. Las variables principales son:
 | `JWT_SECRET` | valor de desarrollo | Secreto para firmar los tokens |
 | `SEED_DEMO_DATA` | `true` | Crear los usuarios de demostración al arrancar |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Modo laboratorio, solo en modo desarrollo |
+| `SCHEDULER_ENABLED` | `true` | Planificador del monitoreo continuo |
+| `APP_URL` | `http://localhost:8080` | URL de la web usada en los enlaces de las alertas |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | vacío | Servidor de correo para las alertas; sin `SMTP_HOST` los canales de correo se omiten |
 
 La API y la web se publican solo en `127.0.0.1`, así que no son accesibles desde
 otros equipos de tu red. La base de datos no se publica salvo que lo pidas.
@@ -307,7 +323,10 @@ Se adapta a móvil y escritorio y respeta el modo claro u oscuro del sistema.
 | Activos | Tabla ordenada por peor postura con score, hallazgos abiertos y último escaneo; alta de activos con declaración de autorización; auditoría completa con un clic |
 | Detalle de activo | Score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
 | Hallazgos | Filtros por estado, severidad y categoría; cada fila se expande con descripción, recomendación, evidencia y acciones para aceptar el riesgo, marcar falso positivo o reabrir |
-| Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación |
+| Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación. Los del monitoreo continuo llevan la marca "Programado" |
+| Alertas | Avisos de puertos nuevos, certificados por vencer y hallazgos críticos, con el resultado de entrega por canal; revisión individual o masiva. El menú muestra cuántas hay pendientes |
+| Reportes | Descarga del reporte ejecutivo o técnico en PDF, de la organización o de un activo, e historial de reportes generados. También desde la vista general y el detalle de cada activo |
+| Configuración (solo ADMIN) | Frecuencia del monitoreo continuo con la próxima auditoría de cada activo, y canales de notificación (correo o webhook de Slack, Discord o JSON) con envío de prueba |
 | Usuarios (solo ADMIN) | Alta de usuarios con contraseña inicial y generador, cambio de rol, restablecimiento de contraseña y activación o desactivación del acceso |
 | Mi cuenta | Datos del perfil y la organización, y cambio de la propia contraseña con los requisitos a la vista |
 
@@ -364,6 +383,18 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | GET | `/api/v1/dashboard/assets` | todos | Tabla de activos con score y hallazgos, peor postura primero |
 | GET | `/api/v1/dashboard/assets/:id` | todos | Vista detallada de un activo: score, histórico, hallazgos y puertos abiertos |
 | GET | `/api/v1/dashboard/history` | todos | Serie diaria del score de la organización (`days`, por defecto 30) |
+| GET | `/api/v1/alerts` | todos | RF-10: alertas paginadas (`acknowledged`, `severity`, `type`, `assetId`) |
+| GET | `/api/v1/alerts/summary` | todos | Alertas pendientes por severidad |
+| POST | `/api/v1/alerts/:id/acknowledge` | ADMIN, ANALYST | Marcar una alerta como revisada |
+| POST | `/api/v1/alerts/acknowledge-all` | ADMIN, ANALYST | Marcar todas las pendientes como revisadas |
+| GET/POST | `/api/v1/alerts/channels` | ADMIN | Listar o crear canales de correo o webhook (las URL se devuelven enmascaradas) |
+| PATCH/DELETE | `/api/v1/alerts/channels/:id` | ADMIN | Editar o eliminar un canal |
+| POST | `/api/v1/alerts/channels/:id/test` | ADMIN | Enviar una notificación de prueba |
+| GET | `/api/v1/monitoring` | todos | Sección 10.4: frecuencia y próxima auditoría de cada activo |
+| PATCH | `/api/v1/monitoring` | ADMIN | Cambiar la frecuencia (`OFF`, `DAILY`, `WEEKLY`) |
+| GET | `/api/v1/reports/executive` | todos | RF-09: reporte ejecutivo en PDF (`assetId` opcional) |
+| GET | `/api/v1/reports/technical` | todos | RF-09: reporte técnico en PDF (`assetId` opcional) |
+| GET | `/api/v1/reports` | todos | Historial de reportes generados |
 
 ### Ejemplo: registrar un activo (RF-01)
 
@@ -555,6 +586,64 @@ con `NODE_ENV=production`.
 ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm run start:dev
 ```
 
+## Alertas tempranas (RF-10)
+
+Al completar cada escaneo se evalúan tres reglas (`backend/src/alerts/alert-rules.ts`):
+
+| Tipo | Cuándo se genera | Severidad |
+|------|------------------|-----------|
+| `NEW_OPEN_PORT` | Un puerto abierto que no estaba en el escaneo de puertos anterior del activo. El primer escaneo es la línea base y no alerta. | La del hallazgo del puerto, mínimo media |
+| `CERT_EXPIRING` | El hallazgo de certificado caducado, a menos de 7 días o a menos de 30 días aparece o se reabre | La del hallazgo |
+| `CRITICAL_FINDING` | Hallazgos críticos nuevos o reabiertos no cubiertos por las anteriores (agrupados en una alerta por escaneo) | Crítica |
+
+Como solo cuentan los hallazgos que **pasan a abiertos**, un problema que persiste no
+genera una alerta en cada escaneo.
+
+Cada alerta se guarda en `alerts` y se notifica, **de forma asíncrona** (sin retrasar
+al worker), por los canales activos de la organización cuya severidad mínima cubre la
+de la alerta. El resultado de cada envío (`SENT`, `FAILED` o `SKIPPED`) queda en la
+alerta y en el canal.
+
+- **Correo:** SMTP con Nodemailer. Sin `SMTP_HOST` el envío se marca `SKIPPED`.
+- **Webhook:** cuerpo adaptado a Slack (`hooks.slack.com`), Discord
+  (`discord.com/api/webhooks`) o JSON genérico (`event: alert.created`). La URL es
+  un secreto: se muestra enmascarada.
+
+Protección contra SSRF en los webhooks (sección 11.3): solo `https://` hacia dominios
+o IPs públicas, sin credenciales en la URL; en cada envío se resuelve el DNS, se
+rechazan direcciones privadas, se conecta a la IP validada (nombre en Host/SNI, TLS
+verificado) y no se siguen redirecciones. En modo laboratorio se admiten HTTP y hosts
+locales para las pruebas.
+
+## Monitoreo continuo (sección 10.4)
+
+Cada organización elige en **Configuración** una frecuencia: `OFF` (por defecto),
+`DAILY` o `WEEKLY`. El planificador (`backend/src/monitoring/`) revisa cada
+`SCHEDULER_INTERVAL_MS` qué activos activos y autorizados están vencidos y encola su
+auditoría completa como escaneos con `source = SCHEDULED`.
+
+- **Varias instancias:** cada activo se reclama con un `UPDATE` condicional sobre
+  `last_scheduled_scan_at`, así que solo una instancia lo encola por periodo.
+- **Sin duplicados:** los tipos con un escaneo ya en curso se omiten.
+- **Límites:** los escaneos programados respetan la concurrencia global y por
+  organización, pero no consumen el límite por hora pensado para las peticiones manuales.
+- Con `SCHEDULER_ENABLED=false` una instancia no planifica (útil si se separa en un
+  proceso propio).
+
+## Reportes PDF (RF-09)
+
+`GET /reports/executive` y `GET /reports/technical` generan el PDF bajo demanda con los
+datos vigentes, de la organización o de un activo (`assetId`). Cada generación se
+registra en `reports` (quién, cuándo, score y tamaño); el PDF no se almacena.
+
+- **Ejecutivo (gerencia):** score con su tendencia semanal, resumen en lenguaje de
+  negocio, hallazgos por severidad, evolución de 30 días, principales riesgos,
+  recomendaciones agrupadas por acción, activos con peor postura, alertas y anexo
+  metodológico del Security Score.
+- **Técnico (TI):** por activo, del peor al mejor score: último escaneo de cada tipo,
+  puertos abiertos y cada hallazgo abierto con CVSS, ubicación, fechas, descripción,
+  recomendación y evidencia.
+
 ## Modelo multi-tenant y RBAC
 
 - Cada usuario pertenece a **una** organización; el JWT incluye `org` y `role`.
@@ -574,7 +663,7 @@ ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm ru
 | `ANALYST` | Desarrollador | Registra/edita activos y lanza escaneos |
 | `VIEWER` | Gerente | Solo lectura (listados, dashboard, reportes) |
 
-## Modelo de datos (Sprint 1)
+## Modelo de datos
 
 Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports`):
 
@@ -597,7 +686,15 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   organización (`scope = ORGANIZATION`): `score`, `grade`, conteos por severidad,
   `scored_assets`, `breakdown` con el desglose de la fórmula, `trigger` y `scan_id`.
 
-Las tablas `reports` y `alerts` se añadirán en el Sprint 4.
+- **alerts**: alertas tempranas: `type`, `severity`, `title`, `message`, `data` (puertos,
+  hallazgos, fechas), `deliveries` (resultado por canal), `acknowledged_at`/`acknowledged_by_id`.
+- **alert_channels**: canales de notificación por organización: `type` (`EMAIL` o
+  `WEBHOOK`), `target`, `min_severity`, `is_active` y el resultado del último envío.
+- **reports**: registro de reportes generados: `type`, `asset_id` (nulo = organización),
+  `generated_by_id`, `score`, `grade`, `open_findings`, `pages`, `size_bytes`.
+
+Además, `organizations.monitoring_frequency`, `assets.last_scheduled_scan_at` y
+`scans.source` (`MANUAL` o `SCHEDULED`) soportan el monitoreo continuo.
 
 ## Scripts útiles
 
@@ -628,13 +725,16 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   así una redirección o un cambio de DNS no pueden desviar las peticiones a la red interna.
 - Los hallazgos de rutas sensibles guardan solo la ruta y el código de estado, nunca el
   contenido del archivo.
+- Los webhooks de alertas se validan igual que los objetivos de escaneo (solo HTTPS a
+  hosts públicos, IP validada en cada envío, sin redirecciones) y sus URL, que son
+  secretas, se devuelven enmascaradas. Los correos se construyen sin acceso a archivos
+  ni URLs (`disableFileAccess`, `disableUrlAccess`) y con el contenido escapado.
 - La imagen Docker ejecuta la API y Nmap como usuario sin privilegios y desactiva
   la telemetría de Prisma y de Scarf.
 - `docker compose` publica los puertos solo en `127.0.0.1`.
 
-## Próximos pasos (Sprint 4)
+## Próximos pasos
 
-1. Generación de reportes PDF ejecutivo y técnico (RF-09) a partir del dashboard y los hallazgos.
-2. Tabla `alerts` y notificaciones por correo o webhook (RF-10): nuevos puertos abiertos,
-   certificados próximos a vencer y hallazgos críticos.
-3. Escaneos programados para el monitoreo continuo (sección 10.4).
+El alcance funcional del MVP (RF-01 a RF-11) está completo. Las siguientes fases
+(publicación de imágenes y despliegue continuo, observabilidad, funciones de IA y
+expansión a postura en la nube) están en [`docs/roadmap.md`](docs/roadmap.md).

@@ -26,6 +26,9 @@ equipo.
 | `DATABASE_URL` | Apuntando a la base de datos de producción, con `sslmode=require` si el proveedor lo exige. |
 | `CORS_ORIGINS` | Dominio(s) reales del frontend, nunca `*`. |
 | `SEED_DEMO_DATA=false` | No crear usuarios de demostración en producción. |
+| `APP_URL` | URL pública de la web: se usa en los enlaces de las alertas. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor de correo para las alertas (p. ej. Amazon SES, SendGrid o Postmark por SMTP). Sin `SMTP_HOST` los canales de correo se omiten. |
+| `SCHEDULER_ENABLED` | Puede quedar en `true` en varias réplicas: cada activo se reclama una sola vez por periodo. Si el planificador se separa en un proceso propio, pon `false` en las instancias de la API. |
 
 ## 3. Migraciones en despliegue
 
@@ -44,6 +47,7 @@ por defecto).
       `findings` es el activo de valor del producto).
 - [ ] Límites de escaneo (`SCAN_MAX_PER_HOUR_PER_ORG`, concurrencia)
       revisados para el volumen de clientes esperado.
+- [ ] SMTP configurado y probado con el botón "Probar" de Configuración (o al menos un webhook).
 - [ ] Logs centralizados (ver roadmap DevOps en `docs/roadmap.md`).
 - [ ] Página de estado / health check (`/api/v1/health`) monitoreada
       externamente (uptime robot, Better Uptime, etc.).
