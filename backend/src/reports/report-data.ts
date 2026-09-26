@@ -196,6 +196,15 @@ export function executiveSummary(data: ReportData): string[] {
   return paragraphs;
 }
 
+/** Elemento de una lista de la evidencia: los que tienen `id` (p. ej. CVE) se resumen. */
+function formatItem(v: unknown): string {
+  if (typeof v !== 'object' || v === null) return String(v);
+  const item = v as Record<string, unknown>;
+  if (typeof item.id !== 'string') return JSON.stringify(v);
+  const extra = [typeof item.cvss === 'number' ? `CVSS ${item.cvss}` : null, item.kev === true ? 'KEV' : null].filter(Boolean);
+  return extra.length > 0 ? `${item.id} (${extra.join(', ')})` : item.id;
+}
+
 /** Evidencia en una línea legible, sin estructuras anidadas largas. */
 export function formatEvidence(evidence: Record<string, unknown> | null, max = 400): string {
   if (!evidence) return '';
@@ -203,7 +212,7 @@ export function formatEvidence(evidence: Record<string, unknown> | null, max = 4
   for (const [key, value] of Object.entries(evidence)) {
     if (value === null || value === undefined || value === '') continue;
     let text: string;
-    if (Array.isArray(value)) text = value.map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join(', ');
+    if (Array.isArray(value)) text = value.map(formatItem).join(', ');
     else if (typeof value === 'object') text = JSON.stringify(value);
     else text = String(value);
     parts.push(`${key}: ${text}`);

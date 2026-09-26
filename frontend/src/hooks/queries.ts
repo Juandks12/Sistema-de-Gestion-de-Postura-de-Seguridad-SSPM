@@ -9,6 +9,8 @@ import type {
   Asset,
   AssetVerification,
   DeliveryResult,
+  DiscoveredHosts,
+  ImportDiscoveredResult,
   MonitoringFrequency,
   MonitoringStatus,
   ReportRecord,
@@ -36,6 +38,7 @@ export const keys = {
   dashboardAssets: ['dashboard', 'assets'] as const,
   dashboardAsset: (id: string) => ['dashboard', 'asset', id] as const,
   verification: (id: string) => ['assets', id, 'verification'] as const,
+  discovered: (id: string) => ['assets', id, 'discovered-hosts'] as const,
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
@@ -324,5 +327,31 @@ export function useVerifyAsset() {
       qc.setQueryData(keys.verification(id), data);
       invalidate();
     },
+  });
+}
+
+export function useDiscoveredHosts(assetId: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.discovered(assetId),
+    queryFn: () => api<DiscoveredHosts>(`/assets/${assetId}/discovered-hosts`),
+    enabled,
+  });
+}
+
+export function useSetDiscoveredHostIgnored() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ignored }: { id: string; assetId: string; ignored: boolean }) =>
+      api<{ id: string; hostname: string; ignored: boolean }>(`/discovered-hosts/${id}`, { method: 'PATCH', json: { ignored } }),
+    onSuccess: (_data, { assetId }) => qc.invalidateQueries({ queryKey: keys.discovered(assetId) }),
+  });
+}
+
+export function useImportDiscoveredHosts() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api<ImportDiscoveredResult>('/discovered-hosts/import', { method: 'POST', json: { ids, authorizationConfirmed: true } }),
+    onSuccess: invalidate,
   });
 }

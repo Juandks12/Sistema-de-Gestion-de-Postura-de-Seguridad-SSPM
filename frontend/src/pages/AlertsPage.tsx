@@ -1,4 +1,4 @@
-import { BellRing, CheckCheck, ChevronDown, ChevronRight, Lock, Network, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { BellRing, CheckCheck, ChevronDown, ChevronRight, Globe, Lock, Network, ShieldAlert, type LucideIcon } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -21,6 +21,7 @@ const TYPE_ICON: Record<AlertType, LucideIcon> = {
   NEW_OPEN_PORT: Network,
   CERT_EXPIRING: Lock,
   CRITICAL_FINDING: ShieldAlert,
+  NEW_SUBDOMAIN: Globe,
 };
 
 const DELIVERY_STYLE: Record<DeliveryResult['status'], { cls: string; label: string }> = {
@@ -69,7 +70,7 @@ export function AlertsPage() {
     <>
       <PageHeader
         title="Alertas"
-        description="Avisos tempranos generados al completar cada escaneo: puertos que se abren, certificados a punto de vencer y hallazgos críticos nuevos."
+        description="Avisos tempranos generados al completar cada escaneo: puertos que se abren, certificados a punto de vencer, subdominios nuevos y hallazgos críticos (incluidos los CVE explotados activamente)."
         actions={
           canEdit && pending > 0 ? (
             <Button variant="secondary" icon={<CheckCheck className="size-4" />} onClick={acknowledgeAll} loading={ackAll.isPending}>

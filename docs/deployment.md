@@ -30,6 +30,8 @@ equipo.
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor de correo para las alertas (p. ej. Amazon SES, SendGrid o Postmark por SMTP). Sin `SMTP_HOST` los canales de correo se omiten. |
 | `TRUST_PROXY` | Número de proxies delante de la API (1 con el Nginx de la imagen web; 2 si además hay un balanceador). Sin él, los límites por IP del login tratarían a todos los clientes como uno solo. No lo pongas si la API está expuesta sin proxy: el cliente podría falsear su IP. |
 | `ASSET_VERIFICATION_REQUIRED` | Siempre `true` (la aplicación no arranca con `false` en producción). |
+| `NVD_API_KEY` | Recomendada: con varios clientes, el límite sin clave de NVD (5 peticiones cada 30 s) ralentiza los escaneos de puertos que consultan productos nuevos. Es gratuita. |
+| Salida a Internet | La API necesita salir por HTTPS a `services.nvd.nist.gov`, `crt.sh` y `api.certspotter.com`, y hacer consultas DNS (UDP y TCP al puerto 53) para la seguridad del correo. Si la red lo impide, desactiva `CVE_LOOKUP_ENABLED` o `SUBDOMAIN_DISCOVERY_ENABLED`. |
 | `SCHEDULER_ENABLED` | Puede quedar en `true` en varias réplicas: cada activo se reclama una sola vez por periodo. Si el planificador se separa en un proceso propio, pon `false` en las instancias de la API. |
 
 ## 3. Migraciones en despliegue
@@ -50,6 +52,7 @@ por defecto).
 - [ ] Límites de escaneo (`SCAN_MAX_PER_HOUR_PER_ORG`, concurrencia)
       revisados para el volumen de clientes esperado.
 - [ ] `TRUST_PROXY` coherente con la cadena de proxies real (ver tabla).
+- [ ] `NVD_API_KEY` configurada y salida a NVD, crt.sh y DNS permitida (ver tabla).
 - [ ] SMTP configurado y probado con el botón "Probar" de Configuración (o al menos un webhook).
 - [ ] Logs centralizados (ver roadmap DevOps en `docs/roadmap.md`).
 - [ ] Página de estado / health check (`/api/v1/health`) monitoreada

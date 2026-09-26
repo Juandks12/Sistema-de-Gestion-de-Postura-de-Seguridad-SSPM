@@ -22,6 +22,8 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 | Sprint 2 | Cabeceras HTTP (RF-04), SSL/TLS (RF-05), rutas sensibles (RF-06), clasificación por severidad (RF-08) | ✅ Implementado |
 | Sprint 3 | Security Score (RF-07), histórico de postura (RF-11), endpoints del dashboard y base del frontend | ✅ Implementado |
 | Sprint 4 | Reportes PDF (RF-09), alertas por correo y webhook (RF-10), monitoreo continuo programado (10.4) | ✅ Implementado |
+| Bloque 1 (SaaS) | Verificación de propiedad de activos, protección del inicio de sesión y del registro | ✅ Implementado |
+| Bloque 2 (SaaS) | CVE de las versiones detectadas (NVD + KEV), seguridad del correo (SPF/DMARC/DKIM), descubrimiento de subdominios (Certificate Transparency) | ✅ Implementado |
 
 ## Stack tecnológico
 
@@ -217,6 +219,8 @@ edítalo. Las variables principales son:
 | `TRUST_PROXY` | `1` en Compose | Saltos de proxy de confianza para conocer la IP real del cliente |
 | `AUTH_MAX_FAILED_LOGINS`, `AUTH_LOCKOUT_MINUTES` | `5`, `15` | Bloqueo temporal de una cuenta por intentos fallidos |
 | `AUTH_LOGIN_RATE_PER_MINUTE`, `AUTH_REGISTER_RATE_PER_HOUR` | `20`, `5` | Límites por IP en login y registro |
+| `CVE_LOOKUP_ENABLED`, `NVD_API_KEY`, `CVE_CACHE_HOURS` | `true`, vacío, `24` | Correlación de versiones con CVE de NVD; la clave gratuita de NVD sube el límite de peticiones |
+| `SUBDOMAIN_DISCOVERY_ENABLED`, `SUBDOMAIN_DISCOVERY_MAX_HOSTS` | `true`, `500` | Descubrimiento de subdominios en Certificate Transparency |
 | `APP_URL` | `http://localhost:8080` | URL de la web usada en los enlaces de las alertas |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | vacío | Servidor de correo para las alertas; sin `SMTP_HOST` los canales de correo se omiten |
 
@@ -373,8 +377,11 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | POST | `/api/v1/assets/:id/verify` | ADMIN, ANALYST | Comprobar la prueba publicada (`method` opcional: `DNS_TXT` o `HTTP_FILE`) |
 | PATCH | `/api/v1/assets/:id` | ADMIN, ANALYST | Editar nombre, descripción o estado |
 | DELETE | `/api/v1/assets/:id` | ADMIN | Eliminar activo y sus escaneos |
-| **POST** | **`/api/v1/assets/:id/scans`** | ADMIN, ANALYST | **Encolar un escaneo: `PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT` o `SENSITIVE_PATHS` (responde 202)** |
-| POST | `/api/v1/assets/:id/scans/all` | ADMIN, ANALYST | Auditoría completa: encola los cuatro tipos |
+| **POST** | **`/api/v1/assets/:id/scans`** | ADMIN, ANALYST | **Encolar un escaneo: `PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`, `SENSITIVE_PATHS`, `EMAIL_SECURITY` o `SUBDOMAIN_DISCOVERY` (responde 202)** |
+| POST | `/api/v1/assets/:id/scans/all` | ADMIN, ANALYST | Auditoría completa: encola todos los tipos que aplican al activo (seis en dominios, cuatro en IPs) |
+| GET | `/api/v1/assets/:id/discovered-hosts` | todos | Subdominios descubiertos del dominio, con su estado (sin inventariar, en inventario, descartado) |
+| PATCH | `/api/v1/discovered-hosts/:id` | ADMIN, ANALYST | Descartar o restaurar un subdominio (`ignored`) |
+| POST | `/api/v1/discovered-hosts/import` | ADMIN, ANALYST | Registrar subdominios como activos (`ids`, `authorizationConfirmed: true`) |
 | GET | `/api/v1/assets/:id/exposure` | todos | Puertos abiertos según el último escaneo completado |
 | GET | `/api/v1/scans` | todos | Listado paginado (`assetId`, `status`, `type`, `page`, `pageSize`) |
 | GET | `/api/v1/scans/:id` | todos | Estado, resumen y puertos detectados (`?includeRaw=true` añade la salida completa) |
@@ -446,7 +453,7 @@ SCAN_ID=$(curl -s -X POST http://localhost:3000/api/v1/assets/<ASSET_ID>/scans \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"type":"WEB_HEADERS"}' | jq -r .id)
 
-# O encolar la auditoría completa (puertos, cabeceras, TLS y rutas sensibles)
+# O encolar la auditoría completa (todos los tipos que aplican al activo)
 curl -s -X POST http://localhost:3000/api/v1/assets/<ASSET_ID>/scans/all -H "Authorization: Bearer $TOKEN"
 
 # 2. Consultar el estado hasta que sea COMPLETED o FAILED
@@ -469,6 +476,8 @@ curl -s "http://localhost:3000/api/v1/findings/summary" -H "Authorization: Beare
 2. El worker reclama el trabajo (`PENDING` → `RUNNING`) con `FOR UPDATE SKIP LOCKED`.
 3. El dominio se resuelve por DNS. Si alguna IP resultante es privada o reservada, el
    escaneo se bloquea. A los escáneres se les entrega la IP ya validada, nunca el texto del usuario.
+   Los escáneres pasivos (`EMAIL_SECURITY` y `SUBDOMAIN_DISCOVERY`) no se conectan al
+   activo: solo consultan DNS y fuentes públicas, así que omiten este paso.
 4. Se ejecuta el escáner del tipo solicitado (tabla siguiente) y sus resultados se
    convierten en hallazgos mediante el catálogo de reglas.
 5. Se guardan resumen (`scans.summary`), salida completa (`scans.raw_result`), puertos
@@ -479,10 +488,79 @@ curl -s "http://localhost:3000/api/v1/findings/summary" -H "Authorization: Beare
 
 | Tipo | Requisito | Qué hace |
 |------|-----------|----------|
-| `PORT_SCAN` | RF-02, RF-03 | Nmap con `spawn` sin shell: `nmap -sT -sV -Pn -n -T4 --max-retries 2 --host-timeout <s> --top-ports 1000 -oX - <IP>`. Cada puerto abierto genera un hallazgo clasificado por el servicio (base de datos, escritorio remoto, Telnet, Docker...). |
+| `PORT_SCAN` | RF-02, RF-03 | Nmap con `spawn` sin shell: `nmap -sT -sV -Pn -n -T4 --max-retries 2 --host-timeout <s> --top-ports 1000 -oX - <IP>`. Cada puerto abierto genera un hallazgo clasificado por el servicio (base de datos, escritorio remoto, Telnet, Docker...). Las versiones detectadas se cruzan con los CVE publicados (ver más abajo). |
 | `WEB_HEADERS` | RF-04 | Pide `/` por HTTPS y HTTP (puertos configurables más los detectados por Nmap), sigue redirecciones y evalúa HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, divulgación de versiones, atributos de cookies y redirección HTTP→HTTPS. |
 | `SSL_CERT` | RF-05 | Conecta por TLS y comprueba caducidad (vencido, < 7 días, < 30 días), validez futura, coincidencia del nombre, cadena de confianza, TLS 1.0/1.1, tamaño de clave, algoritmo de firma y ausencia de HTTPS. |
 | `SENSITIVE_PATHS` | RF-06 | Solicita unas 60 rutas conocidas (`.env`, `.git/`, volcados SQL, `phpinfo.php`, paneles, listados) y solo reporta las que cumplen una firma de contenido, lo que descarta los sitios que responden 200 a todo. Nunca almacena el contenido del archivo. |
+| `EMAIL_SECURITY` | Solo dominios | SPF, DMARC y DKIM a partir de los registros DNS públicos (ver más abajo). |
+| `SUBDOMAIN_DISCOVERY` | Solo dominios | Subdominios en los registros de Certificate Transparency, resueltos en DNS, para detectar activos fuera del inventario. |
+
+### Vulnerabilidades conocidas (CVE)
+
+Nmap identifica el software y su versión con un CPE (`cpe:/a:openbsd:openssh:7.4p1`).
+Tras el escaneo de puertos, la plataforma consulta en la
+[API 2.0 de NVD](https://nvd.nist.gov/developers/vulnerabilities) todos los CVE del
+producto y decide **localmente** qué versiones están afectadas con los rangos de cada CVE
+(`versionStartIncluding`, `versionEndExcluding`...). Así una sola descarga sirve para
+todas las versiones y se guarda en `cve_product_cache` (`CVE_CACHE_HOURS`, 24 h por
+defecto) para respetar el límite de NVD (5 peticiones cada 30 s sin clave, 50 con
+`NVD_API_KEY`).
+
+- Un hallazgo `VULN-KNOWN-CVE` por servicio vulnerable, con el total de CVE, los 20 más
+  relevantes en la evidencia (enlace a NVD, CVSS, descripción) y la severidad y CVSS del
+  más grave.
+- Los CVE del catálogo **KEV de CISA** (explotados activamente, dato que publica NVD) van
+  primero y elevan la severidad: a crítica si ya era alta y a alta en otro caso.
+- **Backports:** si el banner indica un paquete de distribución (Ubuntu, Debian, RHEL...),
+  la severidad baja un nivel y el hallazgo lo explica, porque estas distribuciones corrigen
+  vulnerabilidades sin cambiar el número de versión. Se puede marcar como falso positivo.
+- No se usan versiones imprecisas de Nmap (`9.6.0 or later`, `2.4.X`) ni los CPE de sistema
+  operativo.
+- Si NVD no responde se usa la caché caducada; si no la hay, los hallazgos de CVE abiertos
+  **se conservan** en lugar de darse por resueltos, y el resumen del escaneo lo indica.
+
+### Seguridad del correo (SPF, DMARC, DKIM)
+
+Solo consultas DNS: el escáner no envía correo ni se conecta a los servidores.
+
+| Regla | Severidad | Qué detecta |
+|-------|-----------|-------------|
+| `MAIL-SPF-MISSING` | Media (baja si el dominio no recibe correo) | Sin registro SPF; en dominios sin correo se recomienda `v=spf1 -all`. No se reporta si el dominio no recibe correo y un DMARC que rechaza ya lo protege |
+| `MAIL-SPF-INVALID` | Media | Varios registros, mecanismos no válidos, `include` sin SPF, bucles o más de 10 consultas DNS |
+| `MAIL-SPF-PASS-ALL` | Alta | `+all`: autoriza a cualquier servidor |
+| `MAIL-SPF-NEUTRAL` | Media | `?all` o sin `all` |
+| `MAIL-SPF-SOFTFAIL` | Baja | `~all` sin un DMARC que rechace o ponga en cuarentena |
+| `MAIL-DMARC-MISSING` | Media | Ni el dominio ni sus dominios superiores publican DMARC |
+| `MAIL-DMARC-INVALID` | Media | Varios registros o sin política `p=` válida |
+| `MAIL-DMARC-MONITOR-ONLY` | Media | Política efectiva `none` (propia o `sp` heredada) |
+| `MAIL-DMARC-PARTIAL` | Baja | `pct` < 100 |
+| `MAIL-DMARC-SUBDOMAINS-UNPROTECTED` | Baja | `sp=none` con la política principal activa |
+| `MAIL-DMARC-NO-REPORTS` | Informativa | Sin `rua`, no se reciben informes |
+| `MAIL-DKIM-NOT-FOUND` | Baja | Dominio con correo sin clave en los ~37 selectores habituales (Google, Microsoft 365, Zoho, SendGrid...) |
+| `MAIL-DKIM-WEAK-KEY` | Media (< 1024 bits) o baja (1024) | Clave RSA de menos de 2048 bits |
+
+Un subdominio sin DMARC propio hereda el del dominio organizativo (se aplica `sp`). Un
+fallo del DNS (timeout, SERVFAIL) hace fallar el escaneo en lugar de reportar
+registros ausentes.
+
+### Descubrimiento de subdominios (shadow IT)
+
+Todo certificado TLS emitido por una CA pública queda en los registros de
+Certificate Transparency con sus nombres. El escáner los consulta en
+[crt.sh](https://crt.sh) (y en [Cert Spotter](https://sslmate.com/certspotter/) si
+crt.sh falla), se queda con los subdominios del dominio (`*.x` cuenta como `x`,
+marcado como comodín), los resuelve en DNS y los guarda en `discovered_hosts`.
+
+- En la ficha del dominio se ven los subdominios **sin inventariar**, en inventario y
+  descartados, con las IP a las que resuelven y una marca si alguna es **interna** (el
+  certificado revela infraestructura privada).
+- Se pueden **incorporar al inventario** en bloque (confirmando la autorización): los que
+  cuelgan de un dominio verificado por DNS heredan la verificación y se pueden auditar
+  enseguida. También se pueden descartar.
+- El primer descubrimiento es la línea base; en los siguientes, los subdominios nuevos
+  fuera del inventario generan la alerta `NEW_SUBDOMAIN`.
+- La consulta envía el nombre del dominio a esos servicios públicos; se puede desactivar
+  con `SUBDOMAIN_DISCOVERY_ENABLED=false`.
 
 ### Hallazgos (RF-08)
 
@@ -628,13 +706,14 @@ Cada organización tiene un token secreto y publica el valor
 
 ## Alertas tempranas (RF-10)
 
-Al completar cada escaneo se evalúan tres reglas (`backend/src/alerts/alert-rules.ts`):
+Al completar cada escaneo se evalúan cuatro reglas (`backend/src/alerts/alert-rules.ts`):
 
 | Tipo | Cuándo se genera | Severidad |
 |------|------------------|-----------|
 | `NEW_OPEN_PORT` | Un puerto abierto que no estaba en el escaneo de puertos anterior del activo. El primer escaneo es la línea base y no alerta. | La del hallazgo del puerto, mínimo media |
 | `CERT_EXPIRING` | El hallazgo de certificado caducado, a menos de 7 días o a menos de 30 días aparece o se reabre | La del hallazgo |
-| `CRITICAL_FINDING` | Hallazgos críticos nuevos o reabiertos no cubiertos por las anteriores (agrupados en una alerta por escaneo) | Crítica |
+| `CRITICAL_FINDING` | Hallazgos críticos nuevos o reabiertos no cubiertos por las anteriores (agrupados en una alerta por escaneo); incluye los CVE explotados activamente | Crítica |
+| `NEW_SUBDOMAIN` | Subdominios que aparecen por primera vez en Certificate Transparency y no están en el inventario. El primer descubrimiento es la línea base y no alerta. | Media |
 
 Como solo cuentan los hallazgos que **pasan a abiertos**, un problema que persiste no
 genera una alerta en cada escaneo.
@@ -713,7 +792,7 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
 - **assets**: `type`, `value` (único por organización), `authorization_confirmed`,
   `created_by_id`, `last_scanned_at`.
 - **scans**: `asset_id`, `type` (`PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`,
-  `SENSITIVE_PATHS`), `status` (`PENDING` → `RUNNING` → `COMPLETED`/`FAILED`/`CANCELLED`),
+  `SENSITIVE_PATHS`, `EMAIL_SECURITY`, `SUBDOMAIN_DISCOVERY`), `status` (`PENDING` → `RUNNING` → `COMPLETED`/`FAILED`/`CANCELLED`),
   `target_address` (IP escaneada), `parameters`, `raw_result` y `summary` en JSONB.
 - **scan_ports**: un registro por puerto detectado en cada escaneo: `port`, `protocol`,
   `state`, `service_name`, `product`, `version`, `extra_info`, `tunnel`, `cpe`. Permite
@@ -730,6 +809,11 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   hallazgos, fechas), `deliveries` (resultado por canal), `acknowledged_at`/`acknowledged_by_id`.
 - **alert_channels**: canales de notificación por organización: `type` (`EMAIL` o
   `WEBHOOK`), `target`, `min_severity`, `is_active` y el resultado del último envío.
+- **discovered_hosts**: subdominios descubiertos por organización (`hostname` único),
+  `asset_id` del dominio que los encontró, `resolves`, `addresses`, `wildcard`,
+  `last_certificate_at`, `ignored_at`, `first_seen_at` y `last_seen_at`.
+- **cve_product_cache**: caché global de NVD por producto (`vendor:product`) con los CVE
+  reducidos a id, CVSS, KEV, descripción y rangos de versiones afectadas.
 - **login_attempts**: intentos fallidos de inicio de sesión por cuenta (clave sha256 del
   correo), con `failures` y `locked_until`.
 - **reports**: registro de reportes generados: `type`, `asset_id` (nulo = organización),
@@ -782,6 +866,9 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   así una redirección o un cambio de DNS no pueden desviar las peticiones a la red interna.
 - Los hallazgos de rutas sensibles guardan solo la ruta y el código de estado, nunca el
   contenido del archivo.
+- Las consultas a fuentes externas solo envían datos públicos: el producto (`vendor:product`)
+  a NVD y el nombre del dominio a Certificate Transparency. Las respuestas tienen límite de
+  tamaño y de tiempo, y se pueden desactivar (`CVE_LOOKUP_ENABLED`, `SUBDOMAIN_DISCOVERY_ENABLED`).
 - Los webhooks de alertas se validan igual que los objetivos de escaneo (solo HTTPS a
   hosts públicos, IP validada en cada envío, sin redirecciones) y sus URL, que son
   secretas, se devuelven enmascaradas. Los correos se construyen sin acceso a archivos

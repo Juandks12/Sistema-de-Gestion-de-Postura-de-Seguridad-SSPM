@@ -47,6 +47,9 @@ describe('utilidades de texto del PDF', () => {
     expect(formatEvidence({ status: 200, header: null, list: ['a', 'b'], nested: { x: 1 } })).toBe(
       'status: 200 · list: a, b · nested: {"x":1}',
     );
+    expect(formatEvidence({ cves: [{ id: 'CVE-1', cvss: 9.8, kev: true, description: 'x' }, { id: 'CVE-2', cvss: null }] })).toBe(
+      'cves: CVE-1 (CVSS 9.8, KEV), CVE-2',
+    );
     expect(formatEvidence(null)).toBe('');
     expect(formatEvidence({ big: 'x'.repeat(1000) }, 50)).toHaveLength(50);
   });
