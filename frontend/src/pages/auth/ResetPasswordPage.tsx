@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { api, ApiError } from '@/lib/api';
 import { isStrongPassword } from '@/lib/password';
-import type { AuthResponse } from '@/lib/types';
+import type { AuthResponse, MfaChallenge } from '@/lib/types';
 import { AuthLayout } from './AuthLayout';
 
 export function ResetPasswordPage() {
@@ -27,7 +27,15 @@ export function ResetPasswordPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api<AuthResponse>('/auth/reset-password', { method: 'POST', json: { token, newPassword: password } });
+      const res = await api<AuthResponse | MfaChallenge>('/auth/reset-password', {
+        method: 'POST',
+        json: { token, newPassword: password },
+      });
+      if ('mfaRequired' in res) {
+        // Con la verificación en dos pasos activa, el enlace del correo no basta: falta el código.
+        navigate('/login', { replace: true, state: { mfaToken: res.mfaToken, notice: 'Contraseña cambiada. Completa la verificación en dos pasos para entrar.' } });
+        return;
+      }
       applySession(res);
       navigate('/', { replace: true });
     } catch (err) {
@@ -38,7 +46,7 @@ export function ResetPasswordPage() {
   };
 
   return (
-    <AuthLayout title="Elige una contraseña nueva" subtitle="Al guardarla entrarás directamente y se cerrarán tus otras sesiones.">
+    <AuthLayout title="Elige una contraseña nueva" subtitle="Al guardarla se cerrarán tus otras sesiones y entrarás (con tu código de verificación si tienes activada la verificación en dos pasos).">
       {token ? (
         <form onSubmit={submit} className="space-y-4">
           <PasswordField id="np" label="Nueva contraseña" value={password} onChange={setPassword} allowGenerate />

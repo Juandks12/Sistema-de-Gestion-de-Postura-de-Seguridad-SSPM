@@ -165,6 +165,16 @@ describe('Cuentas y auditoría (e2e)', () => {
       await http_().post('/api/v1/auth/reset-password').send({ token: second, newPassword: 'ClaveNueva123' }).expect(200);
       analystToken = (await login(analystEmail, 'ClaveNueva123').expect(200)).body.accessToken;
     });
+
+    it('un mismo enlace canjeado dos veces a la vez solo cambia la contraseña una vez', async () => {
+      await http_().post('/api/v1/auth/forgot-password').send({ email: analystEmail }).expect(202);
+      const token = mailer.token(analystEmail);
+      const results = await Promise.all(
+        [1, 2].map(() => http_().post('/api/v1/auth/reset-password').send({ token, newPassword: 'ClaveNueva123' })),
+      );
+      expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+      analystToken = (await login(analystEmail, 'ClaveNueva123').expect(200)).body.accessToken;
+    });
   });
 
   describe('Invitaciones', () => {
@@ -208,6 +218,25 @@ describe('Cuentas y auditoría (e2e)', () => {
       expect(pending.body.items.map((i: { email: string }) => i.email)).not.toContain(invited);
       const rows = await auditRows({ action: 'user.invite_accepted' });
       expect(rows[0].targetLabel).toBe(invited);
+    });
+
+    it('la invitación de otra organización al mismo correo no anula la de esta', async () => {
+      const shared = `acc-compartida-${suffix}@test.local`;
+      await http_().post('/api/v1/users/invitations').set(auth(adminToken)).send({ email: shared, role: 'ANALYST' }).expect(201);
+      const ours = mailer.token(shared);
+
+      const otherOrg = await http_()
+        .post('/api/v1/auth/register')
+        .send({ organizationName: `Otra Org ${suffix}`, fullName: 'Oscar Otro', email: `acc-otro-${suffix}@test.local`, password: 'Password123' })
+        .expect(201);
+      orgIds.push(otherOrg.body.user.organizationId);
+      await http_().post('/api/v1/users/invitations').set(auth(otherOrg.body.accessToken)).send({ email: shared, role: 'VIEWER' }).expect(201);
+      const theirs = mailer.token(shared);
+      expect(theirs).not.toBe(ours);
+
+      const info = await http_().get('/api/v1/auth/invitations/info').query({ token: ours }).expect(200);
+      expect(info.body).toMatchObject({ email: shared, role: 'ANALYST', organizationName: `Acc Org ${suffix}` });
+      await http_().get('/api/v1/auth/invitations/info').query({ token: theirs }).expect(200);
     });
 
     it('cancelar elimina la invitación pendiente', async () => {
@@ -278,6 +307,38 @@ describe('Cuentas y auditoría (e2e)', () => {
       await http_().post('/api/v1/auth/login/mfa').send({ mfaToken: again.mfaToken, code }).expect(401);
       await prisma.loginAttempt.deleteMany({});
       expect((await http_().get('/api/v1/auth/me/mfa').set(auth(analystToken)).expect(200)).body.recoveryCodesLeft).toBe(9);
+    });
+
+    it('un código de recuperación usado dos veces a la vez solo entra una vez', async () => {
+      const [a, b] = await Promise.all([1, 2].map(() => login(analystEmail, 'ClaveNueva123').expect(200)));
+      const code = recoveryCodes[1];
+      const results = await Promise.all(
+        [a, b].map((r) => http_().post('/api/v1/auth/login/mfa').send({ mfaToken: r.body.mfaToken, code })),
+      );
+      expect(results.map((r) => r.status).sort()).toEqual([200, 401]);
+      await prisma.loginAttempt.deleteMany({});
+      analystToken = results.find((r) => r.status === 200)!.body.accessToken;
+      expect((await http_().get('/api/v1/auth/me/mfa').set(auth(analystToken)).expect(200)).body.recoveryCodesLeft).toBe(8);
+    });
+
+    it('restablecer la contraseña por correo no se salta la verificación en dos pasos', async () => {
+      await http_().post('/api/v1/auth/forgot-password').send({ email: analystEmail }).expect(202);
+      const token = mailer.token(analystEmail);
+      const res = await http_().post('/api/v1/auth/reset-password').send({ token, newPassword: 'ClaveNueva123' }).expect(200);
+      expect(res.body.mfaRequired).toBe(true);
+      expect(res.body.accessToken).toBeUndefined();
+
+      // La sesión anterior queda cerrada y el token intermedio no vale como sesión.
+      await http_().get('/api/v1/auth/me').set(auth(analystToken)).expect(401);
+      await http_().get('/api/v1/auth/me').set(auth(res.body.mfaToken)).expect(401);
+      await http_().post('/api/v1/auth/login/mfa').send({ mfaToken: res.body.mfaToken, code: '123456' }).expect(401);
+      const done = await http_()
+        .post('/api/v1/auth/login/mfa')
+        .send({ mfaToken: res.body.mfaToken, code: totpCode(secret) })
+        .expect(200);
+      analystToken = done.body.accessToken;
+      await http_().get('/api/v1/auth/me').set(auth(analystToken)).expect(200);
+      await prisma.loginAttempt.deleteMany({});
     });
 
     it('un ADMIN puede desactivar el MFA de otro usuario y queda auditado', async () => {

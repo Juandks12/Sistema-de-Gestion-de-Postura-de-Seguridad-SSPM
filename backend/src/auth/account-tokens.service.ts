@@ -7,7 +7,7 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { MailerService } from '../common/mail/mailer.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { invitationEmail, passwordResetEmail, ROLE_EMAIL_LABEL } from './account-emails';
-import { AuthResponse, AuthService } from './auth.service';
+import { AuthResponse, AuthService, MfaChallenge } from './auth.service';
 import { loginAttemptKey } from './login-protection.service';
 
 export function accountTokenHash(token: string): string {
@@ -77,8 +77,16 @@ export class AccountTokensService {
     const token = randomBytes(32).toString('hex');
     const [, row] = await this.prisma.$transaction([
       // Solo puede haber un token vigente por destino: emitir uno nuevo caduca los anteriores.
+      // Se limita a la organización: una invitación de otra organización al mismo
+      // correo no puede anular la de esta.
       this.prisma.accountToken.updateMany({
-        where: { type: data.type, email: data.email, usedAt: null, expiresAt: { gt: new Date() } },
+        where: {
+          organizationId: data.organizationId,
+          type: data.type,
+          email: data.email,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
         data: { expiresAt: new Date() },
       }),
       this.prisma.accountToken.create({
@@ -150,31 +158,53 @@ export class AccountTokensService {
     return { message, emailEnabled: this.mailer.enabled };
   }
 
-  /** Canjea el token y fija la contraseña nueva. Cierra las demás sesiones y desbloquea la cuenta. */
-  async resetPassword(token: string, newPassword: string): Promise<AuthResponse> {
+  /**
+   * Canjea el token y fija la contraseña nueva. Cierra las demás sesiones y
+   * desbloquea la cuenta.
+   *
+   * El enlace del correo solo demuestra el acceso al buzón, que es el primer
+   * factor: si la cuenta tiene la verificación en dos pasos activada no se
+   * entrega la sesión, sino el reto del segundo paso (`POST /auth/login/mfa`).
+   */
+  async resetPassword(token: string, newPassword: string): Promise<AuthResponse | MfaChallenge> {
+    const invalid = () => new BadRequestException('El enlace no es válido o ya caducó. Solicita uno nuevo.');
     const row = await this.findValid(AccountTokenType.PASSWORD_RESET, token);
     if (!row || !row.userId) {
-      throw new BadRequestException('El enlace no es válido o ya caducó. Solicita uno nuevo.');
+      throw invalid();
     }
-    const user = await this.prisma.user.findUnique({ where: { id: row.userId } });
-    if (!user || !user.isActive) {
-      throw new BadRequestException('El enlace no es válido o ya caducó. Solicita uno nuevo.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: row.userId },
+      include: { organization: { select: { isActive: true } } },
+    });
+    if (!user || !user.isActive || !user.organization.isActive) {
+      throw invalid();
     }
     const passwordHash = await this.auth.hashPassword(newPassword);
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.user.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Consumo condicional: si dos peticiones canjean el mismo token a la vez, solo una gana.
+      const consumed = await tx.accountToken.updateMany({
+        where: { id: row.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (consumed.count === 0) {
+        throw invalid();
+      }
+      await tx.loginAttempt.deleteMany({ where: { key: loginAttemptKey(user.email) } });
+      return tx.user.update({
         where: { id: user.id },
         data: { passwordHash, passwordChangedAt: new Date(), tokenVersion: { increment: 1 } },
-      }),
-      this.prisma.accountToken.update({ where: { id: row.id }, data: { usedAt: new Date() } }),
-      this.prisma.loginAttempt.deleteMany({ where: { key: loginAttemptKey(user.email) } }),
-    ]);
+      });
+    });
     this.audit.record({
       organizationId: user.organizationId,
       action: 'auth.password_reset',
       actor: { id: user.id, email: user.email, fullName: user.fullName },
       target: { type: 'user', id: user.id, label: user.email },
+      detail: { mfa: updated.mfaEnabled },
     });
+    if (updated.mfaEnabled) {
+      return { mfaRequired: true, mfaToken: this.auth.issueMfaToken(updated) };
+    }
     return this.auth.buildAuthResponse(updated);
   }
 

@@ -82,7 +82,11 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Fijar una contraseña nueva con el token del correo' })
-  @ApiResponse({ status: 200, description: 'Contraseña cambiada; devuelve el token de acceso.' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Contraseña cambiada. Devuelve el token de acceso o, si la cuenta tiene la verificación en dos pasos activada, `mfaRequired` y el token intermedio para POST /auth/login/mfa.',
+  })
   @ApiResponse({ status: 400, description: 'Token inválido, caducado o ya usado.' })
   resetPassword(@Body() dto: ResetPasswordWithTokenDto) {
     return this.accountTokens.resetPassword(dto.token, dto.newPassword);

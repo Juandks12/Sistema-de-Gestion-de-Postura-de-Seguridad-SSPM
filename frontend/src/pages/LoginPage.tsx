@@ -15,14 +15,17 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /** Estado de navegación: el restablecimiento de contraseña llega con el segundo paso pendiente. */
+  const navState = location.state as { from?: string; mfaToken?: string; notice?: string } | null;
   /** Token intermedio cuando la cuenta exige el segundo paso (código TOTP). */
-  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaToken, setMfaToken] = useState<string | null>(navState?.mfaToken ?? null);
+  const [notice, setNotice] = useState<string | null>(navState?.notice ?? null);
   const [code, setCode] = useState('');
 
   if (user) return <Navigate to="/" replace />;
 
   const goBack = () => {
-    const from = (location.state as { from?: string } | null)?.from ?? '/';
+    const from = navState?.from ?? '/';
     navigate(from, { replace: true });
   };
 
@@ -62,6 +65,7 @@ export function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401 && /caducó|caduco/i.test(err.message)) {
         setMfaToken(null);
+        setNotice(null);
         setError(err.message);
       } else {
         setError(err instanceof ApiError ? err.message : 'No se pudo comprobar el código.');
@@ -120,11 +124,12 @@ export function LoginPage() {
                     className="tabular text-lg tracking-widest"
                   />
                 </div>
+                {notice && !error ? <Alert kind="success">{notice}</Alert> : null}
                 {error ? <Alert kind="error">{error}</Alert> : null}
                 <Button type="submit" loading={loading} className="w-full">Verificar</Button>
                 <button
                   type="button"
-                  onClick={() => { setMfaToken(null); setError(null); }}
+                  onClick={() => { setMfaToken(null); setError(null); setNotice(null); }}
                   className="w-full text-center text-sm font-medium text-accent hover:underline"
                 >
                   Volver a empezar
