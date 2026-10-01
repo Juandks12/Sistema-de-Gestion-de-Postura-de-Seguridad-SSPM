@@ -2,15 +2,46 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   push:
-    branches: [main]
+    branches: [main, develop]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  commit-policy:
+    name: Commits · autoría y nombre de rama
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verificar ramas y mensajes de commit (ver CONTRIBUTING.md)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          status=0
+          if ! printf '%s' "$HEAD_REF" | grep -Eq '^(develop|(feature|fix|hotfix|release|chore|docs|refactor|test|ci|build)/[a-z0-9._-]+)$'; then
+            echo "::error::La rama '$HEAD_REF' no sigue la convención: feature/<desc>, fix/<desc>, hotfix/<desc>, release/<version>, chore/<desc>, docs/<desc>..."
+            status=1
+          fi
+          # Solo se revisan los commits nuevos del PR (no los que ya están en main).
+          for sha in $(git rev-list "$HEAD_SHA" "^$BASE_SHA" ^origin/main); do
+            if git log -1 --format=%B "$sha" | grep -Eiq '^(co-authored-by:.*(noreply@anthropic\.com|copilot|cursor|chatgpt|openai|devin)|claude-session:|generated with \[)'; then
+              echo "::error::El commit $(git log -1 --format='%h %s' "$sha") incluye una coautoría o firma automática de un asistente."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "Corrige los mensajes (git commit --amend / git rebase) y la configuración de tu asistente; ver CONTRIBUTING.md."
+          fi
+          exit "$status"
+
   backend-lint-test:
     name: Backend · lint + unit tests
     runs-on: ubuntu-latest

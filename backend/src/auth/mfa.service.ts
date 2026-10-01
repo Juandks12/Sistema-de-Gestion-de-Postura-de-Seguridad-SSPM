@@ -179,7 +179,15 @@ export class MfaService {
     const hash = recoveryCodeHash(code);
     if (normalizeRecoveryCode(code).length >= 10 && user.mfaRecoveryCodes.includes(hash)) {
       const remaining = user.mfaRecoveryCodes.filter((h) => h !== hash);
-      await this.prisma.user.update({ where: { id: user.id }, data: { mfaRecoveryCodes: remaining } });
+      // Condicional: si el mismo código se usa dos veces a la vez, solo una petición lo consume.
+      const consumed = await this.prisma.user.updateMany({
+        where: { id: user.id, mfaRecoveryCodes: { has: hash } },
+        data: { mfaRecoveryCodes: remaining },
+      });
+      if (consumed.count === 0) {
+        await this.loginProtection.recordFailure(user.email);
+        throw new UnauthorizedException('El código no es correcto');
+      }
       this.audit.record({
         organizationId: user.organizationId,
         action: 'auth.mfa_recovery_used',

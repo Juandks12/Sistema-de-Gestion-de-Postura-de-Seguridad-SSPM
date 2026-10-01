@@ -368,7 +368,7 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | PATCH | `/api/v1/auth/me/password` | todos | Cambiar mi contraseña (exige la actual); cierra mis otras sesiones y devuelve un token nuevo |
 | POST | `/api/v1/auth/login/mfa` | público | Segundo paso del login: canjea el token intermedio con un código TOTP o de recuperación |
 | POST | `/api/v1/auth/forgot-password` | público | Solicitar el restablecimiento de la contraseña por correo (misma respuesta exista o no la cuenta) |
-| POST | `/api/v1/auth/reset-password` | público | Fijar una contraseña nueva con el token del correo |
+| POST | `/api/v1/auth/reset-password` | público | Fijar una contraseña nueva con el token del correo; si la cuenta tiene MFA, devuelve el reto del segundo paso en vez de la sesión |
 | GET | `/api/v1/auth/invitations/info` | público | Datos de una invitación vigente (`token`), para la pantalla de aceptación |
 | POST | `/api/v1/auth/invitations/accept` | público | Aceptar una invitación: crea la cuenta e inicia sesión |
 | GET | `/api/v1/auth/me/mfa` | todos | Estado de mi verificación en dos pasos |
@@ -922,6 +922,8 @@ de otro usuario (`POST /users/:id/disable-mfa`), acción que queda auditada.
 - Política de contraseñas única para todos los formularios: 8 a 72 caracteres, con
   mayúscula, minúscula y número. La aplicación web muestra los requisitos mientras se escribe.
 - Cambio de contraseña y restablecimiento por un administrador, que cierran las demás sesiones.
+- Restablecer la contraseña por correo no se salta la verificación en dos pasos: con MFA
+  activo hay que introducir el código después, igual que en el login.
 - `helmet` para cabeceras HTTP seguras y CORS restringido por `CORS_ORIGINS`.
 - Validación estricta de entrada (`whitelist` + `forbidNonWhitelisted`).
 - Los valores de activos se validan como FQDN/IP antes de persistirse y de nuevo antes

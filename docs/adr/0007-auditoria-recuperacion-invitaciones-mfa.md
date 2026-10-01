@@ -33,8 +33,13 @@ confiar en la plataforma para varias personas de su organización:
 2. **Recuperación de contraseña y invitaciones comparten el mismo mecanismo**
    (`AccountToken`): un token de un solo uso del que solo se guarda el hash sha256,
    con caducidad y un tipo (`PASSWORD_RESET` o `INVITATION`). Emitir uno nuevo caduca
-   el anterior del mismo destino, así que un enlace viejo reenviado no sirve. La
-   respuesta de "olvidé mi contraseña" es siempre la misma exista o no la cuenta.
+   el anterior del mismo destino dentro de la misma organización (otra organización
+   que invite al mismo correo no anula la invitación), así que un enlace viejo
+   reenviado no sirve. El token se consume con una actualización condicional, de modo
+   que dos canjes simultáneos no pueden usarlo dos veces. La respuesta de "olvidé mi
+   contraseña" es siempre la misma exista o no la cuenta. El enlace del correo solo
+   prueba el acceso al buzón: si la cuenta tiene MFA activo, restablecer la contraseña
+   no entrega la sesión sino el reto del segundo paso, igual que un login.
 3. **MFA con TOTP (RFC 6238) implementado con `node:crypto`**, sin librerías de
    terceros: es un algoritmo simple, bien especificado, y evitar una dependencia externa
    para algo que protege el login reduce superficie de ataque de la cadena de
