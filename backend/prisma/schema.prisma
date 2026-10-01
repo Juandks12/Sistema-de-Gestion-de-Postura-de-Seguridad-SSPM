@@ -1,8 +1,7 @@
 // ---------------------------------------------------------------------------
-// SSPM - SaaS Lite | Modelo de datos (Sprint 1)
-// Tablas de la sección 6.2 del documento: users, organizations, assets, scans.
-// Las tablas findings, risk_scores, reports y alerts se añadirán en sprints
-// posteriores (Sprint 2 en adelante).
+// SSPM - SaaS Lite | Modelo de datos
+// Tablas de la sección 6.2 del documento: users, organizations, assets, scans,
+// findings, risk_scores, reports y alerts (más scan_ports y alert_channels).
 // ---------------------------------------------------------------------------
 
 generator client {
@@ -30,12 +29,16 @@ enum AssetType {
   IP
 }
 
-/// Tipo de escaneo soportado. En Sprint 1 solo se implementa PORT_SCAN (Nmap).
+/// Tipo de escaneo soportado.
+/// EMAIL_SECURITY y SUBDOMAIN_DISCOVERY son pasivos (solo DNS y registros públicos)
+/// y solo aplican a dominios.
 enum ScanType {
   PORT_SCAN
   WEB_HEADERS
   SSL_CERT
   SENSITIVE_PATHS
+  EMAIL_SECURITY
+  SUBDOMAIN_DISCOVERY
 }
 
 /// Severidad de un hallazgo (RF-08), alineada con los rangos de CVSS v3.1:
@@ -54,6 +57,10 @@ enum FindingCategory {
   HTTP_HEADERS
   TLS_CERTIFICATE
   SENSITIVE_PATH
+  /// Versión de software con vulnerabilidades conocidas (CVE), detectada en el escaneo de puertos.
+  VULNERABLE_SOFTWARE
+  /// SPF, DMARC y DKIM del dominio.
+  EMAIL_SECURITY
 }
 
 /// Estado de gestión de un hallazgo.
@@ -82,6 +89,59 @@ enum RiskScoreTrigger {
   MANUAL
 }
 
+/// Origen de un escaneo: solicitado por un usuario o por el monitoreo continuo.
+enum ScanSource {
+  MANUAL
+  SCHEDULED
+}
+
+/// Frecuencia del monitoreo continuo de una organización (sección 10.4).
+enum MonitoringFrequency {
+  OFF
+  DAILY
+  WEEKLY
+}
+
+/// Evento que genera una alerta temprana (RF-10, sección 10.1).
+enum AlertType {
+  NEW_OPEN_PORT
+  CERT_EXPIRING
+  CRITICAL_FINDING
+  NEW_SUBDOMAIN
+}
+
+/// Canal por el que se notifica una alerta (secciones 10.2 y 10.3).
+enum AlertChannelType {
+  EMAIL
+  WEBHOOK
+}
+
+/// Cómo se demostró que la organización controla un activo (sección 1.6.3).
+/// DNS_TXT        -> registro TXT en _sspm-verification.<dominio> (cubre sus subdominios)
+/// HTTP_FILE      -> archivo /.well-known/sspm-verification.txt servido por el host
+/// INHERITED      -> subdominio de un dominio ya verificado por DNS en la organización
+/// PRE_AUTHORIZED -> objetivo de prueba con permiso público de escaneo (datos de demostración)
+enum VerificationMethod {
+  DNS_TXT
+  HTTP_FILE
+  INHERITED
+  PRE_AUTHORIZED
+}
+
+/// Token de un solo uso enviado por correo (sección 11.1).
+/// PASSWORD_RESET -> restablecer la contraseña de un usuario existente
+/// INVITATION     -> invitación para unirse a la organización
+enum AccountTokenType {
+  PASSWORD_RESET
+  INVITATION
+}
+
+/// Tipo de reporte PDF (RF-09, sección 9).
+enum ReportType {
+  EXECUTIVE
+  TECHNICAL
+}
+
 /// Ciclo de vida de un escaneo asíncrono.
 enum ScanStatus {
   PENDING
@@ -94,43 +154,66 @@ enum ScanStatus {
 /// Organización (tenant). Toda entidad de negocio cuelga de una organización
 /// y cualquier consulta debe filtrarse por `organization_id`.
 model Organization {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(150)
-  slug      String   @unique @db.VarChar(80)
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String              @id @default(uuid()) @db.Uuid
+  name                String              @db.VarChar(150)
+  slug                String              @unique @db.VarChar(80)
+  isActive            Boolean             @default(true) @map("is_active")
+  /// Frecuencia con la que se reaudita cada activo de forma automática.
+  monitoringFrequency MonitoringFrequency @default(OFF) @map("monitoring_frequency")
+  /// Secreto que la organización publica (DNS TXT o archivo) para demostrar que controla un activo.
+  verificationToken   String              @unique @map("verification_token") @db.VarChar(64)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users     User[]
-  assets    Asset[]
-  scans     Scan[]
-  scanPorts  ScanPort[]
-  findings   Finding[]
-  riskScores RiskScore[]
+  users           User[]
+  accountTokens   AccountToken[]
+  auditLogs       AuditLog[]
+  assets          Asset[]
+  scans           Scan[]
+  scanPorts       ScanPort[]
+  findings        Finding[]
+  riskScores      RiskScore[]
+  alerts          Alert[]
+  alertChannels   AlertChannel[]
+  reports         Report[]
+  discoveredHosts DiscoveredHost[]
 
   @@map("organizations")
 }
 
 /// Usuario de la plataforma. Pertenece a exactamente una organización.
 model User {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  email          String    @unique @db.VarChar(254)
-  passwordHash   String    @map("password_hash") @db.VarChar(255)
-  fullName       String    @map("full_name") @db.VarChar(150)
-  role           UserRole  @default(VIEWER)
-  isActive       Boolean   @default(true) @map("is_active")
-  lastLoginAt    DateTime? @map("last_login_at") @db.Timestamptz(6)
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  email             String    @unique @db.VarChar(254)
+  passwordHash      String    @map("password_hash") @db.VarChar(255)
+  fullName          String    @map("full_name") @db.VarChar(150)
+  role              UserRole  @default(VIEWER)
+  isActive          Boolean   @default(true) @map("is_active")
+  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(6)
   /// Se incrementa al cambiar o restablecer la contraseña; invalida los JWT emitidos antes.
   tokenVersion      Int       @default(0) @map("token_version")
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Autenticación en dos pasos (TOTP). El secreto en base32 solo se usa en el servidor.
+  mfaEnabled        Boolean   @default(false) @map("mfa_enabled")
+  mfaSecret         String?   @map("mfa_secret") @db.VarChar(64)
+  /// Secreto propuesto durante el alta de MFA; pasa a mfaSecret al confirmar el primer código.
+  mfaPendingSecret  String?   @map("mfa_pending_secret") @db.VarChar(64)
+  mfaEnabledAt      DateTime? @map("mfa_enabled_at")
+  /// Hashes sha256 de los códigos de recuperación no usados.
+  mfaRecoveryCodes  String[]  @default([]) @map("mfa_recovery_codes")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdAssets   Asset[]      @relation("AssetCreatedBy")
-  requestedScans  Scan[]       @relation("ScanRequestedBy")
-  reviewedFindings Finding[]   @relation("FindingReviewedBy")
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAssets      Asset[]        @relation("AssetCreatedBy")
+  requestedScans     Scan[]         @relation("ScanRequestedBy")
+  reviewedFindings   Finding[]      @relation("FindingReviewedBy")
+  acknowledgedAlerts Alert[]        @relation("AlertAcknowledgedBy")
+  createdChannels    AlertChannel[] @relation("AlertChannelCreatedBy")
+  generatedReports   Report[]       @relation("ReportGeneratedBy")
+  accountTokens      AccountToken[] @relation("AccountTokenUser")
+  createdTokens      AccountToken[] @relation("AccountTokenCreatedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -138,28 +221,40 @@ model User {
 
 /// Activo externo (dominio o IP pública) perteneciente a una organización.
 model Asset {
-  id                     String    @id @default(uuid()) @db.Uuid
-  organizationId         String    @map("organization_id") @db.Uuid
+  id                     String              @id @default(uuid()) @db.Uuid
+  organizationId         String              @map("organization_id") @db.Uuid
   type                   AssetType
   /// Valor normalizado (dominio en minúsculas sin punto final, o IP canónica).
-  value                  String    @db.VarChar(253)
-  name                   String?   @db.VarChar(150)
+  value                  String              @db.VarChar(253)
+  name                   String?             @db.VarChar(150)
   description            String?
-  isActive               Boolean   @default(true) @map("is_active")
+  isActive               Boolean             @default(true) @map("is_active")
   /// El usuario declara que posee autorización para escanear este activo (sección 1.6.3).
-  authorizationConfirmed Boolean   @default(false) @map("authorization_confirmed")
-  authorizedAt           DateTime? @map("authorized_at") @db.Timestamptz(6)
-  createdById            String?   @map("created_by_id") @db.Uuid
-  lastScannedAt          DateTime? @map("last_scanned_at") @db.Timestamptz(6)
-  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  authorizationConfirmed Boolean             @default(false) @map("authorization_confirmed")
+  authorizedAt           DateTime?           @map("authorized_at") @db.Timestamptz(6)
+  createdById            String?             @map("created_by_id") @db.Uuid
+  lastScannedAt          DateTime?           @map("last_scanned_at") @db.Timestamptz(6)
+  /// Última auditoría completa encolada por el monitoreo continuo.
+  lastScheduledScanAt    DateTime?           @map("last_scheduled_scan_at") @db.Timestamptz(6)
+  /// Propiedad demostrada: sin ella no se permite escanear el activo.
+  verifiedAt             DateTime?           @map("verified_at") @db.Timestamptz(6)
+  verificationMethod     VerificationMethod? @map("verification_method")
+  /// Dominio o host sobre el que se encontró la prueba (un TXT en example.com cubre www.example.com).
+  verificationScope      String?             @map("verification_scope") @db.VarChar(253)
+  verificationCheckedAt  DateTime?           @map("verification_checked_at") @db.Timestamptz(6)
+  verificationError      String?             @map("verification_error") @db.VarChar(500)
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?        @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  scans        Scan[]
-  scanPorts    ScanPort[]
-  findings     Finding[]
-  riskScores   RiskScore[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scans           Scan[]
+  scanPorts       ScanPort[]
+  findings        Finding[]
+  riskScores      RiskScore[]
+  alerts          Alert[]
+  reports         Report[]
+  discoveredHosts DiscoveredHost[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -173,6 +268,7 @@ model Scan {
   assetId        String     @map("asset_id") @db.Uuid
   type           ScanType   @default(PORT_SCAN)
   status         ScanStatus @default(PENDING)
+  source         ScanSource @default(MANUAL)
   requestedById  String?    @map("requested_by_id") @db.Uuid
   /// Dirección IP efectivamente escaneada (el dominio se resuelve y valida antes de lanzar Nmap).
   targetAddress  String?    @map("target_address") @db.VarChar(45)
@@ -188,12 +284,14 @@ model Scan {
   createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  requestedBy  User?        @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
-  ports        ScanPort[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset           Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy     User?            @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  ports           ScanPort[]
   /// Hallazgos detectados por última vez en este escaneo.
-  findings     Finding[]
+  findings        Finding[]
+  alerts          Alert[]
+  discoveredHosts DiscoveredHost[]
 
   @@index([organizationId, assetId])
   @@index([status, createdAt])
@@ -312,4 +410,202 @@ model RiskScore {
   @@index([organizationId, scope, computedAt])
   @@index([assetId, computedAt])
   @@map("risk_scores")
+}
+
+/// Alerta temprana (RF-10): evento relevante detectado al completar un escaneo.
+/// Se muestra en la plataforma y se notifica por los canales activos de la
+/// organización. `deliveries` guarda el resultado de cada envío.
+model Alert {
+  id               String          @id @default(uuid()) @db.Uuid
+  organizationId   String          @map("organization_id") @db.Uuid
+  assetId          String?         @map("asset_id") @db.Uuid
+  scanId           String?         @map("scan_id") @db.Uuid
+  type             AlertType
+  severity         FindingSeverity
+  title            String          @db.VarChar(200)
+  message          String
+  /// Detalle estructurado: puertos nuevos, hallazgos, fechas de caducidad...
+  data             Json?
+  /// [{ channelId, channelType, channelName, status: SENT|FAILED|SKIPPED, error?, at }]
+  deliveries       Json?
+  acknowledgedAt   DateTime?       @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedById String?         @map("acknowledged_by_id") @db.Uuid
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset          Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  scan           Scan?        @relation(fields: [scanId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?        @relation("AlertAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, acknowledgedAt])
+  @@map("alerts")
+}
+
+/// Canal de notificación de alertas de una organización: correo o webhook
+/// (Slack, Discord o JSON genérico). Solo lo gestionan los ADMIN.
+model AlertChannel {
+  id                 String           @id @default(uuid()) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  type               AlertChannelType
+  name               String           @db.VarChar(100)
+  /// EMAIL: destinatarios separados por coma. WEBHOOK: URL https.
+  target             String           @db.VarChar(1000)
+  /// Severidad mínima de las alertas que se envían por este canal.
+  minSeverity        FindingSeverity  @default(HIGH) @map("min_severity")
+  isActive           Boolean          @default(true) @map("is_active")
+  createdById        String?          @map("created_by_id") @db.Uuid
+  lastDeliveryAt     DateTime?        @map("last_delivery_at") @db.Timestamptz(6)
+  lastDeliveryStatus String?          @map("last_delivery_status") @db.VarChar(10)
+  lastDeliveryError  String?          @map("last_delivery_error") @db.VarChar(500)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AlertChannelCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("alert_channels")
+}
+
+/// Registro de los reportes PDF generados (RF-09). El PDF se genera bajo
+/// demanda y no se almacena: la fila deja constancia de quién lo generó,
+/// cuándo y con qué postura.
+model Report {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  /// Nulo si el reporte cubre toda la organización.
+  assetId        String?    @map("asset_id") @db.Uuid
+  type           ReportType
+  generatedById  String?    @map("generated_by_id") @db.Uuid
+  score          Int?
+  grade          String?    @db.VarChar(1)
+  openFindings   Int        @default(0) @map("open_findings")
+  pages          Int        @default(0)
+  sizeBytes      Int        @default(0) @map("size_bytes")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  generatedBy  User?        @relation("ReportGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("reports")
+}
+
+/// Intentos fallidos de inicio de sesión por cuenta (protección contra fuerza
+/// bruta). La clave es sha256 del correo normalizado y existe también para
+/// correos que no están registrados, así el bloqueo no revela qué cuentas existen.
+model LoginAttempt {
+  key         String    @id @db.VarChar(64)
+  failures    Int       @default(0)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("login_attempts")
+}
+
+/// Subdominio descubierto en los registros públicos de Certificate Transparency
+/// al analizar un dominio de la organización. Sirve para encontrar activos que
+/// no están en el inventario (shadow IT). Un nombre es único por organización.
+model DiscoveredHost {
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  /// Dominio del inventario cuyo análisis lo encontró.
+  assetId           String    @map("asset_id") @db.Uuid
+  hostname          String    @db.VarChar(253)
+  /// ct (Certificate Transparency).
+  source            String    @default("ct") @db.VarChar(20)
+  /// Resolvía en DNS en el último descubrimiento.
+  resolves          Boolean   @default(false)
+  addresses         String[]  @default([])
+  /// Aparece en certificados comodín (*.hostname).
+  wildcard          Boolean   @default(false)
+  /// Último certificado visto que incluía el nombre.
+  lastCertificateAt DateTime? @map("last_certificate_at") @db.Timestamptz(6)
+  /// El usuario decidió no incorporarlo al inventario.
+  ignoredAt         DateTime? @map("ignored_at") @db.Timestamptz(6)
+  lastScanId        String?   @map("last_scan_id") @db.Uuid
+  firstSeenAt       DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt        DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  lastScan     Scan?        @relation(fields: [lastScanId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, hostname])
+  @@index([assetId])
+  @@map("discovered_hosts")
+}
+
+/// Caché global (no pertenece a ninguna organización: son datos públicos) de
+/// las vulnerabilidades publicadas en NVD para un producto CPE (vendor:product).
+/// Guarda solo lo necesario para decidir qué versiones están afectadas.
+model CveProductCache {
+  /// "vendor:product", p. ej. "openbsd:openssh".
+  product      String   @id @db.VarChar(200)
+  totalResults Int      @default(0) @map("total_results")
+  /// [{ id, published, cvss, severity, vector, kev, description, ranges: [...] }]
+  entries      Json
+  fetchedAt    DateTime @map("fetched_at") @db.Timestamptz(6)
+
+  @@map("cve_product_cache")
+}
+
+/// Token de un solo uso enviado por correo: restablecer contraseña o invitación.
+/// Se guarda solo el hash sha256 del token; el valor real viaja en el enlace.
+model AccountToken {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  type           AccountTokenType
+  tokenHash      String           @unique @map("token_hash") @db.VarChar(64)
+  /// Correo del destinatario (en PASSWORD_RESET coincide con el del usuario).
+  email          String           @db.VarChar(254)
+  /// PASSWORD_RESET: usuario cuya contraseña se restablece. INVITATION: nulo hasta aceptar.
+  userId         String?          @map("user_id") @db.Uuid
+  /// Solo INVITATION: rol con el que se creará el usuario.
+  role           UserRole?
+  createdById    String?          @map("created_by_id") @db.Uuid
+  expiresAt      DateTime         @map("expires_at") @db.Timestamptz(6)
+  usedAt         DateTime?        @map("used_at") @db.Timestamptz(6)
+  /// Resultado del envío del correo (SENT, FAILED o SKIPPED) y detalle.
+  deliveryStatus String?          @map("delivery_status") @db.VarChar(10)
+  deliveryError  String?          @map("delivery_error") @db.VarChar(500)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation("AccountTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AccountTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, type, createdAt])
+  @@index([email, type])
+  @@map("account_tokens")
+}
+
+/// Registro de auditoría (RNF-06): quién hizo qué y cuándo. Solo lo consulta
+/// el ADMIN de la organización. El actor se desnormaliza (correo y nombre)
+/// para que la fila sobreviva si el usuario se elimina.
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Acción del catálogo, p. ej. "auth.login", "user.create", "asset.delete".
+  action         String   @db.VarChar(60)
+  actorId        String?  @map("actor_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(254)
+  actorName      String?  @map("actor_name") @db.VarChar(150)
+  /// Tipo y referencia del objeto afectado ("user", "asset", "finding"...).
+  targetType     String?  @map("target_type") @db.VarChar(30)
+  targetId       String?  @map("target_id") @db.VarChar(64)
+  /// Etiqueta legible del objeto (correo del usuario, valor del activo...).
+  targetLabel    String?  @map("target_label") @db.VarChar(253)
+  /// Datos adicionales de la acción (rol asignado, campos cambiados...). Nunca secretos.
+  detail         Json?
+  ip             String?  @db.VarChar(45)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@map("audit_log")
 }

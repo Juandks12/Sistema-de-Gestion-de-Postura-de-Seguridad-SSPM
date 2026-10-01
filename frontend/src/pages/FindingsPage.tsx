@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { CveList } from '@/components/CveList';
 import { Alert } from '@/components/ui/Alert';
 import { FindingStatusBadge, SeverityBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -148,6 +149,9 @@ export function FindingsPage() {
 }
 
 function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; canEdit: boolean; onReview: (a: ReviewAction) => void }) {
+  // Los CVE se muestran como lista; el resto de la evidencia, tal cual.
+  const isCve = f.ruleId === 'VULN-KNOWN-CVE' && !!f.evidence;
+  const evidence = isCve && f.evidence ? Object.fromEntries(Object.entries(f.evidence).filter(([k]) => k !== 'cves')) : f.evidence;
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
@@ -160,6 +164,11 @@ function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; ca
           <div><dt className="inline text-muted">Primera detección: </dt><dd className="inline">{formatDateTime(f.firstSeenAt)}</dd></div>
           <div><dt className="inline text-muted">Última detección: </dt><dd className="inline">{formatDateTime(f.lastSeenAt)}</dd></div>
         </dl>
+        {isCve && f.evidence ? (
+          <div className="mt-4">
+            <CveList evidence={f.evidence} />
+          </div>
+        ) : null}
         {f.reviewNote ? (
           <p className="mt-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink-2">
             <span className="font-medium text-ink">Nota de revisión{f.reviewedBy ? ` (${f.reviewedBy.fullName})` : ''}: </span>{f.reviewNote}
@@ -167,10 +176,10 @@ function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; ca
         ) : null}
       </div>
       <div>
-        {f.evidence && Object.keys(f.evidence).length > 0 ? (
+        {evidence && Object.keys(evidence).length > 0 ? (
           <>
             <p className="text-xs font-semibold tracking-wide text-muted uppercase">Evidencia</p>
-            <pre className="mt-1 max-h-48 overflow-auto rounded-lg border border-border bg-surface p-3 text-xs text-ink-2">{JSON.stringify(f.evidence, null, 2)}</pre>
+            <pre className="mt-1 max-h-48 overflow-auto rounded-lg border border-border bg-surface p-3 text-xs text-ink-2">{JSON.stringify(evidence, null, 2)}</pre>
           </>
         ) : null}
         {canEdit ? (

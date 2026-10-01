@@ -408,6 +408,146 @@ const rules: FindingRule[] = [
     description: 'La especificación OpenAPI/Swagger está publicada y describe todos los endpoints disponibles.',
     recommendation: 'Valore si la documentación debe ser pública; de lo contrario, protéjala con autenticación.',
   },
+  // ------------------------------------------------------- vulnerabilidades (CVE)
+  {
+    id: 'VULN-KNOWN-CVE',
+    category: C.VULNERABLE_SOFTWARE,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Versión de software con vulnerabilidades conocidas',
+    description:
+      'La versión del servicio detectada figura como afectada en vulnerabilidades publicadas (CVE). La severidad y el CVSS del hallazgo son los del CVE más grave.',
+    recommendation: 'Actualice el software a la última versión soportada por el fabricante.',
+  },
+  // ------------------------------------------------------ seguridad del correo
+  {
+    id: 'MAIL-SPF-MISSING',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'El dominio no publica un registro SPF',
+    description:
+      'Sin SPF los servidores de correo no pueden comprobar qué servidores están autorizados a enviar en nombre del dominio, lo que facilita suplantarlo en campañas de phishing.',
+    recommendation:
+      'Publique un registro TXT con la política SPF que enumere sus servidores de envío y termine en -all (p. ej. "v=spf1 include:_spf.google.com -all").',
+  },
+  {
+    id: 'MAIL-SPF-INVALID',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'El registro SPF no es válido',
+    description:
+      'Un SPF con errores (varios registros, sintaxis incorrecta o más de 10 consultas DNS) produce un error permanente (permerror) y los receptores lo ignoran: el dominio queda sin protección.',
+    recommendation:
+      'Deje un único registro "v=spf1", corrija los mecanismos no válidos y reduzca los include anidados por debajo de 10 consultas DNS.',
+  },
+  {
+    id: 'MAIL-SPF-PASS-ALL',
+    category: C.EMAIL_SECURITY,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'El SPF autoriza a cualquier servidor (+all)',
+    description:
+      'El mecanismo +all declara válido el correo enviado desde cualquier servidor de Internet, anulando la protección de SPF y haciendo creíble la suplantación.',
+    recommendation: 'Sustituya +all por -all después de enumerar los servidores legítimos de envío.',
+  },
+  {
+    id: 'MAIL-SPF-NEUTRAL',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 4.3,
+    title: 'El SPF no indica qué hacer con los servidores no autorizados',
+    description:
+      'El registro termina en ?all o no tiene mecanismo all, así que el correo de servidores no autorizados se trata como neutral y no se rechaza.',
+    recommendation: 'Termine el registro SPF en -all (o ~all mientras valida la configuración con DMARC).',
+  },
+  {
+    id: 'MAIL-SPF-SOFTFAIL',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.1,
+    title: 'El SPF solo marca como sospechoso el correo no autorizado (~all)',
+    description:
+      'Con ~all el correo de servidores no autorizados se acepta marcado como sospechoso. Sin una política DMARC que lo rechace, la suplantación sigue llegando a las bandejas.',
+    recommendation: 'Publique DMARC con p=quarantine o p=reject, o cambie ~all por -all.',
+  },
+  {
+    id: 'MAIL-DMARC-MISSING',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 6.1,
+    title: 'El dominio no tiene política DMARC',
+    description:
+      'Sin DMARC los receptores no saben qué hacer con el correo que falla SPF o DKIM, y el dominio no recibe informes de quién envía en su nombre. Es la principal defensa contra la suplantación del remitente.',
+    recommendation:
+      'Publique un TXT en _dmarc.<dominio> empezando por "v=DMARC1; p=none; rua=mailto:..." para recibir informes y, tras revisarlos, endurezca a p=quarantine y p=reject.',
+  },
+  {
+    id: 'MAIL-DMARC-INVALID',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'La política DMARC no es válida',
+    description: 'Hay varios registros DMARC o el registro no tiene una política (p=) válida, así que los receptores lo ignoran.',
+    recommendation: 'Deje un único registro "v=DMARC1; p=..." en _dmarc.<dominio> con una política none, quarantine o reject.',
+  },
+  {
+    id: 'MAIL-DMARC-MONITOR-ONLY',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 4.3,
+    title: 'DMARC solo monitoriza (p=none)',
+    description:
+      'Con p=none el correo que suplanta al dominio se entrega igualmente; la política solo sirve para recibir informes.',
+    recommendation: 'Revise los informes DMARC, autorice los remitentes legítimos y pase a p=quarantine y después a p=reject.',
+  },
+  {
+    id: 'MAIL-DMARC-PARTIAL',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.1,
+    title: 'DMARC se aplica solo a una parte del correo (pct < 100)',
+    description: 'El parámetro pct limita la política a un porcentaje de los mensajes; el resto se entrega aunque falle la autenticación.',
+    recommendation: 'Elimine pct o fíjelo en 100 cuando termine la transición.',
+  },
+  {
+    id: 'MAIL-DMARC-SUBDOMAINS-UNPROTECTED',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.1,
+    title: 'Los subdominios quedan fuera de la política DMARC (sp=none)',
+    description: 'La política protege el dominio principal, pero sp=none permite suplantar cualquier subdominio (p. ej. facturas.<dominio>).',
+    recommendation: 'Elimine sp=none o fije sp=quarantine / sp=reject.',
+  },
+  {
+    id: 'MAIL-DMARC-NO-REPORTS',
+    category: C.EMAIL_SECURITY,
+    severity: S.INFO,
+    cvss: 0,
+    title: 'DMARC no solicita informes (sin rua)',
+    description: 'Sin la etiqueta rua no se reciben informes agregados, así que no hay visibilidad de quién envía correo en nombre del dominio.',
+    recommendation: 'Añada rua=mailto:<buzón> (o el de un servicio de análisis DMARC) al registro.',
+  },
+  {
+    id: 'MAIL-DKIM-NOT-FOUND',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.1,
+    title: 'No se encontró DKIM en los selectores habituales',
+    description:
+      'No hay clave DKIM publicada en los selectores más comunes (Google, Microsoft 365 y otros proveedores). DKIM firma los mensajes y es necesario para que DMARC funcione cuando el correo se reenvía. Si usa un selector propio, esta comprobación no puede verlo.',
+    recommendation: 'Active la firma DKIM en su proveedor de correo y publique la clave que le indique en <selector>._domainkey.<dominio>.',
+  },
+  {
+    id: 'MAIL-DKIM-WEAK-KEY',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.9,
+    title: 'Clave DKIM demasiado corta',
+    description: 'Las claves RSA de menos de 2048 bits pueden factorizarse con recursos al alcance de un atacante, que podría firmar correos como el dominio.',
+    recommendation: 'Genere una clave DKIM de 2048 bits, publíquela en un selector nuevo y retire la antigua.',
+  },
 ];
 
 export const FINDING_RULES: ReadonlyMap<string, FindingRule> = new Map(

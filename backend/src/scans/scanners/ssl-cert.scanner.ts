@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ScanType } from '@prisma/client';
 import { analyzeTls } from '../analyzers/tls.analyzer';
 import { ScanExecutionError } from '../scan.errors';
-import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
+import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
 import { tcpPortOpen, tlsProbe } from '../web/tls-probe';
 import { webTargetsFor } from './web-targets';
 
@@ -26,7 +26,7 @@ export class SslCertScanner implements Scanner {
     for (const port of tlsPorts) {
       if (abortReason(ctx.signal)) throw new ScanExecutionError('Escaneo interrumpido');
       const outcome = await tlsProbe({
-        address: ctx.target.address,
+        address: requireTarget(ctx).address,
         port,
         hostname: ctx.asset.value,
         timeoutMs,
@@ -38,7 +38,7 @@ export class SslCertScanner implements Scanner {
         // Sin TLS en el puerto por defecto pero con HTTP en claro: el sitio no ofrece HTTPS.
         if (port === 443 && outcome.connectionRefused) {
           const plainOpen =
-            httpPorts.length > 0 && (await tcpPortOpen(ctx.target.address, httpPorts[0], timeoutMs));
+            httpPorts.length > 0 && (await tcpPortOpen(requireTarget(ctx).address, httpPorts[0], timeoutMs));
           if (plainOpen) {
             findings.push({
               ruleId: 'TLS-NOT-AVAILABLE',

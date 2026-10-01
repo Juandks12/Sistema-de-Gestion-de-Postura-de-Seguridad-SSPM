@@ -1,7 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, qs } from '@/lib/api';
 import type {
+  AlertChannel,
+  AlertChannelType,
+  AlertItem,
+  AlertsSummary,
+  AuditEntry,
+  AlertType,
   Asset,
+  AssetVerification,
+  DeliveryResult,
+  DiscoveredHosts,
+  ImportDiscoveredResult,
+  Invitation,
+  MfaSetup,
+  MfaStatus,
+  MonitoringFrequency,
+  MonitoringStatus,
+  ReportRecord,
   AssetDashboard,
   DashboardAsset,
   AuthResponse,
@@ -25,11 +41,22 @@ export const keys = {
   history: (days: number) => ['dashboard', 'history', days] as const,
   dashboardAssets: ['dashboard', 'assets'] as const,
   dashboardAsset: (id: string) => ['dashboard', 'asset', id] as const,
+  verification: (id: string) => ['assets', id, 'verification'] as const,
+  discovered: (id: string) => ['assets', id, 'discovered-hosts'] as const,
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
   users: ['users'] as const,
+  invitations: ['users', 'invitations'] as const,
+  mfa: ['auth', 'mfa'] as const,
+  audit: (f: AuditFilter) => ['audit', f] as const,
+  auditActions: ['audit', 'actions'] as const,
   organization: ['organization'] as const,
+  alerts: (f: AlertsFilter) => ['alerts', 'list', f] as const,
+  alertsSummary: ['alerts', 'summary'] as const,
+  alertChannels: ['alert-channels'] as const,
+  monitoring: ['monitoring'] as const,
+  reports: ['reports'] as const,
 };
 
 export function useOverview() {
@@ -41,7 +68,11 @@ export function useOrgHistory(days = 30) {
 }
 
 export function useDashboardAssets() {
-  return useQuery({ queryKey: keys.dashboardAssets, queryFn: () => api<{ items: DashboardAsset[]; total: number }>('/dashboard/assets'), refetchInterval: 15000 });
+  return useQuery({
+    queryKey: keys.dashboardAssets,
+    queryFn: () => api<{ items: DashboardAsset[]; total: number; verificationRequired: boolean }>('/dashboard/assets'),
+    refetchInterval: 15000,
+  });
 }
 
 export function useDashboardAsset(id: string) {
@@ -85,6 +116,8 @@ function useInvalidateAll() {
     void qc.invalidateQueries({ queryKey: ['findings'] });
     void qc.invalidateQueries({ queryKey: ['scans'] });
     void qc.invalidateQueries({ queryKey: ['assets'] });
+    void qc.invalidateQueries({ queryKey: ['alerts'] });
+    void qc.invalidateQueries({ queryKey: keys.monitoring });
   };
 }
 
@@ -177,5 +210,244 @@ export function useResetUserPassword() {
 export function useChangeOwnPassword() {
   return useMutation({
     mutationFn: (input: { currentPassword: string; newPassword: string }) => api<AuthResponse>('/auth/me/password', { method: 'PATCH', json: input }),
+  });
+}
+
+// ------------------------------------------------------------------ alertas
+
+export interface AlertsFilter {
+  acknowledged?: 'true' | 'false' | '';
+  severity?: Severity | '';
+  type?: AlertType | '';
+  page?: number;
+}
+
+export function useAlerts(filter: AlertsFilter) {
+  return useQuery({
+    queryKey: keys.alerts(filter),
+    queryFn: () => api<Paginated<AlertItem>>(`/alerts${qs({ ...filter, pageSize: 20 })}`),
+    placeholderData: (prev) => prev,
+    refetchInterval: 30000,
+  });
+}
+
+export function useAlertsSummary() {
+  return useQuery({ queryKey: keys.alertsSummary, queryFn: () => api<AlertsSummary>('/alerts/summary'), refetchInterval: 30000 });
+}
+
+export function useAcknowledgeAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<AlertItem>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+}
+
+export function useAcknowledgeAllAlerts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ acknowledged: number }>('/alerts/acknowledge-all', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+}
+
+export function useAlertChannels(enabled = true) {
+  return useQuery({
+    queryKey: keys.alertChannels,
+    queryFn: () => api<{ items: AlertChannel[]; emailEnabled: boolean }>('/alerts/channels'),
+    enabled,
+  });
+}
+
+export interface ChannelInput {
+  type: AlertChannelType;
+  name: string;
+  target: string;
+  minSeverity: Severity;
+}
+
+export function useCreateChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ChannelInput) => api<AlertChannel>('/alerts/channels', { method: 'POST', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+export function useUpdateChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; name?: string; target?: string; minSeverity?: Severity; isActive?: boolean }) =>
+      api<AlertChannel>(`/alerts/channels/${id}`, { method: 'PATCH', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+export function useDeleteChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/alerts/channels/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+export function useTestChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<DeliveryResult>(`/alerts/channels/${id}/test`, { method: 'POST' }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
+  });
+}
+
+// ------------------------------------------------------- monitoreo continuo
+
+export function useMonitoring() {
+  return useQuery({ queryKey: keys.monitoring, queryFn: () => api<MonitoringStatus>('/monitoring') });
+}
+
+export function useUpdateMonitoring() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (frequency: MonitoringFrequency) => api<MonitoringStatus>('/monitoring', { method: 'PATCH', json: { frequency } }),
+    onSuccess: (data) => qc.setQueryData(keys.monitoring, data),
+  });
+}
+
+// ----------------------------------------------------------------- reportes
+
+export function useReports() {
+  return useQuery({ queryKey: keys.reports, queryFn: () => api<{ items: ReportRecord[] }>('/reports') });
+}
+
+// ------------------------------------------------- verificación de activos
+
+export function useAssetVerification(id: string, enabled = true) {
+  return useQuery({ queryKey: keys.verification(id), queryFn: () => api<AssetVerification>(`/assets/${id}/verification`), enabled });
+}
+
+export function useVerifyAsset() {
+  const invalidate = useInvalidateAll();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, method }: { id: string; method?: 'DNS_TXT' | 'HTTP_FILE' }) =>
+      api<AssetVerification>(`/assets/${id}/verify`, { method: 'POST', json: method ? { method } : {} }),
+    onSuccess: (data, { id }) => {
+      qc.setQueryData(keys.verification(id), data);
+      invalidate();
+    },
+  });
+}
+
+export function useDiscoveredHosts(assetId: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.discovered(assetId),
+    queryFn: () => api<DiscoveredHosts>(`/assets/${assetId}/discovered-hosts`),
+    enabled,
+  });
+}
+
+export function useSetDiscoveredHostIgnored() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ignored }: { id: string; assetId: string; ignored: boolean }) =>
+      api<{ id: string; hostname: string; ignored: boolean }>(`/discovered-hosts/${id}`, { method: 'PATCH', json: { ignored } }),
+    onSuccess: (_data, { assetId }) => qc.invalidateQueries({ queryKey: keys.discovered(assetId) }),
+  });
+}
+
+export function useImportDiscoveredHosts() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api<ImportDiscoveredResult>('/discovered-hosts/import', { method: 'POST', json: { ids, authorizationConfirmed: true } }),
+    onSuccess: invalidate,
+  });
+}
+
+// ------------------------------------------------ cuentas: MFA, invitaciones y auditoría
+
+export function useMfaStatus() {
+  return useQuery({ queryKey: keys.mfa, queryFn: () => api<MfaStatus>('/auth/me/mfa') });
+}
+
+export function useMfaSetup() {
+  return useMutation({ mutationFn: () => api<MfaSetup>('/auth/me/mfa/setup', { method: 'POST' }) });
+}
+
+export function useMfaEnable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => api<{ enabled: true; recoveryCodes: string[] }>('/auth/me/mfa/enable', { method: 'POST', json: { code } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.mfa }),
+  });
+}
+
+export function useMfaDisable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { password: string; code: string }) => api<{ enabled: false }>('/auth/me/mfa', { method: 'DELETE', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.mfa }),
+  });
+}
+
+export function useInvitations(enabled = true) {
+  return useQuery({
+    queryKey: keys.invitations,
+    queryFn: () => api<{ items: Invitation[]; emailEnabled: boolean }>('/users/invitations'),
+    enabled,
+  });
+}
+
+export function useInviteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { email: string; role: UserRole }) => api<Invitation>('/users/invitations', { method: 'POST', json: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invitations }),
+  });
+}
+
+export function useResendInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<Invitation>(`/users/invitations/${id}/resend`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invitations }),
+  });
+}
+
+export function useCancelInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/users/invitations/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.invitations }),
+  });
+}
+
+export function useDisableUserMfa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<OrgUser>(`/users/${id}/disable-mfa`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+export interface AuditFilter {
+  action?: string;
+  actorId?: string;
+  page?: number;
+}
+
+export function useAuditLog(filter: AuditFilter) {
+  return useQuery({
+    queryKey: keys.audit(filter),
+    queryFn: () => api<Paginated<AuditEntry>>(`/audit-log${qs({ ...filter, pageSize: 25 })}`),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useAuditActions() {
+  return useQuery({
+    queryKey: keys.auditActions,
+    queryFn: () => api<{ actions: Record<string, string> }>('/audit-log/actions'),
+    staleTime: Infinity,
   });
 }

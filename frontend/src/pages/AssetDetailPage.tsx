@@ -2,6 +2,10 @@ import { ArrowLeft, Radar, Server, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { AssetVerificationCard } from '@/components/AssetVerificationCard';
+import { DiscoveredHostsCard } from '@/components/DiscoveredHostsCard';
+import { EmailSecurityCard } from '@/components/EmailSecurityCard';
+import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { Alert } from '@/components/ui/Alert';
 import { ScanStatusBadge, SeverityBadge } from '@/components/ui/Badge';
@@ -12,17 +16,18 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { ScoreHero } from '@/components/ui/ScoreHero';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useDashboardAsset, useRequestScan, useUpdateAsset } from '@/hooks/queries';
+import { useAssetVerification, useDashboardAsset, useRequestScan, useUpdateAsset } from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
-import { SCAN_TYPE_LABEL, SEVERITY_LABEL, formatDateTime, timeAgo } from '@/lib/format';
-import type { ScanType } from '@/lib/types';
+import { DOMAIN_ONLY_SCANS, SCAN_TYPE_HINT, SCAN_TYPE_LABEL, SEVERITY_LABEL, formatDateTime, timeAgo } from '@/lib/format';
+import type { EmailSecuritySummary, ScanType } from '@/lib/types';
 
-const SCAN_TYPES: ScanType[] = ['PORT_SCAN', 'WEB_HEADERS', 'SSL_CERT', 'SENSITIVE_PATHS'];
+const SCAN_TYPES: ScanType[] = ['PORT_SCAN', 'WEB_HEADERS', 'SSL_CERT', 'SENSITIVE_PATHS', 'EMAIL_SECURITY', 'SUBDOMAIN_DISCOVERY'];
 
 export function AssetDetailPage() {
   const { id = '' } = useParams();
   const { canEdit } = useAuth();
   const q = useDashboardAsset(id);
+  const verification = useAssetVerification(id);
   const requestScan = useRequestScan();
   const update = useUpdateAsset();
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
@@ -32,6 +37,13 @@ export function AssetDetailPage() {
 
   const { asset, securityScore, history, findings, exposure, latestScans } = q.data;
   const inProgress = latestScans.some((s) => s.status === 'PENDING' || s.status === 'RUNNING');
+  // Sin verificar no se puede escanear (a menos que el servidor lo tenga desactivado).
+  const canScan = asset.isActive && (!!asset.verifiedAt || verification.data?.required === false);
+  const isDomain = asset.type === 'DOMAIN';
+  const scanTypes = SCAN_TYPES.filter((t) => isDomain || !DOMAIN_ONLY_SCANS.includes(t));
+  const emailScan = latestScans.find((s) => s.type === 'EMAIL_SECURITY' && s.status === 'COMPLETED' && s.summary);
+  const discoveryScan = latestScans.find((s) => s.type === 'SUBDOMAIN_DISCOVERY');
+  const discovering = discoveryScan?.status === 'PENDING' || discoveryScan?.status === 'RUNNING';
 
   const run = async (type?: ScanType) => {
     setNotice(null);
@@ -57,19 +69,29 @@ export function AssetDetailPage() {
           </>
         }
         actions={
-          canEdit ? (
-            <>
-              <Button variant="secondary" size="md" onClick={() => update.mutate({ id: asset.id, isActive: !asset.isActive })} loading={update.isPending}>
-                {asset.isActive ? 'Desactivar' : 'Activar'}
-              </Button>
-              <Button icon={<Radar className="size-4" />} onClick={() => run()} loading={requestScan.isPending} disabled={!asset.isActive}>
-                Auditoría completa
-              </Button>
-            </>
-          ) : null
+          <>
+            <ReportButtons assetId={asset.id} />
+            {canEdit ? (
+              <>
+                <Button variant="secondary" size="md" onClick={() => update.mutate({ id: asset.id, isActive: !asset.isActive })} loading={update.isPending}>
+                  {asset.isActive ? 'Desactivar' : 'Activar'}
+                </Button>
+                <Button
+                  icon={<Radar className="size-4" />}
+                  onClick={() => run()}
+                  loading={requestScan.isPending}
+                  disabled={!canScan}
+                  title={asset.verifiedAt ? undefined : 'Verifica la propiedad del activo para poder escanearlo'}
+                >
+                  Auditoría completa
+                </Button>
+              </>
+            ) : null}
+          </>
         }
       />
       {notice ? <Alert kind={notice.kind} className="mb-4">{notice.text}</Alert> : null}
+      <AssetVerificationCard assetId={asset.id} canEdit={canEdit} />
       {inProgress ? <Alert kind="info" className="mb-4">Hay escaneos en curso. Esta vista se actualiza automáticamente.</Alert> : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -100,16 +122,18 @@ export function AssetDetailPage() {
           <CardHeader title="Escaneos" subtitle="Último de cada tipo" />
           <CardBody className="px-0 pb-2">
             <ul className="divide-y divide-line">
-              {SCAN_TYPES.map((type) => {
+              {scanTypes.map((type) => {
                 const last = latestScans.find((s) => s.type === type);
                 return (
                   <li key={type} className="flex items-center gap-3 px-5 py-2.5">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-ink">{SCAN_TYPE_LABEL[type]}</p>
-                      <p className="truncate text-xs text-muted">{last ? (last.finishedAt ? timeAgo(last.finishedAt) : timeAgo(last.createdAt)) : 'Nunca ejecutado'}</p>
+                      <p className="truncate text-xs text-muted" title={SCAN_TYPE_HINT[type]}>
+                        {last ? (last.finishedAt ? timeAgo(last.finishedAt) : timeAgo(last.createdAt)) : 'Nunca ejecutado'} · {SCAN_TYPE_HINT[type]}
+                      </p>
                     </div>
                     {last ? <ScanStatusBadge status={last.status} /> : null}
-                    {canEdit && asset.isActive ? (
+                    {canEdit && canScan ? (
                       <Button size="sm" variant="ghost" onClick={() => run(type)} disabled={requestScan.isPending} aria-label={`Ejecutar ${SCAN_TYPE_LABEL[type]}`}>
                         <Radar className="size-4" />
                       </Button>
@@ -145,6 +169,24 @@ export function AssetDetailPage() {
           </CardBody>
         </Card>
       </div>
+
+      {isDomain ? (
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="min-w-0 lg:col-span-2">
+            <DiscoveredHostsCard
+              assetId={asset.id}
+              canEdit={canEdit}
+              canScan={canScan}
+              onRun={() => run('SUBDOMAIN_DISCOVERY')}
+              running={discovering || requestScan.isPending}
+              lastRunAt={discoveryScan?.finishedAt ?? null}
+            />
+          </div>
+          {emailScan ? (
+            <EmailSecurityCard summary={emailScan.summary as unknown as EmailSecuritySummary} finishedAt={emailScan.finishedAt} />
+          ) : null}
+        </div>
+      ) : null}
 
       <Card className="mt-4">
         <CardHeader title="Hallazgos abiertos" subtitle={`${findings.open} en total`} action={<Link to={`/findings?assetId=${asset.id}`} className="text-sm font-medium text-accent hover:underline">Gestionar</Link>} />

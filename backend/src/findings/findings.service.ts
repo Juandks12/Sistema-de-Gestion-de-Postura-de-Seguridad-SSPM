@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { FindingCategory, FindingSeverity, FindingStatus, Prisma, RiskScoreTrigger, ScanType } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { FindingDraft } from '../scans/scanner.interface';
@@ -11,10 +12,13 @@ import { getRule } from './rules.catalog';
 
 /** Categorías de hallazgo que produce cada tipo de escaneo. */
 export const CATEGORIES_BY_SCAN_TYPE: Record<ScanType, FindingCategory[]> = {
-  [ScanType.PORT_SCAN]: [FindingCategory.EXPOSED_SERVICE],
+  [ScanType.PORT_SCAN]: [FindingCategory.EXPOSED_SERVICE, FindingCategory.VULNERABLE_SOFTWARE],
   [ScanType.WEB_HEADERS]: [FindingCategory.HTTP_HEADERS],
   [ScanType.SSL_CERT]: [FindingCategory.TLS_CERTIFICATE],
   [ScanType.SENSITIVE_PATHS]: [FindingCategory.SENSITIVE_PATH],
+  [ScanType.EMAIL_SECURITY]: [FindingCategory.EMAIL_SECURITY],
+  // El descubrimiento de subdominios alimenta el inventario, no genera hallazgos.
+  [ScanType.SUBDOMAIN_DISCOVERY]: [],
 };
 
 export interface SyncFindingsInput {
@@ -23,6 +27,8 @@ export interface SyncFindingsInput {
   scanId: string;
   scanType: ScanType;
   drafts: FindingDraft[];
+  /** Categorías que no se evaluaron por completo: sus hallazgos abiertos no se resuelven. */
+  incompleteCategories?: FindingCategory[];
 }
 
 export interface SyncFindingsResult {
@@ -31,6 +37,18 @@ export interface SyncFindingsResult {
   reopened: number;
   resolved: number;
   bySeverity: Record<FindingSeverity, number>;
+}
+
+/** Hallazgo que pasó a OPEN en este escaneo (nuevo o reabierto). Alimenta las alertas. */
+export interface OpenedFinding {
+  id: string;
+  ruleId: string;
+  category: FindingCategory;
+  severity: FindingSeverity;
+  title: string;
+  location: string;
+  evidence: Record<string, unknown>;
+  reopened: boolean;
 }
 
 const findingSelect = {
@@ -83,6 +101,7 @@ export class FindingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly riskScores: RiskScoresService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -92,9 +111,13 @@ export class FindingsService {
    * - marca RESOLVED los OPEN de la misma categoría que ya no se detectan.
    * Los hallazgos ACCEPTED o FALSE_POSITIVE conservan su estado.
    */
-  async syncForScan(tx: Prisma.TransactionClient, input: SyncFindingsInput): Promise<SyncFindingsResult> {
+  async syncForScan(
+    tx: Prisma.TransactionClient,
+    input: SyncFindingsInput,
+  ): Promise<{ result: SyncFindingsResult; opened: OpenedFinding[] }> {
     const now = new Date();
     const result: SyncFindingsResult = { created: 0, updated: 0, reopened: 0, resolved: 0, bySeverity: emptyCounts() };
+    const opened: OpenedFinding[] = [];
     const seen = new Set<string>();
 
     for (const draft of input.drafts) {
@@ -108,7 +131,7 @@ export class FindingsService {
         category: rule.category,
         ruleId: rule.id,
         severity,
-        cvssScore: new Prisma.Decimal(rule.cvss),
+        cvssScore: new Prisma.Decimal(draft.cvss ?? rule.cvss),
         title: (draft.title ?? rule.title).slice(0, 200),
         description: draft.description ?? rule.description,
         recommendation: draft.recommendation ?? rule.recommendation,
@@ -123,17 +146,28 @@ export class FindingsService {
         select: { id: true, status: true },
       });
 
+      const openedInfo = {
+        ruleId: data.ruleId,
+        category: data.category,
+        severity,
+        title: data.title,
+        location: data.location,
+        evidence: draft.evidence ?? {},
+      };
       if (!existing) {
-        await tx.finding.create({
+        const created = await tx.finding.create({
           data: { ...data, organizationId: input.organizationId, assetId: input.assetId, fingerprint, firstSeenAt: now },
+          select: { id: true },
         });
         result.created += 1;
+        opened.push({ id: created.id, ...openedInfo, reopened: false });
       } else if (existing.status === FindingStatus.RESOLVED) {
         await tx.finding.update({
           where: { id: existing.id },
           data: { ...data, status: FindingStatus.OPEN, resolvedAt: null },
         });
         result.reopened += 1;
+        opened.push({ id: existing.id, ...openedInfo, reopened: true });
       } else {
         await tx.finding.update({ where: { id: existing.id }, data });
         result.updated += 1;
@@ -141,7 +175,9 @@ export class FindingsService {
       result.bySeverity[severity] += 1;
     }
 
-    const categories = CATEGORIES_BY_SCAN_TYPE[input.scanType];
+    const incomplete = new Set(input.incompleteCategories ?? []);
+    const categories = CATEGORIES_BY_SCAN_TYPE[input.scanType].filter((c) => !incomplete.has(c));
+    if (categories.length === 0) return { result, opened };
     const resolved = await tx.finding.updateMany({
       where: {
         assetId: input.assetId,
@@ -152,7 +188,7 @@ export class FindingsService {
       data: { status: FindingStatus.RESOLVED, resolvedAt: now },
     });
     result.resolved = resolved.count;
-    return result;
+    return { result, opened };
   }
 
   async findAll(organizationId: string, query: ListFindingsQuery) {
@@ -189,7 +225,7 @@ export class FindingsService {
 
   async review(actor: AuthUser, id: string, dto: ReviewFindingDto) {
     const existing = await this.findOne(actor.organizationId, id);
-    return this.prisma.$transaction(async (tx) => {
+    const reviewed = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.finding.update({
         where: { id },
         data: { status: dto.status, reviewNote: dto.note ?? null, reviewedById: actor.id },
@@ -205,6 +241,14 @@ export class FindingsService {
       }
       return updated;
     });
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'finding.review',
+      actor,
+      target: { type: 'finding', id: reviewed.id, label: `${reviewed.ruleId} · ${reviewed.location}` },
+      detail: { status: dto.status, previousStatus: existing.status, ...(dto.note ? { note: dto.note } : {}) },
+    });
+    return reviewed;
   }
 
   /** Conteo de hallazgos abiertos por severidad y categoría (base del Security Score). */

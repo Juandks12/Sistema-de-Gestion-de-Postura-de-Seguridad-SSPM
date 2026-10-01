@@ -1,7 +1,7 @@
 import { Radar, XCircle } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
-import { ScanStatusBadge } from '@/components/ui/Badge';
+import { Pill, ScanStatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -80,7 +80,12 @@ export function ScansPage() {
                 const cancellable = s.status === 'PENDING' || s.status === 'RUNNING';
                 return (
                   <tr key={s.id} className="hover:bg-surface-2/60">
-                    <Td className="font-medium text-ink">{SCAN_TYPE_LABEL[s.type]}</Td>
+                    <Td className="font-medium text-ink">
+                      <span className="flex flex-col items-start gap-1">
+                        {SCAN_TYPE_LABEL[s.type]}
+                        {s.source === 'SCHEDULED' ? <Pill className="font-normal">Programado</Pill> : null}
+                      </span>
+                    </Td>
                     <Td>
                       <Link to={`/assets/${s.asset.id}`} className="text-ink-2 hover:underline">{s.asset.name ?? s.asset.value}</Link>
                     </Td>

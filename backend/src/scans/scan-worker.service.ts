@@ -1,14 +1,16 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, RiskScoreTrigger, ScanStatus, ScanType } from '@prisma/client';
+import { AssetType, Prisma, RiskScoreTrigger, ScanStatus, ScanType } from '@prisma/client';
+import { AlertsService } from '../alerts/alerts.service';
 import { validateAssetValue } from '../common/utils/network.util';
-import { FindingsService } from '../findings/findings.service';
+import { DiscoveryService } from '../discovery/discovery.service';
+import { FindingsService, OpenedFinding, SyncFindingsResult } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { NmapParseError } from './nmap/nmap-xml.parser';
 import { ScanCancellationService } from './scan-cancellation.service';
 import { ScanExecutionError } from './scan.errors';
-import { abortReason, OpenPortHint, Scanner, SCANNERS, ScanOutcome } from './scanner.interface';
+import { abortReason, OpenPortHint, Scanner, scannerApplies, SCANNERS, ScanOutcome } from './scanner.interface';
 import { resolveScanTarget } from './target-resolver';
 
 /** Margen extra antes de considerar "huérfano" un escaneo RUNNING. */
@@ -43,6 +45,8 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     private readonly cancellation: ScanCancellationService,
     private readonly findings: FindingsService,
     private readonly riskScores: RiskScoresService,
+    private readonly alerts: AlertsService,
+    private readonly discovery: DiscoveryService,
     @Inject(SCANNERS) scanners: Scanner[],
   ) {
     this.scanners = new Map(scanners.map((s) => [s.type, s]));
@@ -51,6 +55,11 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
   /** Tipos de escaneo con un escáner registrado. */
   get supportedTypes(): ScanType[] {
     return [...this.scanners.keys()];
+  }
+
+  /** Tipos de escaneo disponibles para un tipo de activo (p. ej. el correo solo aplica a dominios). */
+  typesFor(assetType: AssetType): ScanType[] {
+    return [...this.scanners.values()].filter((s) => scannerApplies(s, assetType)).map((s) => s.type);
   }
 
   private get enabled(): boolean {
@@ -199,8 +208,14 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       if (!scanner) {
         throw new ScanExecutionError(`El tipo de escaneo ${scan.type} no está disponible en esta instancia`);
       }
+      if (!scannerApplies(scanner, asset.type)) {
+        throw new ScanExecutionError(`El escaneo ${scan.type} no aplica a activos de tipo ${asset.type}`);
+      }
       if (!asset.isActive || !asset.authorizationConfirmed) {
         throw new ScanExecutionError('El activo está inactivo o no tiene autorización confirmada');
+      }
+      if (this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false && !asset.verifiedAt) {
+        throw new ScanExecutionError('La propiedad del activo no está verificada');
       }
 
       // Revalidación defensiva: el valor pudo cambiar o la política pudo endurecerse.
@@ -209,13 +224,18 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         throw new ScanExecutionError(validation.reason);
       }
 
-      const target = await resolveScanTarget(validation.value, validation.type, this.allowPrivate);
-      const openPorts = scan.type === ScanType.PORT_SCAN ? [] : await this.openPortsHint(asset.id);
+      // Los escáneres pasivos (DNS, Certificate Transparency) no se conectan al activo.
+      const target = scanner.passive
+        ? null
+        : await resolveScanTarget(validation.value, validation.type, this.allowPrivate);
+      const openPorts = scan.type === ScanType.PORT_SCAN || scanner.passive ? [] : await this.openPortsHint(asset.id);
 
-      await this.prisma.scan.update({
-        where: { id: scanId },
-        data: { targetAddress: target.address },
-      });
+      if (target) {
+        await this.prisma.scan.update({
+          where: { id: scanId },
+          data: { targetAddress: target.address },
+        });
+      }
 
       const startedAt = Date.now();
       const outcome = await scanner.run({
@@ -234,11 +254,23 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         return;
       }
 
-      const findings = await this.persistOutcome(scan, target.address, outcome, Date.now() - startedAt);
+      const persisted = await this.persistOutcome(scan, target?.address ?? null, outcome, Date.now() - startedAt);
+      if (!persisted) return;
+      const { result: findings, opened, newHosts } = persisted;
       this.logger.log(
         `Escaneo ${scanId} (${scan.type}): completado en ${((Date.now() - startedAt) / 1000).toFixed(1)} s, ` +
           `${outcome.findings.length} hallazgo(s) (${findings.created} nuevos, ${findings.resolved} resueltos)`,
       );
+
+      // RF-10: alertas tempranas. Fuera de la transacción y sin propagar errores.
+      await this.alerts.handleScanCompleted({
+        organizationId: scan.organizationId,
+        assetId: scan.assetId,
+        scanId,
+        scanType: scan.type,
+        opened,
+        newHosts,
+      });
     } catch (err) {
       if (abortReason(signal)) {
         await this.handleInterrupted(scanId, signal);
@@ -293,10 +325,10 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
 
   private async persistOutcome(
     scan: { id: string; assetId: string; organizationId: string; type: ScanType; asset: { value: string } },
-    targetAddress: string,
+    targetAddress: string | null,
     outcome: ScanOutcome,
     durationMs: number,
-  ) {
+  ): Promise<{ result: SyncFindingsResult; opened: OpenedFinding[]; newHosts: string[] | null } | null> {
     const finishedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       // Si el usuario canceló mientras tanto, no se sobrescribe el estado.
@@ -305,7 +337,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         data: { status: ScanStatus.COMPLETED, finishedAt, parameters: outcome.parameters as Prisma.InputJsonValue },
       });
       if (updated.count === 0) {
-        return { created: 0, updated: 0, reopened: 0, resolved: 0, bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 } };
+        return null;
       }
 
       if (outcome.ports && outcome.ports.length > 0) {
@@ -330,19 +362,30 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         });
       }
 
-      const findings = await this.findings.syncForScan(tx, {
+      const { result: findings, opened } = await this.findings.syncForScan(tx, {
         organizationId: scan.organizationId,
         assetId: scan.assetId,
         scanId: scan.id,
         scanType: scan.type,
         drafts: outcome.findings,
+        incompleteCategories: outcome.incompleteCategories,
       });
+
+      const discovery = outcome.discoveredHosts
+        ? await this.discovery.syncForScan(tx, {
+            organizationId: scan.organizationId,
+            assetId: scan.assetId,
+            scanId: scan.id,
+            hosts: outcome.discoveredHosts,
+          })
+        : null;
 
       const summary = {
         target: scan.asset.value,
         targetAddress,
         durationSeconds: Math.round(durationMs / 100) / 10,
         ...outcome.summary,
+        ...(discovery ? { discovery: discovery.summary } : {}),
         findings,
       };
 
@@ -363,7 +406,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         trigger: RiskScoreTrigger.SCAN_COMPLETED,
         scanId: scan.id,
       });
-      return findings;
+      return { result: findings, opened, newHosts: discovery?.newHosts ?? null };
     });
   }
 }

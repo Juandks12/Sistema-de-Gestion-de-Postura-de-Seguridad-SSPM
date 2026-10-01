@@ -3,11 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, RiskScoreTrigger } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { validateAssetValue } from '../common/utils/network.util';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
+import { AssetVerificationService } from './verification/asset-verification.service';
 
 const assetInclude = {
   createdBy: { select: { id: true, fullName: true, email: true } },
@@ -25,6 +27,8 @@ export class AssetsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly riskScores: RiskScoresService,
+    private readonly verification: AssetVerificationService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(actor: AuthUser, dto: CreateAssetDto) {
@@ -35,9 +39,17 @@ export class AssetsService {
       throw new BadRequestException(validation.reason);
     }
 
+    // Un subdominio de un dominio ya verificado por DNS hereda la verificación.
+    const inherited = await this.verification.inheritedVerification(
+      this.prisma,
+      actor.organizationId,
+      validation.type,
+      validation.value,
+    );
+
     // La unicidad (organization_id, value) la garantiza la BD; un duplicado
     // produce P2002 que el filtro global traduce a 409 Conflict.
-    return this.prisma.asset.create({
+    const created = await this.prisma.asset.create({
       data: {
         organizationId: actor.organizationId,
         createdById: actor.id,
@@ -47,9 +59,18 @@ export class AssetsService {
         description: dto.description,
         authorizationConfirmed: true,
         authorizedAt: new Date(),
+        ...(inherited ?? {}),
       },
       include: assetInclude,
     });
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'asset.create',
+      actor,
+      target: { type: 'asset', id: created.id, label: created.value },
+      detail: { type: created.type, ...(created.verificationMethod ? { verificationMethod: created.verificationMethod } : {}) },
+    });
+    return created;
   }
 
   async findAll(organizationId: string, query: ListAssetsQuery) {
@@ -101,9 +122,10 @@ export class AssetsService {
     return asset;
   }
 
-  async update(organizationId: string, id: string, dto: UpdateAssetDto) {
+  async update(actor: AuthUser, id: string, dto: UpdateAssetDto) {
+    const organizationId = actor.organizationId;
     const existing = await this.findOne(organizationId, id);
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.asset.update({
         where: { id },
         data: { name: dto.name, description: dto.description, isActive: dto.isActive },
@@ -115,13 +137,32 @@ export class AssetsService {
       }
       return updated;
     });
+    this.audit.record({
+      organizationId,
+      action: 'asset.update',
+      actor,
+      target: { type: 'asset', id: updated.id, label: updated.value },
+      detail: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.description !== undefined ? { description: true } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+    return updated;
   }
 
-  async remove(organizationId: string, id: string): Promise<void> {
-    await this.findOne(organizationId, id);
+  async remove(actor: AuthUser, id: string): Promise<void> {
+    const organizationId = actor.organizationId;
+    const existing = await this.findOne(organizationId, id);
     await this.prisma.$transaction(async (tx) => {
       await tx.asset.delete({ where: { id } });
       await this.riskScores.snapshotOrganization(tx, organizationId, RiskScoreTrigger.ASSET_CHANGED);
+    });
+    this.audit.record({
+      organizationId,
+      action: 'asset.delete',
+      actor,
+      target: { type: 'asset', id: existing.id, label: existing.value },
     });
   }
 }

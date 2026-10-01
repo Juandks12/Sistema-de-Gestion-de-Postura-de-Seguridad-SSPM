@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ScanType } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { ScanExecutionError } from '../scan.errors';
-import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
+import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
 import { httpProbe, HttpProbeOptions, HttpProbeResult } from '../web/http-client';
 import { PathResponse, SENSITIVE_PATHS, SensitivePathRule } from '../web/sensitive-paths.catalog';
 import { buildUrl, webTargetsFor } from './web-targets';
@@ -59,7 +59,7 @@ export class SensitivePathsScanner implements Scanner {
     const probeOptions: Omit<HttpProbeOptions, 'signal'> = {
       allowPrivate: ctx.allowPrivate,
       timeoutMs,
-      pinnedAddress: ctx.target.address,
+      pinnedAddress: requireTarget(ctx).address,
       maxBodyBytes: MAX_BODY,
       maxRedirects: 2,
     };

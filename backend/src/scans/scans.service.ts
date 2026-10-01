@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, ScanStatus, ScanType } from '@prisma/client';
+import { Prisma, ScanSource, ScanStatus, ScanType } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScanDto } from './dto/create-scan.dto';
@@ -21,6 +21,7 @@ const scanListSelect = {
   assetId: true,
   type: true,
   status: true,
+  source: true,
   targetAddress: true,
   summary: true,
   errorMessage: true,
@@ -32,6 +33,15 @@ const scanListSelect = {
   requestedBy: { select: { id: true, fullName: true, email: true } },
 } satisfies Prisma.ScanSelect;
 
+export interface EnqueueScanInput {
+  organizationId: string;
+  assetId: string;
+  type: ScanType;
+  /** Nulo para los escaneos del monitoreo continuo. */
+  requestedById: string | null;
+  source: ScanSource;
+}
+
 @Injectable()
 export class ScansService {
   constructor(
@@ -41,9 +51,38 @@ export class ScansService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Encola un escaneo (puertos, cabeceras, TLS o rutas sensibles) para un activo de la organización. */
-  async request(actor: AuthUser, assetId: string, dto: CreateScanDto) {
-    const type = dto.type ?? ScanType.PORT_SCAN;
+  private get verificationRequired(): boolean {
+    return this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false;
+  }
+
+  /** Encola un escaneo (puertos, cabeceras, TLS o rutas sensibles) solicitado por un usuario. */
+  request(actor: AuthUser, assetId: string, dto: CreateScanDto) {
+    return this.enqueue({
+      organizationId: actor.organizationId,
+      assetId,
+      type: dto.type ?? ScanType.PORT_SCAN,
+      requestedById: actor.id,
+      source: ScanSource.MANUAL,
+    });
+  }
+
+  /** Auditoría completa solicitada por un usuario. */
+  requestAll(actor: AuthUser, assetId: string) {
+    return this.enqueueAll({
+      organizationId: actor.organizationId,
+      assetId,
+      requestedById: actor.id,
+      source: ScanSource.MANUAL,
+    });
+  }
+
+  /**
+   * Encola un escaneo. El límite por hora protege contra abuso de usuarios
+   * (sección 11.3); los escaneos del monitoreo continuo no lo consumen porque
+   * su volumen ya está acotado por la frecuencia y el número de activos.
+   */
+  async enqueue(input: EnqueueScanInput) {
+    const { organizationId, assetId, type, requestedById, source } = input;
     if (!this.worker.supportedTypes.includes(type)) {
       throw new BadRequestException(`El tipo de escaneo ${type} no está disponible`);
     }
@@ -53,16 +92,24 @@ export class ScansService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${assetId}))`;
 
       const asset = await tx.asset.findFirst({
-        where: { id: assetId, organizationId: actor.organizationId },
+        where: { id: assetId, organizationId },
       });
       if (!asset) {
         throw new NotFoundException('Activo no encontrado');
+      }
+      if (!this.worker.typesFor(asset.type).includes(type)) {
+        throw new BadRequestException(`El escaneo ${type} solo aplica a dominios`);
       }
       if (!asset.isActive) {
         throw new BadRequestException('El activo está inactivo; reactívalo antes de escanearlo');
       }
       if (!asset.authorizationConfirmed) {
         throw new BadRequestException('El activo no tiene autorización de escaneo confirmada');
+      }
+      if (this.verificationRequired && !asset.verifiedAt) {
+        throw new BadRequestException(
+          'Verifica que el activo es de tu organización (registro DNS o archivo de verificación) antes de escanearlo',
+        );
       }
 
       const inProgress = await tx.scan.findFirst({
@@ -79,27 +126,31 @@ export class ScansService {
         );
       }
 
-      const maxPerHour = this.config.get<number>('SCAN_MAX_PER_HOUR_PER_ORG') ?? 30;
-      const lastHour = await tx.scan.count({
-        where: {
-          organizationId: actor.organizationId,
-          createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
-        },
-      });
-      if (lastHour >= maxPerHour) {
-        throw new HttpException(
-          `Límite de ${maxPerHour} escaneos por hora alcanzado para la organización`,
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+      if (source === ScanSource.MANUAL) {
+        const maxPerHour = this.config.get<number>('SCAN_MAX_PER_HOUR_PER_ORG') ?? 30;
+        const lastHour = await tx.scan.count({
+          where: {
+            organizationId,
+            source: ScanSource.MANUAL,
+            createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+          },
+        });
+        if (lastHour >= maxPerHour) {
+          throw new HttpException(
+            `Límite de ${maxPerHour} escaneos por hora alcanzado para la organización`,
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
       }
 
       return tx.scan.create({
         data: {
-          organizationId: actor.organizationId,
+          organizationId,
           assetId,
           type,
           status: ScanStatus.PENDING,
-          requestedById: actor.id,
+          source,
+          requestedById,
         },
         select: scanListSelect,
       });
@@ -109,13 +160,20 @@ export class ScansService {
     return scan;
   }
 
-  /** Encola todos los tipos de escaneo disponibles para un activo (auditoría completa). */
-  async requestAll(actor: AuthUser, assetId: string) {
-    const queued: Awaited<ReturnType<ScansService['request']>>[] = [];
+  /** Encola todos los tipos de escaneo que aplican al activo (auditoría completa). */
+  async enqueueAll(input: Omit<EnqueueScanInput, 'type'>) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: input.assetId, organizationId: input.organizationId },
+      select: { type: true },
+    });
+    if (!asset) {
+      throw new NotFoundException('Activo no encontrado');
+    }
+    const queued: Awaited<ReturnType<ScansService['enqueue']>>[] = [];
     const skipped: Array<{ type: ScanType; reason: string }> = [];
-    for (const type of this.worker.supportedTypes) {
+    for (const type of this.worker.typesFor(asset.type)) {
       try {
-        queued.push(await this.request(actor, assetId, { type }));
+        queued.push(await this.enqueue({ ...input, type }));
       } catch (err) {
         if (err instanceof NotFoundException || err instanceof BadRequestException) throw err;
         if (err instanceof HttpException) {

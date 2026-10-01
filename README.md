@@ -2,8 +2,13 @@
 
 Plataforma SaaS multi-tenant orientada a PyMEs para registrar activos externos
 (dominios e IPs públicas), escanearlos con herramientas automatizadas (Nmap, análisis
-de cabeceras HTTP, certificados SSL/TLS), clasificar hallazgos por criticidad y
-calcular un *Security Score* comprensible para la toma de decisiones.
+de cabeceras HTTP, certificados SSL/TLS), clasificar hallazgos por criticidad,
+calcular un *Security Score* comprensible para la toma de decisiones, vigilar los
+activos de forma continua con alertas tempranas y generar reportes PDF.
+
+La documentación técnica ampliada (arquitectura, decisiones, despliegue y roadmap)
+está en [`docs/`](docs/); la memoria académica y el material de negocio viven en el
+repositorio `sspm-docs`.
 
 Este repositorio contiene el **backend** (API REST, en `backend/`) y el **frontend**
 (dashboard web, en `frontend/`).
@@ -16,7 +21,10 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 | Sprint 1 | Registro de activos (RF-01), integración Nmap, detección de puertos/servicios (RF-02, RF-03) | ✅ Implementado |
 | Sprint 2 | Cabeceras HTTP (RF-04), SSL/TLS (RF-05), rutas sensibles (RF-06), clasificación por severidad (RF-08) | ✅ Implementado |
 | Sprint 3 | Security Score (RF-07), histórico de postura (RF-11), endpoints del dashboard y base del frontend | ✅ Implementado |
-| Sprint 4 | Reportes PDF y alertas | ⏳ |
+| Sprint 4 | Reportes PDF (RF-09), alertas por correo y webhook (RF-10), monitoreo continuo programado (10.4) | ✅ Implementado |
+| Bloque 1 (SaaS) | Verificación de propiedad de activos, protección del inicio de sesión y del registro | ✅ Implementado |
+| Bloque 2 (SaaS) | CVE de las versiones detectadas (NVD + KEV), seguridad del correo (SPF/DMARC/DKIM), descubrimiento de subdominios (Certificate Transparency) | ✅ Implementado |
+| Bloque 3 (SaaS) | Registro de auditoría (RNF-06), recuperación de contraseña por correo, invitaciones de usuarios, verificación en dos pasos (TOTP) | ✅ Implementado |
 
 ## Stack tecnológico
 
@@ -31,7 +39,10 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 - **Parser XML:** `fast-xml-parser` para la salida `-oX` de Nmap
 - **Auditoría web:** `undici` (HTTP con conexión a IP validada) y `node:tls` (certificados)
 - **Contenedores:** Docker multi-etapa (Ubuntu 24.04 LTS, Node 22, Nmap 7.94) y Docker Compose
+- **Reportes PDF:** [PDFKit](https://pdfkit.org/) (sin navegador headless: la imagen no crece)
+- **Notificaciones:** [Nodemailer](https://nodemailer.com/) (SMTP) y webhooks con `undici`
 - **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4 y Recharts, servido por Nginx en Docker
+- **CI:** GitHub Actions (lint, pruebas unitarias y e2e con PostgreSQL, build de las imágenes Docker)
 
 ## Estructura de carpetas
 
@@ -81,6 +92,9 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
     │   ├── findings/           # RF-08: hallazgos, catálogo de reglas y severidad
     │   ├── risk/               # RF-07/RF-11: motor de riesgo, Security Score e histórico
     │   ├── dashboard/          # Datos agregados para el dashboard (sección 8)
+    │   ├── alerts/             # RF-10: reglas de alerta, canales, correo y webhooks
+    │   ├── monitoring/         # Sección 10.4: planificador del monitoreo continuo
+    │   ├── reports/            # RF-09: datos y renderizado de los reportes PDF
     │   └── health/             # Endpoint de salud
     └── test/                   # Pruebas end-to-end (supertest)
 ```
@@ -140,7 +154,9 @@ contenedores: Nest reinicia la API y Vite recarga la web cada vez que guardas un
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-En este modo la aplicación web está en <http://localhost:5173>.
+En este modo la aplicación web está en <http://localhost:5173> y los correos de
+alerta no salen a Internet: los captura [Mailpit](https://mailpit.axllent.org/),
+visible en <http://localhost:8025>.
 
 Con la API de desarrollo levantada, puedes ejecutar comandos dentro del contenedor:
 
@@ -199,6 +215,16 @@ edítalo. Las variables principales son:
 | `JWT_SECRET` | valor de desarrollo | Secreto para firmar los tokens |
 | `SEED_DEMO_DATA` | `true` | Crear los usuarios de demostración al arrancar |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Modo laboratorio, solo en modo desarrollo |
+| `SCHEDULER_ENABLED` | `true` | Planificador del monitoreo continuo |
+| `ASSET_VERIFICATION_REQUIRED` | `true` | Exigir la verificación de propiedad antes de escanear (no desactivable en producción) |
+| `TRUST_PROXY` | `1` en Compose | Saltos de proxy de confianza para conocer la IP real del cliente |
+| `AUTH_MAX_FAILED_LOGINS`, `AUTH_LOCKOUT_MINUTES` | `5`, `15` | Bloqueo temporal de una cuenta por intentos fallidos |
+| `AUTH_LOGIN_RATE_PER_MINUTE`, `AUTH_REGISTER_RATE_PER_HOUR`, `AUTH_FORGOT_RATE_PER_HOUR` | `20`, `5`, `10` | Límites por IP en login, registro y solicitudes de restablecimiento de contraseña |
+| `PASSWORD_RESET_TTL_MINUTES`, `INVITATION_TTL_HOURS` | `30`, `72` | Caducidad de los enlaces de restablecimiento de contraseña e invitación |
+| `CVE_LOOKUP_ENABLED`, `NVD_API_KEY`, `CVE_CACHE_HOURS` | `true`, vacío, `24` | Correlación de versiones con CVE de NVD; la clave gratuita de NVD sube el límite de peticiones |
+| `SUBDOMAIN_DISCOVERY_ENABLED`, `SUBDOMAIN_DISCOVERY_MAX_HOSTS` | `true`, `500` | Descubrimiento de subdominios en Certificate Transparency |
+| `APP_URL` | `http://localhost:8080` | URL de la web usada en los enlaces de las alertas |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | vacío | Servidor de correo para las alertas; sin `SMTP_HOST` los canales de correo se omiten |
 
 La API y la web se publican solo en `127.0.0.1`, así que no son accesibles desde
 otros equipos de tu red. La base de datos no se publica salvo que lo pidas.
@@ -211,6 +237,9 @@ el caso de estudio con activos controlados:
 1. Pon `ALLOW_PRIVATE_TARGETS=true` en el `.env` de la raíz.
 2. Arranca en modo desarrollo; el modo laboratorio no se permite en producción.
 3. Registra el activo `host.docker.internal`, que apunta a tu equipo.
+4. Verifícalo: sirve el archivo `/.well-known/sspm-verification.txt` que indica la
+   plataforma desde tu servidor local (en un puerto de `WEB_HTTP_PORTS`), o bien pon
+   `ASSET_VERIFICATION_REQUIRED=false` en el `.env` (solo fuera de producción).
 
 ### Solución de problemas
 
@@ -305,9 +334,12 @@ Se adapta a móvil y escritorio y respeta el modo claro u oscuro del sistema.
 | Inicio de sesión | Acceso con la cuenta de la organización; la sesión se guarda en el navegador |
 | Vista general | Security Score con calificación y tendencia, hallazgos por severidad, activos monitoreados, escaneos en curso, evolución de la postura, activos con peor postura, hallazgos prioritarios y escaneos recientes |
 | Activos | Tabla ordenada por peor postura con score, hallazgos abiertos y último escaneo; alta de activos con declaración de autorización; auditoría completa con un clic |
-| Detalle de activo | Score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
+| Detalle de activo | Verificación de propiedad con las instrucciones (DNS o archivo) y su comprobación; score con el desglose de la fórmula, último escaneo de cada tipo, evolución, puertos abiertos y hallazgos; activar o desactivar el activo y lanzar escaneos por tipo |
 | Hallazgos | Filtros por estado, severidad y categoría; cada fila se expande con descripción, recomendación, evidencia y acciones para aceptar el riesgo, marcar falso positivo o reabrir |
-| Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación |
+| Escaneos | Historial con estado, resultado y duración, actualizado automáticamente mientras hay escaneos en curso; cancelación. Los del monitoreo continuo llevan la marca "Programado" |
+| Alertas | Avisos de puertos nuevos, certificados por vencer y hallazgos críticos, con el resultado de entrega por canal; revisión individual o masiva. El menú muestra cuántas hay pendientes |
+| Reportes | Descarga del reporte ejecutivo o técnico en PDF, de la organización o de un activo, e historial de reportes generados. También desde la vista general y el detalle de cada activo |
+| Configuración (solo ADMIN) | Frecuencia del monitoreo continuo con la próxima auditoría de cada activo, y canales de notificación (correo o webhook de Slack, Discord o JSON) con envío de prueba |
 | Usuarios (solo ADMIN) | Alta de usuarios con contraseña inicial y generador, cambio de rol, restablecimiento de contraseña y activación o desactivación del acceso |
 | Mi cuenta | Datos del perfil y la organización, y cambio de la propia contraseña con los requisitos a la vista |
 
@@ -334,19 +366,40 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | POST | `/api/v1/auth/login` | público | Devuelve un JWT |
 | GET | `/api/v1/auth/me` | todos | Usuario autenticado |
 | PATCH | `/api/v1/auth/me/password` | todos | Cambiar mi contraseña (exige la actual); cierra mis otras sesiones y devuelve un token nuevo |
+| POST | `/api/v1/auth/login/mfa` | público | Segundo paso del login: canjea el token intermedio con un código TOTP o de recuperación |
+| POST | `/api/v1/auth/forgot-password` | público | Solicitar el restablecimiento de la contraseña por correo (misma respuesta exista o no la cuenta) |
+| POST | `/api/v1/auth/reset-password` | público | Fijar una contraseña nueva con el token del correo; si la cuenta tiene MFA, devuelve el reto del segundo paso en vez de la sesión |
+| GET | `/api/v1/auth/invitations/info` | público | Datos de una invitación vigente (`token`), para la pantalla de aceptación |
+| POST | `/api/v1/auth/invitations/accept` | público | Aceptar una invitación: crea la cuenta e inicia sesión |
+| GET | `/api/v1/auth/me/mfa` | todos | Estado de mi verificación en dos pasos |
+| POST | `/api/v1/auth/me/mfa/setup` | todos | Iniciar la activación: secreto y URL `otpauth://` para el código QR |
+| POST | `/api/v1/auth/me/mfa/enable` | todos | Confirmar el primer código; devuelve los códigos de recuperación una sola vez |
+| DELETE | `/api/v1/auth/me/mfa` | todos | Desactivar mi verificación en dos pasos (exige contraseña y un código vigente) |
 | GET | `/api/v1/organizations/me` | todos | Organización del usuario |
 | PATCH | `/api/v1/organizations/me` | ADMIN | Renombrar la organización |
 | GET | `/api/v1/users` | ADMIN | Usuarios de la organización |
 | POST | `/api/v1/users` | ADMIN | Crear usuario en la organización |
 | PATCH | `/api/v1/users/:id` | ADMIN | Cambiar rol / activar / desactivar |
 | POST | `/api/v1/users/:id/reset-password` | ADMIN | Asignar una contraseña nueva a otro usuario; cierra sus sesiones |
+| POST | `/api/v1/users/:id/disable-mfa` | ADMIN | Desactivar la verificación en dos pasos de otro usuario (dispositivo perdido) |
+| GET | `/api/v1/users/invitations` | ADMIN | Invitaciones pendientes de la organización |
+| POST | `/api/v1/users/invitations` | ADMIN | Invitar por correo con un rol (caduca a las 72 h) |
+| POST | `/api/v1/users/invitations/:id/resend` | ADMIN | Reenviar con un enlace nuevo (el anterior caduca) |
+| DELETE | `/api/v1/users/invitations/:id` | ADMIN | Cancelar una invitación pendiente |
+| GET | `/api/v1/audit-log` | ADMIN | RNF-06: registro de auditoría paginado (`action`, `actorId`, `from`, `to`) |
+| GET | `/api/v1/audit-log/actions` | ADMIN | Catálogo de acciones auditadas, con su etiqueta |
 | **POST** | **`/api/v1/assets`** | ADMIN, ANALYST | **RF-01: registrar un dominio o IP** |
 | GET | `/api/v1/assets` | todos | Listado paginado (`type`, `isActive`, `search`, `page`, `pageSize`) |
 | GET | `/api/v1/assets/:id` | todos | Detalle de un activo |
+| GET | `/api/v1/assets/:id/verification` | todos | Estado de la verificación de propiedad e instrucciones (registro DNS o archivo) |
+| POST | `/api/v1/assets/:id/verify` | ADMIN, ANALYST | Comprobar la prueba publicada (`method` opcional: `DNS_TXT` o `HTTP_FILE`) |
 | PATCH | `/api/v1/assets/:id` | ADMIN, ANALYST | Editar nombre, descripción o estado |
 | DELETE | `/api/v1/assets/:id` | ADMIN | Eliminar activo y sus escaneos |
-| **POST** | **`/api/v1/assets/:id/scans`** | ADMIN, ANALYST | **Encolar un escaneo: `PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT` o `SENSITIVE_PATHS` (responde 202)** |
-| POST | `/api/v1/assets/:id/scans/all` | ADMIN, ANALYST | Auditoría completa: encola los cuatro tipos |
+| **POST** | **`/api/v1/assets/:id/scans`** | ADMIN, ANALYST | **Encolar un escaneo: `PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`, `SENSITIVE_PATHS`, `EMAIL_SECURITY` o `SUBDOMAIN_DISCOVERY` (responde 202)** |
+| POST | `/api/v1/assets/:id/scans/all` | ADMIN, ANALYST | Auditoría completa: encola todos los tipos que aplican al activo (seis en dominios, cuatro en IPs) |
+| GET | `/api/v1/assets/:id/discovered-hosts` | todos | Subdominios descubiertos del dominio, con su estado (sin inventariar, en inventario, descartado) |
+| PATCH | `/api/v1/discovered-hosts/:id` | ADMIN, ANALYST | Descartar o restaurar un subdominio (`ignored`) |
+| POST | `/api/v1/discovered-hosts/import` | ADMIN, ANALYST | Registrar subdominios como activos (`ids`, `authorizationConfirmed: true`) |
 | GET | `/api/v1/assets/:id/exposure` | todos | Puertos abiertos según el último escaneo completado |
 | GET | `/api/v1/scans` | todos | Listado paginado (`assetId`, `status`, `type`, `page`, `pageSize`) |
 | GET | `/api/v1/scans/:id` | todos | Estado, resumen y puertos detectados (`?includeRaw=true` añade la salida completa) |
@@ -364,6 +417,18 @@ Todos los endpoints (salvo `health`, `register` y `login`) requieren la cabecera
 | GET | `/api/v1/dashboard/assets` | todos | Tabla de activos con score y hallazgos, peor postura primero |
 | GET | `/api/v1/dashboard/assets/:id` | todos | Vista detallada de un activo: score, histórico, hallazgos y puertos abiertos |
 | GET | `/api/v1/dashboard/history` | todos | Serie diaria del score de la organización (`days`, por defecto 30) |
+| GET | `/api/v1/alerts` | todos | RF-10: alertas paginadas (`acknowledged`, `severity`, `type`, `assetId`) |
+| GET | `/api/v1/alerts/summary` | todos | Alertas pendientes por severidad |
+| POST | `/api/v1/alerts/:id/acknowledge` | ADMIN, ANALYST | Marcar una alerta como revisada |
+| POST | `/api/v1/alerts/acknowledge-all` | ADMIN, ANALYST | Marcar todas las pendientes como revisadas |
+| GET/POST | `/api/v1/alerts/channels` | ADMIN | Listar o crear canales de correo o webhook (las URL se devuelven enmascaradas) |
+| PATCH/DELETE | `/api/v1/alerts/channels/:id` | ADMIN | Editar o eliminar un canal |
+| POST | `/api/v1/alerts/channels/:id/test` | ADMIN | Enviar una notificación de prueba |
+| GET | `/api/v1/monitoring` | todos | Sección 10.4: frecuencia y próxima auditoría de cada activo |
+| PATCH | `/api/v1/monitoring` | ADMIN | Cambiar la frecuencia (`OFF`, `DAILY`, `WEEKLY`) |
+| GET | `/api/v1/reports/executive` | todos | RF-09: reporte ejecutivo en PDF (`assetId` opcional) |
+| GET | `/api/v1/reports/technical` | todos | RF-09: reporte técnico en PDF (`assetId` opcional) |
+| GET | `/api/v1/reports` | todos | Historial de reportes generados |
 
 ### Ejemplo: registrar un activo (RF-01)
 
@@ -392,6 +457,9 @@ Reglas aplicadas al registrar:
   (RFC 1918, loopback, link-local, etc.) y hosts como `localhost` o `*.local`.
 - `authorizationConfirmed` debe ser `true`: el usuario declara que tiene
   autorización para analizar el activo (sección 1.6.3 de la documentación).
+- La declaración no basta para escanear: hay que **verificar la propiedad** del activo
+  (ver [Verificación de propiedad](#verificación-de-propiedad-de-activos)). Un
+  subdominio de un dominio ya verificado por DNS queda verificado al registrarse.
 - La unicidad es **por organización** (`organization_id` + `value`); un duplicado
   responde `409 Conflict`.
 
@@ -403,7 +471,7 @@ SCAN_ID=$(curl -s -X POST http://localhost:3000/api/v1/assets/<ASSET_ID>/scans \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"type":"WEB_HEADERS"}' | jq -r .id)
 
-# O encolar la auditoría completa (puertos, cabeceras, TLS y rutas sensibles)
+# O encolar la auditoría completa (todos los tipos que aplican al activo)
 curl -s -X POST http://localhost:3000/api/v1/assets/<ASSET_ID>/scans/all -H "Authorization: Bearer $TOKEN"
 
 # 2. Consultar el estado hasta que sea COMPLETED o FAILED
@@ -426,6 +494,8 @@ curl -s "http://localhost:3000/api/v1/findings/summary" -H "Authorization: Beare
 2. El worker reclama el trabajo (`PENDING` → `RUNNING`) con `FOR UPDATE SKIP LOCKED`.
 3. El dominio se resuelve por DNS. Si alguna IP resultante es privada o reservada, el
    escaneo se bloquea. A los escáneres se les entrega la IP ya validada, nunca el texto del usuario.
+   Los escáneres pasivos (`EMAIL_SECURITY` y `SUBDOMAIN_DISCOVERY`) no se conectan al
+   activo: solo consultan DNS y fuentes públicas, así que omiten este paso.
 4. Se ejecuta el escáner del tipo solicitado (tabla siguiente) y sus resultados se
    convierten en hallazgos mediante el catálogo de reglas.
 5. Se guardan resumen (`scans.summary`), salida completa (`scans.raw_result`), puertos
@@ -436,10 +506,79 @@ curl -s "http://localhost:3000/api/v1/findings/summary" -H "Authorization: Beare
 
 | Tipo | Requisito | Qué hace |
 |------|-----------|----------|
-| `PORT_SCAN` | RF-02, RF-03 | Nmap con `spawn` sin shell: `nmap -sT -sV -Pn -n -T4 --max-retries 2 --host-timeout <s> --top-ports 1000 -oX - <IP>`. Cada puerto abierto genera un hallazgo clasificado por el servicio (base de datos, escritorio remoto, Telnet, Docker...). |
+| `PORT_SCAN` | RF-02, RF-03 | Nmap con `spawn` sin shell: `nmap -sT -sV -Pn -n -T4 --max-retries 2 --host-timeout <s> --top-ports 1000 -oX - <IP>`. Cada puerto abierto genera un hallazgo clasificado por el servicio (base de datos, escritorio remoto, Telnet, Docker...). Las versiones detectadas se cruzan con los CVE publicados (ver más abajo). |
 | `WEB_HEADERS` | RF-04 | Pide `/` por HTTPS y HTTP (puertos configurables más los detectados por Nmap), sigue redirecciones y evalúa HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, divulgación de versiones, atributos de cookies y redirección HTTP→HTTPS. |
 | `SSL_CERT` | RF-05 | Conecta por TLS y comprueba caducidad (vencido, < 7 días, < 30 días), validez futura, coincidencia del nombre, cadena de confianza, TLS 1.0/1.1, tamaño de clave, algoritmo de firma y ausencia de HTTPS. |
 | `SENSITIVE_PATHS` | RF-06 | Solicita unas 60 rutas conocidas (`.env`, `.git/`, volcados SQL, `phpinfo.php`, paneles, listados) y solo reporta las que cumplen una firma de contenido, lo que descarta los sitios que responden 200 a todo. Nunca almacena el contenido del archivo. |
+| `EMAIL_SECURITY` | Solo dominios | SPF, DMARC y DKIM a partir de los registros DNS públicos (ver más abajo). |
+| `SUBDOMAIN_DISCOVERY` | Solo dominios | Subdominios en los registros de Certificate Transparency, resueltos en DNS, para detectar activos fuera del inventario. |
+
+### Vulnerabilidades conocidas (CVE)
+
+Nmap identifica el software y su versión con un CPE (`cpe:/a:openbsd:openssh:7.4p1`).
+Tras el escaneo de puertos, la plataforma consulta en la
+[API 2.0 de NVD](https://nvd.nist.gov/developers/vulnerabilities) todos los CVE del
+producto y decide **localmente** qué versiones están afectadas con los rangos de cada CVE
+(`versionStartIncluding`, `versionEndExcluding`...). Así una sola descarga sirve para
+todas las versiones y se guarda en `cve_product_cache` (`CVE_CACHE_HOURS`, 24 h por
+defecto) para respetar el límite de NVD (5 peticiones cada 30 s sin clave, 50 con
+`NVD_API_KEY`).
+
+- Un hallazgo `VULN-KNOWN-CVE` por servicio vulnerable, con el total de CVE, los 20 más
+  relevantes en la evidencia (enlace a NVD, CVSS, descripción) y la severidad y CVSS del
+  más grave.
+- Los CVE del catálogo **KEV de CISA** (explotados activamente, dato que publica NVD) van
+  primero y elevan la severidad: a crítica si ya era alta y a alta en otro caso.
+- **Backports:** si el banner indica un paquete de distribución (Ubuntu, Debian, RHEL...),
+  la severidad baja un nivel y el hallazgo lo explica, porque estas distribuciones corrigen
+  vulnerabilidades sin cambiar el número de versión. Se puede marcar como falso positivo.
+- No se usan versiones imprecisas de Nmap (`9.6.0 or later`, `2.4.X`) ni los CPE de sistema
+  operativo.
+- Si NVD no responde se usa la caché caducada; si no la hay, los hallazgos de CVE abiertos
+  **se conservan** en lugar de darse por resueltos, y el resumen del escaneo lo indica.
+
+### Seguridad del correo (SPF, DMARC, DKIM)
+
+Solo consultas DNS: el escáner no envía correo ni se conecta a los servidores.
+
+| Regla | Severidad | Qué detecta |
+|-------|-----------|-------------|
+| `MAIL-SPF-MISSING` | Media (baja si el dominio no recibe correo) | Sin registro SPF; en dominios sin correo se recomienda `v=spf1 -all`. No se reporta si el dominio no recibe correo y un DMARC que rechaza ya lo protege |
+| `MAIL-SPF-INVALID` | Media | Varios registros, mecanismos no válidos, `include` sin SPF, bucles o más de 10 consultas DNS |
+| `MAIL-SPF-PASS-ALL` | Alta | `+all`: autoriza a cualquier servidor |
+| `MAIL-SPF-NEUTRAL` | Media | `?all` o sin `all` |
+| `MAIL-SPF-SOFTFAIL` | Baja | `~all` sin un DMARC que rechace o ponga en cuarentena |
+| `MAIL-DMARC-MISSING` | Media | Ni el dominio ni sus dominios superiores publican DMARC |
+| `MAIL-DMARC-INVALID` | Media | Varios registros o sin política `p=` válida |
+| `MAIL-DMARC-MONITOR-ONLY` | Media | Política efectiva `none` (propia o `sp` heredada) |
+| `MAIL-DMARC-PARTIAL` | Baja | `pct` < 100 |
+| `MAIL-DMARC-SUBDOMAINS-UNPROTECTED` | Baja | `sp=none` con la política principal activa |
+| `MAIL-DMARC-NO-REPORTS` | Informativa | Sin `rua`, no se reciben informes |
+| `MAIL-DKIM-NOT-FOUND` | Baja | Dominio con correo sin clave en los ~37 selectores habituales (Google, Microsoft 365, Zoho, SendGrid...) |
+| `MAIL-DKIM-WEAK-KEY` | Media (< 1024 bits) o baja (1024) | Clave RSA de menos de 2048 bits |
+
+Un subdominio sin DMARC propio hereda el del dominio organizativo (se aplica `sp`). Un
+fallo del DNS (timeout, SERVFAIL) hace fallar el escaneo en lugar de reportar
+registros ausentes.
+
+### Descubrimiento de subdominios (shadow IT)
+
+Todo certificado TLS emitido por una CA pública queda en los registros de
+Certificate Transparency con sus nombres. El escáner los consulta en
+[crt.sh](https://crt.sh) (y en [Cert Spotter](https://sslmate.com/certspotter/) si
+crt.sh falla), se queda con los subdominios del dominio (`*.x` cuenta como `x`,
+marcado como comodín), los resuelve en DNS y los guarda en `discovered_hosts`.
+
+- En la ficha del dominio se ven los subdominios **sin inventariar**, en inventario y
+  descartados, con las IP a las que resuelven y una marca si alguna es **interna** (el
+  certificado revela infraestructura privada).
+- Se pueden **incorporar al inventario** en bloque (confirmando la autorización): los que
+  cuelgan de un dominio verificado por DNS heredan la verificación y se pueden auditar
+  enseguida. También se pueden descartar.
+- El primer descubrimiento es la línea base; en los siguientes, los subdominios nuevos
+  fuera del inventario generan la alerta `NEW_SUBDOMAIN`.
+- La consulta envía el nombre del dominio a esos servicios públicos; se puede desactivar
+  con `SUBDOMAIN_DISCOVERY_ENABLED=false`.
 
 ### Hallazgos (RF-08)
 
@@ -555,6 +694,93 @@ con `NODE_ENV=production`.
 ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm run start:dev
 ```
 
+## Verificación de propiedad de activos
+
+Declarar que se tiene autorización no impide registrar el dominio de otra empresa y
+escanearlo desde nuestros servidores. Por eso **no se escanea ningún activo cuya
+propiedad no se haya demostrado** (sección 1.6.3): ni por petición manual, ni en la
+auditoría completa, ni en el monitoreo continuo. El worker vuelve a comprobarlo antes
+de ejecutar.
+
+Cada organización tiene un token secreto y publica el valor
+`sspm-verification=<token>` de una de estas formas:
+
+| Método | Dónde | Alcance |
+|--------|-------|---------|
+| `DNS_TXT` (recomendado) | Registro TXT en `_sspm-verification.<dominio>` | El dominio y **todos sus subdominios**: los que ya estén registrados y los que se registren después quedan verificados (`INHERITED`) |
+| `HTTP_FILE` | Archivo `/.well-known/sspm-verification.txt` con ese contenido exacto, servido por el propio host en `WEB_HTTPS_PORTS` o `WEB_HTTP_PORTS` | Solo ese host. Es la única opción para direcciones IP |
+
+- La prueba DNS se busca desde el nombre del activo hacia los dominios superiores
+  (`a.tienda.example.com`, `tienda.example.com`, `example.com`).
+- El archivo no sigue redirecciones: una redirección abierta del sitio no puede
+  usarse para "demostrar" la propiedad con un archivo alojado en otro dominio.
+- La verificación es por organización: la de una no sirve para otra.
+- Un intento fallido no retira una verificación anterior; queda registrado con el
+  detalle de cada comprobación para que el usuario vea qué falta.
+- `scanme.nmap.org`, que el proyecto Nmap ofrece públicamente para practicar, viene
+  pre-autorizado en los datos de demostración.
+- `ASSET_VERIFICATION_REQUIRED=false` desactiva la exigencia en pruebas o
+  laboratorio; la aplicación se niega a arrancar así con `NODE_ENV=production`.
+
+## Alertas tempranas (RF-10)
+
+Al completar cada escaneo se evalúan cuatro reglas (`backend/src/alerts/alert-rules.ts`):
+
+| Tipo | Cuándo se genera | Severidad |
+|------|------------------|-----------|
+| `NEW_OPEN_PORT` | Un puerto abierto que no estaba en el escaneo de puertos anterior del activo. El primer escaneo es la línea base y no alerta. | La del hallazgo del puerto, mínimo media |
+| `CERT_EXPIRING` | El hallazgo de certificado caducado, a menos de 7 días o a menos de 30 días aparece o se reabre | La del hallazgo |
+| `CRITICAL_FINDING` | Hallazgos críticos nuevos o reabiertos no cubiertos por las anteriores (agrupados en una alerta por escaneo); incluye los CVE explotados activamente | Crítica |
+| `NEW_SUBDOMAIN` | Subdominios que aparecen por primera vez en Certificate Transparency y no están en el inventario. El primer descubrimiento es la línea base y no alerta. | Media |
+
+Como solo cuentan los hallazgos que **pasan a abiertos**, un problema que persiste no
+genera una alerta en cada escaneo.
+
+Cada alerta se guarda en `alerts` y se notifica, **de forma asíncrona** (sin retrasar
+al worker), por los canales activos de la organización cuya severidad mínima cubre la
+de la alerta. El resultado de cada envío (`SENT`, `FAILED` o `SKIPPED`) queda en la
+alerta y en el canal.
+
+- **Correo:** SMTP con Nodemailer. Sin `SMTP_HOST` el envío se marca `SKIPPED`.
+- **Webhook:** cuerpo adaptado a Slack (`hooks.slack.com`), Discord
+  (`discord.com/api/webhooks`) o JSON genérico (`event: alert.created`). La URL es
+  un secreto: se muestra enmascarada.
+
+Protección contra SSRF en los webhooks (sección 11.3): solo `https://` hacia dominios
+o IPs públicas, sin credenciales en la URL; en cada envío se resuelve el DNS, se
+rechazan direcciones privadas, se conecta a la IP validada (nombre en Host/SNI, TLS
+verificado) y no se siguen redirecciones. En modo laboratorio se admiten HTTP y hosts
+locales para las pruebas.
+
+## Monitoreo continuo (sección 10.4)
+
+Cada organización elige en **Configuración** una frecuencia: `OFF` (por defecto),
+`DAILY` o `WEEKLY`. El planificador (`backend/src/monitoring/`) revisa cada
+`SCHEDULER_INTERVAL_MS` qué activos activos y autorizados están vencidos y encola su
+auditoría completa como escaneos con `source = SCHEDULED`.
+
+- **Varias instancias:** cada activo se reclama con un `UPDATE` condicional sobre
+  `last_scheduled_scan_at`, así que solo una instancia lo encola por periodo.
+- **Sin duplicados:** los tipos con un escaneo ya en curso se omiten.
+- **Límites:** los escaneos programados respetan la concurrencia global y por
+  organización, pero no consumen el límite por hora pensado para las peticiones manuales.
+- Con `SCHEDULER_ENABLED=false` una instancia no planifica (útil si se separa en un
+  proceso propio).
+
+## Reportes PDF (RF-09)
+
+`GET /reports/executive` y `GET /reports/technical` generan el PDF bajo demanda con los
+datos vigentes, de la organización o de un activo (`assetId`). Cada generación se
+registra en `reports` (quién, cuándo, score y tamaño); el PDF no se almacena.
+
+- **Ejecutivo (gerencia):** score con su tendencia semanal, resumen en lenguaje de
+  negocio, hallazgos por severidad, evolución de 30 días, principales riesgos,
+  recomendaciones agrupadas por acción, activos con peor postura, alertas y anexo
+  metodológico del Security Score.
+- **Técnico (TI):** por activo, del peor al mejor score: último escaneo de cada tipo,
+  puertos abiertos y cada hallazgo abierto con CVSS, ubicación, fechas, descripción,
+  recomendación y evidencia.
+
 ## Modelo multi-tenant y RBAC
 
 - Cada usuario pertenece a **una** organización; el JWT incluye `org` y `role`.
@@ -574,7 +800,7 @@ ALLOW_PRIVATE_TARGETS=true SCAN_PORTS=22,80,443,5432 WEB_HTTPS_PORTS=8443 npm ru
 | `ANALYST` | Desarrollador | Registra/edita activos y lanza escaneos |
 | `VIEWER` | Gerente | Solo lectura (listados, dashboard, reportes) |
 
-## Modelo de datos (Sprint 1)
+## Modelo de datos
 
 Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports`):
 
@@ -583,8 +809,11 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   `token_version` (revocación de sesiones) y `password_changed_at`.
 - **assets**: `type`, `value` (único por organización), `authorization_confirmed`,
   `created_by_id`, `last_scanned_at`.
+- **users**: además de lo anterior, `mfa_enabled`, `mfa_secret` (base32, solo servidor),
+  `mfa_pending_secret` (durante el alta), `mfa_enabled_at` y `mfa_recovery_codes`
+  (hashes sha256 de los códigos no usados).
 - **scans**: `asset_id`, `type` (`PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`,
-  `SENSITIVE_PATHS`), `status` (`PENDING` → `RUNNING` → `COMPLETED`/`FAILED`/`CANCELLED`),
+  `SENSITIVE_PATHS`, `EMAIL_SECURITY`, `SUBDOMAIN_DISCOVERY`), `status` (`PENDING` → `RUNNING` → `COMPLETED`/`FAILED`/`CANCELLED`),
   `target_address` (IP escaneada), `parameters`, `raw_result` y `summary` en JSONB.
 - **scan_ports**: un registro por puerto detectado en cada escaneo: `port`, `protocol`,
   `state`, `service_name`, `product`, `version`, `extra_info`, `tunnel`, `cpe`. Permite
@@ -597,7 +826,31 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   organización (`scope = ORGANIZATION`): `score`, `grade`, conteos por severidad,
   `scored_assets`, `breakdown` con el desglose de la fórmula, `trigger` y `scan_id`.
 
-Las tablas `reports` y `alerts` se añadirán en el Sprint 4.
+- **alerts**: alertas tempranas: `type`, `severity`, `title`, `message`, `data` (puertos,
+  hallazgos, fechas), `deliveries` (resultado por canal), `acknowledged_at`/`acknowledged_by_id`.
+- **alert_channels**: canales de notificación por organización: `type` (`EMAIL` o
+  `WEBHOOK`), `target`, `min_severity`, `is_active` y el resultado del último envío.
+- **discovered_hosts**: subdominios descubiertos por organización (`hostname` único),
+  `asset_id` del dominio que los encontró, `resolves`, `addresses`, `wildcard`,
+  `last_certificate_at`, `ignored_at`, `first_seen_at` y `last_seen_at`.
+- **cve_product_cache**: caché global de NVD por producto (`vendor:product`) con los CVE
+  reducidos a id, CVSS, KEV, descripción y rangos de versiones afectadas.
+- **audit_log**: registro de auditoría (RNF-06): `action`, actor desnormalizado
+  (`actor_id`, `actor_email`, `actor_name`), objeto afectado (`target_type`,
+  `target_id`, `target_label`), `detail` (JSONB), `ip` y `created_at`.
+- **account_tokens**: tokens de un solo uso enviados por correo (`type`:
+  `PASSWORD_RESET` o `INVITATION`), con `token_hash` (sha256, nunca el valor en
+  claro), `expires_at`, `used_at` y el resultado del envío.
+- **login_attempts**: intentos fallidos de inicio de sesión por cuenta (clave sha256 del
+  correo), con `failures` y `locked_until`.
+- **reports**: registro de reportes generados: `type`, `asset_id` (nulo = organización),
+  `generated_by_id`, `score`, `grade`, `open_findings`, `pages`, `size_bytes`.
+
+Además, `organizations.monitoring_frequency`, `assets.last_scheduled_scan_at` y
+`scans.source` (`MANUAL` o `SCHEDULED`) soportan el monitoreo continuo, y
+`organizations.verification_token` junto con `assets.verified_at`,
+`verification_method`, `verification_scope`, `verification_checked_at` y
+`verification_error` soportan la verificación de propiedad.
 
 ## Scripts útiles
 
@@ -611,12 +864,66 @@ npx prisma studio     # explorador visual de la base de datos
 npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.prisma
 ```
 
+## Auditoría, recuperación de cuenta, invitaciones y verificación en dos pasos
+
+**Registro de auditoría (RNF-06).** Cada acción sensible (inicios de sesión, altas y
+cambios de usuarios, invitaciones, activos, verificación de propiedad, revisión de
+hallazgos, canales de alerta, monitoreo y datos de la organización) se guarda en
+`audit_log` con quién la hizo (nombre y correo, aunque el usuario se elimine después),
+qué objeto afectó, detalles legibles (nunca contraseñas ni secretos) y la IP del
+cliente. Solo el ADMIN puede consultarlo (`GET /audit-log`, filtrable por acción,
+usuario y fecha). El registro nunca bloquea ni retrasa la acción auditada: si falla,
+se registra en el log del servidor y la operación sigue su curso.
+
+**Recuperación de contraseña por correo.** `POST /auth/forgot-password` responde
+siempre el mismo mensaje exista o no la cuenta, para no revelar qué correos están
+registrados. Si existe, se envía un enlace de un solo uso (token de 32 bytes, se
+guarda solo su hash sha256) que caduca en `PASSWORD_RESET_TTL_MINUTES` (30 min);
+emitir uno nuevo caduca el anterior. Al canjearlo se cierran las demás sesiones y se
+desbloquea la cuenta si estaba bloqueada por intentos fallidos. Límite propio por IP
+(`AUTH_FORGOT_RATE_PER_HOUR`).
+
+**Invitaciones.** Un ADMIN invita por correo con un rol (`POST /users/invitations`);
+la persona recibe un enlace de un solo uso (caduca en `INVITATION_TTL_HOURS`, 72 h)
+para crear su cuenta con su propia contraseña, sin que nadie más la conozca. Se puede
+reenviar (el enlace anterior caduca) o cancelar mientras esté pendiente. Sin SMTP
+configurado la invitación queda registrada pero el correo no llega; queda visible en
+la interfaz para que el ADMIN cree el usuario por la vía manual.
+
+**Verificación en dos pasos (TOTP, RFC 6238).** Cada usuario puede activarla desde
+"Mi cuenta": genera un secreto, muestra un código QR (`otpauth://`) compatible con
+Google Authenticator, Microsoft Authenticator, 1Password, etc., y se confirma con el
+primer código antes de activarse. Entrega 10 códigos de recuperación de un solo uso
+(solo se muestran una vez; se guarda su hash). Con el MFA activo, `POST /auth/login`
+no devuelve el token de acceso: devuelve un token intermedio de 5 minutos que se
+canjea junto con el código en `POST /auth/login/mfa`. Los códigos incorrectos cuentan
+para el bloqueo de la cuenta, igual que una contraseña incorrecta. Si se pierde el
+dispositivo y se agotan los códigos de recuperación, un ADMIN puede desactivar el MFA
+de otro usuario (`POST /users/:id/disable-mfa`), acción que queda auditada.
+
 ## Seguridad del propio sistema
 
 - Contraseñas con bcrypt; login con comparación de tiempo constante.
+- **Bloqueo por fuerza bruta:** tras `AUTH_MAX_FAILED_LOGINS` fallos seguidos (5) la
+  cuenta queda bloqueada `AUTH_LOCKOUT_MINUTES` (15) y responde `429` aunque la
+  contraseña sea correcta. El contador vive en PostgreSQL (`login_attempts`, con el
+  hash sha256 del correo como clave), sirve con varias instancias y se aplica también a correos
+  que no existen, así que no revela qué cuentas hay. Restablecer la contraseña desde
+  administración desbloquea la cuenta.
+- **Límites por IP:** `AUTH_LOGIN_RATE_PER_MINUTE` (20) intentos de login por minuto,
+  `AUTH_REGISTER_RATE_PER_HOUR` (5) registros de organización por hora y
+  `AUTH_FORGOT_RATE_PER_HOUR` (10) solicitudes de restablecimiento de contraseña.
+  Detrás de un proxy hay que definir `TRUST_PROXY` (en Docker Compose ya vale `1`, por
+  el Nginx de la web); si no, todos los clientes compartirían la IP del proxy.
+- **Verificación en dos pasos (TOTP) opcional por usuario** y **registro de auditoría**
+  de las acciones sensibles (ver arriba).
+- **Solo se escanean activos verificados** (ver
+  [Verificación de propiedad](#verificación-de-propiedad-de-activos)).
 - Política de contraseñas única para todos los formularios: 8 a 72 caracteres, con
   mayúscula, minúscula y número. La aplicación web muestra los requisitos mientras se escribe.
 - Cambio de contraseña y restablecimiento por un administrador, que cierran las demás sesiones.
+- Restablecer la contraseña por correo no se salta la verificación en dos pasos: con MFA
+  activo hay que introducir el código después, igual que en el login.
 - `helmet` para cabeceras HTTP seguras y CORS restringido por `CORS_ORIGINS`.
 - Validación estricta de entrada (`whitelist` + `forbidNonWhitelisted`).
 - Los valores de activos se validan como FQDN/IP antes de persistirse y de nuevo antes
@@ -628,13 +935,19 @@ npx prisma migrate dev --name <nombre>   # nueva migración tras cambiar schema.
   así una redirección o un cambio de DNS no pueden desviar las peticiones a la red interna.
 - Los hallazgos de rutas sensibles guardan solo la ruta y el código de estado, nunca el
   contenido del archivo.
+- Las consultas a fuentes externas solo envían datos públicos: el producto (`vendor:product`)
+  a NVD y el nombre del dominio a Certificate Transparency. Las respuestas tienen límite de
+  tamaño y de tiempo, y se pueden desactivar (`CVE_LOOKUP_ENABLED`, `SUBDOMAIN_DISCOVERY_ENABLED`).
+- Los webhooks de alertas se validan igual que los objetivos de escaneo (solo HTTPS a
+  hosts públicos, IP validada en cada envío, sin redirecciones) y sus URL, que son
+  secretas, se devuelven enmascaradas. Los correos se construyen sin acceso a archivos
+  ni URLs (`disableFileAccess`, `disableUrlAccess`) y con el contenido escapado.
 - La imagen Docker ejecuta la API y Nmap como usuario sin privilegios y desactiva
   la telemetría de Prisma y de Scarf.
 - `docker compose` publica los puertos solo en `127.0.0.1`.
 
-## Próximos pasos (Sprint 4)
+## Próximos pasos
 
-1. Generación de reportes PDF ejecutivo y técnico (RF-09) a partir del dashboard y los hallazgos.
-2. Tabla `alerts` y notificaciones por correo o webhook (RF-10): nuevos puertos abiertos,
-   certificados próximos a vencer y hallazgos críticos.
-3. Escaneos programados para el monitoreo continuo (sección 10.4).
+El alcance funcional del MVP (RF-01 a RF-11) está completo. Las siguientes fases
+(publicación de imágenes y despliegue continuo, observabilidad, funciones de IA y
+expansión a postura en la nube) están en [`docs/roadmap.md`](docs/roadmap.md).

@@ -1,5 +1,6 @@
 import { Activity, Radar, Server, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { GradeBadge, ScanStatusBadge, SeverityBadge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -31,7 +32,11 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader title="Vista general" description={`Actualizado ${timeAgo(o.generatedAt)} · ${s.scoredAssets} de ${s.totalAssets} activos evaluados`} />
+      <PageHeader
+        title="Vista general"
+        description={`Actualizado ${timeAgo(o.generatedAt)} · ${s.scoredAssets} de ${s.totalAssets} activos evaluados`}
+        actions={<ReportButtons types={['EXECUTIVE']} />}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

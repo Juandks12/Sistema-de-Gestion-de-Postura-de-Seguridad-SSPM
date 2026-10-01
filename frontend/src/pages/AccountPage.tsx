@@ -1,6 +1,7 @@
 import { Building2, KeyRound, Mail, ShieldCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '@/auth/useAuth';
+import { MfaCard } from '@/components/MfaCard';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -100,6 +101,10 @@ export function AccountPage() {
             </form>
           </CardBody>
         </Card>
+
+        <div className="lg:col-span-3">
+          <MfaCard />
+        </div>
       </div>
     </>
   );

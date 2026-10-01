@@ -62,6 +62,32 @@ services:
       SCAN_PORTS: ${SCAN_PORTS:-}
       WEB_HTTP_PORTS: ${WEB_HTTP_PORTS:-80}
       WEB_HTTPS_PORTS: ${WEB_HTTPS_PORTS:-443}
+      # Monitoreo continuo (sección 10.4)
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INTERVAL_MS: ${SCHEDULER_INTERVAL_MS:-60000}
+      # Alertas (RF-10): enlaces de las notificaciones y servidor de correo.
+      # Sin SMTP_HOST los canales de correo se omiten; los webhooks funcionan igual.
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-SSPM Alertas <alertas@sspm.local>}
+      # La web (Nginx) hace de proxy: un salto de confianza para conocer la IP
+      # real del cliente en los límites del inicio de sesión.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      AUTH_MAX_FAILED_LOGINS: ${AUTH_MAX_FAILED_LOGINS:-5}
+      AUTH_LOCKOUT_MINUTES: ${AUTH_LOCKOUT_MINUTES:-15}
+      AUTH_FORGOT_RATE_PER_HOUR: ${AUTH_FORGOT_RATE_PER_HOUR:-10}
+      PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-30}
+      INVITATION_TTL_HOURS: ${INVITATION_TTL_HOURS:-72}
+      # CVE (NVD) y descubrimiento de subdominios (Certificate Transparency)
+      CVE_LOOKUP_ENABLED: ${CVE_LOOKUP_ENABLED:-true}
+      NVD_API_KEY: ${NVD_API_KEY:-}
+      CVE_CACHE_HOURS: ${CVE_CACHE_HOURS:-24}
+      SUBDOMAIN_DISCOVERY_ENABLED: ${SUBDOMAIN_DISCOVERY_ENABLED:-true}
+      SUBDOMAIN_DISCOVERY_MAX_HOSTS: ${SUBDOMAIN_DISCOVERY_MAX_HOSTS:-500}
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
     extra_hosts:

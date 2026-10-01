@@ -27,6 +27,6 @@ export class OrganizationsController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Actualizar el nombre de la organización (solo ADMIN)' })
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdateOrganizationDto) {
-    return this.organizations.update(user.organizationId, dto);
+    return this.organizations.update(user, dto);
   }
 }

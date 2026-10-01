@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
-import { PrismaClient, UserRole, AssetType } from '@prisma/client';
+import { AssetType, PrismaClient, UserRole, VerificationMethod } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'node:crypto';
 
 const prisma = new PrismaClient();
 
@@ -12,7 +13,7 @@ async function main() {
   const org = await prisma.organization.upsert({
     where: { slug: 'demo-pyme' },
     update: {},
-    create: { name: 'Demo PyME S.A.S.', slug: 'demo-pyme' },
+    create: { name: 'Demo PyME S.A.S.', slug: 'demo-pyme', verificationToken: randomBytes(16).toString('hex') },
   });
 
   const users = [
@@ -36,16 +37,25 @@ async function main() {
     { type: AssetType.IP, value: '45.33.32.156', name: 'IP de scanme.nmap.org' },
   ];
 
+  // scanme.nmap.org es un host que el proyecto Nmap pone a disposición pública
+  // para practicar escaneos, por eso se marca como pre-autorizado. Cualquier
+  // activo real debe verificarse por DNS o con el archivo de verificación.
+  const preAuthorized = {
+    verifiedAt: new Date(),
+    verificationMethod: VerificationMethod.PRE_AUTHORIZED,
+  };
   for (const a of assets) {
     await prisma.asset.upsert({
       where: { organizationId_value: { organizationId: org.id, value: a.value } },
-      update: {},
+      update: { ...preAuthorized, verificationScope: a.value },
       create: {
         ...a,
         organizationId: org.id,
         createdById: admin.id,
         authorizationConfirmed: true,
         authorizedAt: new Date(),
+        ...preAuthorized,
+        verificationScope: a.value,
       },
     });
   }
