@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, StreamableFile } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiProduces, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { IsOptional, IsUUID } from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
 import { FindingsService } from './findings.service';
@@ -39,6 +40,18 @@ export class FindingsController {
   @ApiOperation({ summary: 'Catálogo de reglas de hallazgos con su severidad y CVSS de referencia' })
   rules() {
     return [...FINDING_RULES.values()];
+  }
+
+  @Get('export')
+  @ApiProduces('text/csv')
+  @ApiOperation({ summary: 'Exportar hallazgos a formato CSV con soporte de streaming y filtros' })
+  export(@CurrentUser() user: AuthUser, @Query() query: ExportFindingsQuery) {
+    const filename = `findings-${new Date().toISOString().slice(0, 10)}.csv`;
+    const stream = this.findings.exportStream(user.organizationId, query);
+    return new StreamableFile(stream, {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 
   @Get(':id')

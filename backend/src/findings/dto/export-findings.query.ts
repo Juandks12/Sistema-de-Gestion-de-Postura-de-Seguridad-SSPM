@@ -1,9 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { FindingCategory, FindingSeverity, FindingStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
 
-export class ListFindingsQuery {
+export class ExportFindingsQuery {
+  @ApiPropertyOptional({ enum: ['csv'], default: 'csv', description: 'Formato de exportación' })
+  @IsOptional()
+  @IsIn(['csv'])
+  format?: string = 'csv';
+
   @ApiPropertyOptional({ description: 'Filtrar por activo' })
   @IsOptional()
   @IsUUID()
@@ -29,18 +33,23 @@ export class ListFindingsQuery {
   @IsUUID()
   assignedToId?: string;
 
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @ApiPropertyOptional({ description: 'Filtrar por fecha de detección inicial (ISO 8601)' })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
+  @IsDateString()
+  fromDate?: string;
 
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @ApiPropertyOptional({ description: 'Filtrar por fecha de detección final (ISO 8601)' })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  pageSize: number = 20;
+  @IsDateString()
+  toDate?: string;
+
+  @ApiPropertyOptional({ description: 'Alias para fromDate (ISO 8601)' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Alias para toDate (ISO 8601)' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }
