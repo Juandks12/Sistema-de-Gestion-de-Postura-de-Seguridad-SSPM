@@ -10,14 +10,16 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
+import { ExportAssetsQuery } from './dto/export-assets.query';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { VerifyAssetDto } from './dto/verify-asset.dto';
@@ -49,6 +51,18 @@ export class AssetsController {
   @ApiOperation({ summary: 'Listar activos de mi organización (paginado)' })
   findAll(@CurrentUser() user: AuthUser, @Query() query: ListAssetsQuery) {
     return this.assets.findAll(user.organizationId, query);
+  }
+
+  @Get('export')
+  @ApiProduces('text/csv')
+  @ApiOperation({ summary: 'Exportar inventario de activos a formato CSV con streaming y filtros' })
+  export(@CurrentUser() user: AuthUser, @Query() query: ExportAssetsQuery) {
+    const filename = `assets-${new Date().toISOString().slice(0, 10)}.csv`;
+    const stream = this.assets.exportStream(user.organizationId, query);
+    return new StreamableFile(stream, {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 
   @Get(':id')

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { AssetType } from '@prisma/client';
+import { AssetCriticality, AssetType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
@@ -8,6 +8,16 @@ export class ListAssetsQuery {
   @IsOptional()
   @IsEnum(AssetType)
   type?: AssetType;
+
+  @ApiPropertyOptional({ enum: AssetCriticality, description: 'Filtrar por nivel de criticidad' })
+  @IsOptional()
+  @IsEnum(AssetCriticality)
+  criticality?: AssetCriticality;
+
+  @ApiPropertyOptional({ description: 'Filtrar por etiqueta específica' })
+  @IsOptional()
+  @IsString()
+  tag?: string;
 
   @ApiPropertyOptional({ description: 'Filtrar por estado activo/inactivo' })
   @IsOptional()

@@ -55,6 +55,8 @@ export const SEVERITY_ORDER: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 
 
 export const STATUS_LABEL: Record<FindingStatus, string> = {
   OPEN: 'Abierto',
+  IN_PROGRESS: 'En progreso',
+  VERIFYING: 'Verificando',
   RESOLVED: 'Resuelto',
   ACCEPTED: 'Riesgo aceptado',
   FALSE_POSITIVE: 'Falso positivo',

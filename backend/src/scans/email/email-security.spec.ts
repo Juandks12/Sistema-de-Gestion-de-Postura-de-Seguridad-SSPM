@@ -84,6 +84,8 @@ describe('DKIM', () => {
 describe('analyzeEmailSecurity', () => {
   const key2048 = dkimKey(2048);
 
+  const fakeFetchPolicy = (text: string) => async () => ({ status: 200, ok: true, text });
+
   it('un dominio bien configurado no genera hallazgos', async () => {
     const dns = fakeDns({
       mx: { 'example.com': [{ exchange: 'aspmx.l.google.com', priority: 1 }] },
@@ -92,23 +94,42 @@ describe('analyzeEmailSecurity', () => {
         '_spf.google.com': ['v=spf1 ip4:192.0.2.0/24 ~all'],
         '_dmarc.example.com': ['v=DMARC1; p=reject; rua=mailto:dmarc@example.com'],
         'google._domainkey.example.com': [`v=DKIM1; k=rsa; p=${key2048}`],
+        '_mta-sts.example.com': ['v=STSv1; id=2026010101'],
+        '_smtp._tls.example.com': ['v=TLSRPTv1; rua=mailto:tls-reports@example.com'],
       },
     });
-    const { findings, summary } = await analyzeEmailSecurity('example.com', dns);
+    const fetchPolicy = fakeFetchPolicy('version: STSv1\nmode: enforce\nmx: aspmx.l.google.com\nmax_age: 86400');
+    const { findings, summary } = await analyzeEmailSecurity('example.com', dns, fetchPolicy);
     expect(findings).toEqual([]);
     expect(summary).toMatchObject({
       receivesMail: true,
       spf: { all: '-all', lookups: 1 },
       dmarc: { status: 'ok', policy: 'reject' },
       dkim: { selectors: [{ selector: 'google', bits: 2048 }] },
+      mtaSts: { status: 'valid', mode: 'enforce', policyId: '2026010101' },
+      tlsRpt: { status: 'valid', rua: ['mailto:tls-reports@example.com'] },
     });
   });
 
   it('un dominio con correo y sin protección genera los hallazgos principales', async () => {
     const dns = fakeDns({ mx: { 'example.com': [{ exchange: 'mail.example.com', priority: 10 }] } });
     const { findings } = await analyzeEmailSecurity('example.com', dns);
-    expect(ids(findings)).toEqual(['MAIL-DKIM-NOT-FOUND', 'MAIL-DMARC-MISSING', 'MAIL-SPF-MISSING']);
+    expect(ids(findings)).toEqual([
+      'EMAIL-NO-MTA-STS',
+      'EMAIL-NO-TLS-RPT',
+      'MAIL-DKIM-NOT-FOUND',
+      'MAIL-DMARC-MISSING',
+      'MAIL-SPF-MISSING',
+    ]);
     expect(findings.find((f) => f.ruleId === 'MAIL-SPF-MISSING')!.severity).toBeUndefined();
+    expect(findings.find((f) => f.ruleId === 'EMAIL-NO-MTA-STS')).toMatchObject({
+      ruleId: 'EMAIL-NO-MTA-STS',
+      location: 'mta-sts:_mta-sts.example.com',
+    });
+    expect(findings.find((f) => f.ruleId === 'EMAIL-NO-TLS-RPT')).toMatchObject({
+      ruleId: 'EMAIL-NO-TLS-RPT',
+      location: 'tls-rpt:_smtp._tls.example.com',
+    });
   });
 
   it('detecta +all, p=none sin informes y claves DKIM débiles', async () => {
@@ -118,9 +139,12 @@ describe('analyzeEmailSecurity', () => {
         'example.com': ['v=spf1 +all'],
         '_dmarc.example.com': ['v=DMARC1; p=none'],
         'selector1._domainkey.example.com': [`v=DKIM1; p=${dkimKey(1024)}`],
+        '_mta-sts.example.com': ['v=STSv1; id=20260101'],
+        '_smtp._tls.example.com': ['v=TLSRPTv1; rua=mailto:tls@example.com'],
       },
     });
-    const { findings } = await analyzeEmailSecurity('example.com', dns);
+    const fetchPolicy = fakeFetchPolicy('version: STSv1\nmode: enforce\nmx: mx.example.com\nmax_age: 86400');
+    const { findings } = await analyzeEmailSecurity('example.com', dns, fetchPolicy);
     expect(ids(findings)).toEqual(['MAIL-DKIM-WEAK-KEY', 'MAIL-DMARC-MONITOR-ONLY', 'MAIL-DMARC-NO-REPORTS', 'MAIL-SPF-PASS-ALL']);
     const weak = findings.find((f) => f.ruleId === 'MAIL-DKIM-WEAK-KEY')!;
     expect(weak).toMatchObject({ severity: FindingSeverity.LOW, location: 'dkim:selector1._domainkey.example.com' });
@@ -132,11 +156,74 @@ describe('analyzeEmailSecurity', () => {
       'example.com': ['v=spf1 mx ~all'],
       '_dmarc.example.com': [dmarc],
       'default._domainkey.example.com': [`p=${key2048}`],
+      '_mta-sts.example.com': ['v=STSv1; id=20260101'],
+      '_smtp._tls.example.com': ['v=TLSRPTv1; rua=mailto:a@example.com'],
     });
-    const enforced = await analyzeEmailSecurity('example.com', fakeDns({ ...base, txt: txt('v=DMARC1; p=quarantine; rua=mailto:a@example.com') }));
+    const fetchPolicy = fakeFetchPolicy('version: STSv1\nmode: enforce\nmx: mx.example.com\nmax_age: 86400');
+    const enforced = await analyzeEmailSecurity(
+      'example.com',
+      fakeDns({ ...base, txt: txt('v=DMARC1; p=quarantine; rua=mailto:a@example.com') }),
+      fetchPolicy,
+    );
     expect(ids(enforced.findings)).toEqual([]);
-    const partial = await analyzeEmailSecurity('example.com', fakeDns({ ...base, txt: txt('v=DMARC1; p=reject; pct=50; rua=mailto:a@example.com') }));
+    const partial = await analyzeEmailSecurity(
+      'example.com',
+      fakeDns({ ...base, txt: txt('v=DMARC1; p=reject; pct=50; rua=mailto:a@example.com') }),
+      fetchPolicy,
+    );
     expect(ids(partial.findings)).toEqual(['MAIL-DMARC-PARTIAL', 'MAIL-SPF-SOFTFAIL']);
+  });
+
+  it('detecta política MTA-STS en modo testing y registro TLS-RPT inválido', async () => {
+    const dns = fakeDns({
+      mx: { 'example.com': [{ exchange: 'mail.example.com', priority: 10 }] },
+      txt: {
+        'example.com': ['v=spf1 -all'],
+        '_dmarc.example.com': ['v=DMARC1; p=reject; rua=mailto:d@example.com'],
+        'default._domainkey.example.com': [`p=${key2048}`],
+        '_mta-sts.example.com': ['v=STSv1; id=20260101'],
+        '_smtp._tls.example.com': ['v=TLSRPTv1; rua=invalido'],
+      },
+    });
+    const fetchPolicy = fakeFetchPolicy('version: STSv1\nmode: testing\nmx: mail.example.com\nmax_age: 86400');
+    const { findings, summary } = await analyzeEmailSecurity('example.com', dns, fetchPolicy);
+    expect(ids(findings)).toEqual(['EMAIL-NO-MTA-STS', 'EMAIL-NO-TLS-RPT']);
+    expect(summary.mtaSts?.mode).toBe('testing');
+    expect(summary.tlsRpt?.status).toBe('invalid');
+  });
+
+  it('detecta si un servidor de correo (MX) está listado en listas negras DNSBL', async () => {
+    const dns = fakeDns({
+      mx: { 'example.com': [{ exchange: 'mail.example.com', priority: 10 }] },
+      addresses: {
+        'mail.example.com': ['198.51.100.25'],
+        '25.100.51.198.zen.spamhaus.org': ['127.0.0.2'],
+      },
+      txt: {
+        'example.com': ['v=spf1 -all'],
+        '_dmarc.example.com': ['v=DMARC1; p=reject; rua=mailto:d@example.com'],
+        'default._domainkey.example.com': [`p=${key2048}`],
+        '_mta-sts.example.com': ['v=STSv1; id=20260101'],
+        '_smtp._tls.example.com': ['v=TLSRPTv1; rua=mailto:d@example.com'],
+        '25.100.51.198.zen.spamhaus.org': ['Listed by SBL'],
+      },
+    });
+    const fetchPolicy = fakeFetchPolicy('version: STSv1\nmode: enforce\nmx: mail.example.com\nmax_age: 86400');
+    const { findings, summary } = await analyzeEmailSecurity('example.com', dns, fetchPolicy);
+    expect(ids(findings)).toEqual(['EMAIL-IP-BLACKLISTED']);
+    expect(summary.dnsbl).toMatchObject({
+      checked: true,
+      totalIpsChecked: 1,
+      clean: false,
+      listings: [
+        {
+          ip: '198.51.100.25',
+          exchange: 'mail.example.com',
+          provider: 'zen.spamhaus.org',
+          returnCodes: ['127.0.0.2'],
+        },
+      ],
+    });
   });
 
   it('un subdominio sin correo protegido por el DMARC del dominio no genera hallazgos', async () => {

@@ -24,6 +24,11 @@ export class ListFindingsQuery {
   @IsEnum(FindingCategory)
   category?: FindingCategory;
 
+  @ApiPropertyOptional({ description: 'Filtrar por usuario asignado' })
+  @IsOptional()
+  @IsUUID()
+  assignedToId?: string;
+
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
   @Type(() => Number)

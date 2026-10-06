@@ -8,6 +8,7 @@ import type {
   AuditEntry,
   AlertType,
   Asset,
+  AssetCriticality,
   AssetVerification,
   DeliveryResult,
   DiscoveredHosts,
@@ -124,7 +125,14 @@ function useInvalidateAll() {
 export function useCreateAsset() {
   const invalidate = useInvalidateAll();
   return useMutation({
-    mutationFn: (input: { value: string; name?: string; description?: string; authorizationConfirmed: true }) => api<Asset>('/assets', { method: 'POST', json: input }),
+    mutationFn: (input: {
+      value: string;
+      name?: string;
+      description?: string;
+      criticality?: AssetCriticality;
+      tags?: string[];
+      authorizationConfirmed: true;
+    }) => api<Asset>('/assets', { method: 'POST', json: input }),
     onSuccess: invalidate,
   });
 }
@@ -132,7 +140,17 @@ export function useCreateAsset() {
 export function useUpdateAsset() {
   const invalidate = useInvalidateAll();
   return useMutation({
-    mutationFn: ({ id, ...input }: { id: string; name?: string; description?: string; isActive?: boolean }) => api<Asset>(`/assets/${id}`, { method: 'PATCH', json: input }),
+    mutationFn: ({
+      id,
+      ...input
+    }: {
+      id: string;
+      name?: string;
+      description?: string;
+      criticality?: AssetCriticality;
+      tags?: string[];
+      isActive?: boolean;
+    }) => api<Asset>(`/assets/${id}`, { method: 'PATCH', json: input }),
     onSuccess: invalidate,
   });
 }

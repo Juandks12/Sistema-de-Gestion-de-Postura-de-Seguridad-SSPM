@@ -42,12 +42,42 @@ function dkimState(s: EmailSecuritySummary): { level: Level; text: string } {
   return { level: weak ? 'warn' : 'good', text: list };
 }
 
-/** Estado de SPF, DMARC y DKIM según el último escaneo de seguridad del correo. */
+function mtaStsState(s: EmailSecuritySummary): { level: Level; text: string } {
+  if (!s.receivesMail) return { level: 'na', text: 'No aplica: el dominio no recibe correo' };
+  const m = s.mtaSts;
+  if (!m || m.status === 'missing') return { level: 'warn', text: 'No publicado (vulnerable a degradación TLS)' };
+  if (m.status === 'invalid') return { level: 'bad', text: m.error ?? 'Política MTA-STS o registro inválido' };
+  return { level: 'good', text: `Modo ${m.mode ?? 'enforce'}${m.policyId ? ` · ID: ${m.policyId}` : ''}` };
+}
+
+function tlsRptState(s: EmailSecuritySummary): { level: Level; text: string } {
+  if (!s.receivesMail) return { level: 'na', text: 'No aplica: el dominio no recibe correo' };
+  const t = s.tlsRpt;
+  if (!t || t.status === 'missing') return { level: 'warn', text: 'No publicado (sin telemetría de fallos TLS)' };
+  if (t.status === 'invalid') return { level: 'bad', text: t.error ?? 'Registro TLS-RPT inválido' };
+  return { level: 'good', text: `Reportes enviados a: ${t.rua.join(', ')}` };
+}
+
+function dnsblState(s: EmailSecuritySummary): { level: Level; text: string } {
+  if (!s.receivesMail) return { level: 'na', text: 'No aplica: el dominio no recibe correo' };
+  const b = s.dnsbl;
+  if (!b || !b.checked) return { level: 'warn', text: 'No evaluado' };
+  if (!b.clean && b.listings && b.listings.length > 0) {
+    const list = b.listings.map((l) => `${l.ip} en ${l.provider}`).join(', ');
+    return { level: 'bad', text: `IP(s) listadas en listas negras: ${list}` };
+  }
+  return { level: 'good', text: `Limpio · ${b.totalIpsChecked} IP(s) verificadas en Spamhaus y SpamCop` };
+}
+
+/** Estado de SPF, DMARC, DKIM, MTA-STS, TLS-RPT y DNSBL según el último escaneo de seguridad del correo. */
 export function EmailSecurityCard({ summary, finishedAt }: { summary: EmailSecuritySummary; finishedAt: string | null }) {
   const rows = [
     { name: 'SPF', hint: 'Servidores autorizados a enviar', ...spfState(summary) },
     { name: 'DMARC', hint: 'Qué hacer con la suplantación', ...dmarcState(summary) },
     { name: 'DKIM', hint: 'Firma de los mensajes', ...dkimState(summary) },
+    { name: 'MTA-STS', hint: 'Cifrado TLS forzado en tránsito', ...mtaStsState(summary) },
+    { name: 'TLS-RPT', hint: 'Telemetría de reportes TLS', ...tlsRptState(summary) },
+    { name: 'Reputación IP (DNSBL)', hint: 'Listas negras de servidores MX', ...dnsblState(summary) },
   ];
   return (
     <Card>

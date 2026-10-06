@@ -16,6 +16,7 @@ import { PortScanScanner } from './scanners/port-scan.scanner';
 import { EmailSecurityScanner } from './scanners/email-security.scanner';
 import { SensitivePathsScanner } from './scanners/sensitive-paths.scanner';
 import { SslCertScanner } from './scanners/ssl-cert.scanner';
+import { InternetDbClient, INTERNETDB_SOURCE } from './scanners/internetdb.client';
 import { SubdomainDiscoveryScanner } from './scanners/subdomain-discovery.scanner';
 import { WebHeadersScanner } from './scanners/web-headers.scanner';
 import { ScansController } from './scans.controller';
@@ -29,6 +30,8 @@ import { ScansService } from './scans.service';
     ScanWorkerService,
     ScanCancellationService,
     NmapRunner,
+    InternetDbClient,
+    { provide: INTERNETDB_SOURCE, useClass: InternetDbClient },
     PortScanScanner,
     WebHeadersScanner,
     SslCertScanner,
@@ -55,6 +58,6 @@ import { ScansService } from './scans.service';
         ),
     },
   ],
-  exports: [ScansService],
+  exports: [ScansService, InternetDbClient, INTERNETDB_SOURCE],
 })
 export class ScansModule {}

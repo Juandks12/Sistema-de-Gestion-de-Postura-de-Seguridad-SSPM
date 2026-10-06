@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FindingStatus, Prisma, RiskScore, RiskScoreScope, RiskScoreTrigger, ScanStatus } from '@prisma/client';
+import { AssetCriticality, FindingStatus, Prisma, RiskScore, RiskScoreScope, RiskScoreTrigger, ScanStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HistoryQuery } from './dto/history.query';
 import { aggregateScores, computeScore, emptyCounts, gradeFor, ScoreResult, SeverityCounts } from './scoring';
@@ -79,7 +79,11 @@ export class RiskScoresService {
   async openCounts(db: Db, organizationId: string, assetId?: string): Promise<SeverityCounts> {
     const rows = await db.finding.groupBy({
       by: ['severity'],
-      where: { organizationId, assetId, status: FindingStatus.OPEN },
+      where: {
+        organizationId,
+        assetId,
+        status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] },
+      },
       _count: { id: true },
     });
     const counts = emptyCounts();
@@ -97,11 +101,16 @@ export class RiskScoresService {
   }
 
   async computeAsset(db: Db, organizationId: string, assetId: string): Promise<AssetScoreState> {
-    const [scored, counts] = await Promise.all([
+    const [scored, counts, asset] = await Promise.all([
       this.isScored(db, assetId),
       this.openCounts(db, organizationId, assetId),
+      db.asset.findUnique({ where: { id: assetId }, select: { criticality: true } }),
     ]);
-    return { assetId, scored, result: computeScore(counts) };
+    return {
+      assetId,
+      scored,
+      result: computeScore(counts, asset?.criticality ?? AssetCriticality.MEDIUM),
+    };
   }
 
   /** Score de todos los activos activos de la organización (evaluados o no). */
@@ -110,14 +119,18 @@ export class RiskScoresService {
       where: { organizationId, isActive: true },
       select: {
         id: true,
+        criticality: true,
         scans: { where: { status: ScanStatus.COMPLETED }, select: { id: true }, take: 1 },
-        findings: { where: { status: FindingStatus.OPEN }, select: { severity: true } },
+        findings: {
+          where: { status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] } },
+          select: { severity: true },
+        },
       },
     });
     return assets.map((a) => {
       const counts = emptyCounts();
       for (const f of a.findings) counts[f.severity] += 1;
-      return { assetId: a.id, scored: a.scans.length > 0, result: computeScore(counts) };
+      return { assetId: a.id, scored: a.scans.length > 0, result: computeScore(counts, a.criticality) };
     });
   }
 

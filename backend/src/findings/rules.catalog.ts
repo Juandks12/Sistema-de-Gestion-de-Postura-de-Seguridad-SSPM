@@ -548,6 +548,85 @@ const rules: FindingRule[] = [
     description: 'Las claves RSA de menos de 2048 bits pueden factorizarse con recursos al alcance de un atacante, que podría firmar correos como el dominio.',
     recommendation: 'Genere una clave DKIM de 2048 bits, publíquela en un selector nuevo y retire la antigua.',
   },
+  {
+    id: 'EMAIL-NO-MTA-STS',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'MTA-STS no implementado o no estricto (RFC 8461)',
+    description:
+      'El dominio no cuenta con una política MTA-STS válida o está en modo testing/none. Sin MTA-STS, las conexiones SMTP STARTTLS pueden ser forzadas a texto plano mediante ataques Man-in-the-Middle de degradación TLS.',
+    recommendation:
+      'Publique el registro DNS TXT "_mta-sts.<dominio>" con "v=STSv1; id=<id>" y sirva la política en "https://mta-sts.<dominio>/.well-known/mta-sts.txt" con "mode: enforce".',
+  },
+  {
+    id: 'EMAIL-NO-TLS-RPT',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.1,
+    title: 'Reportes TLS de correo no configurados (TLS-RPT, RFC 8460)',
+    description:
+      'El dominio no publica un registro DNS TXT "_smtp._tls.<dominio>" para recibir reportes de degradación o fallos TLS en la entrega de correo.',
+    recommendation:
+      'Publique el registro DNS TXT "_smtp._tls.<dominio>" con "v=TLSRPTv1; rua=mailto:<buzon-de-reportes>".',
+  },
+
+  // ------------------------------------------------------------- DNS y DNSSEC
+  {
+    id: 'DNS-NO-CAA',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Registro DNS CAA no configurado (RFC 8659)',
+    description:
+      'El dominio no publica registros DNS CAA (Certification Authority Authorization). Sin este registro, cualquier Autoridad de Certificación pública reconocida puede emitir certificados TLS para este dominio si supera la validación.',
+    recommendation:
+      'Configure registros DNS CAA restringiendo la emisión a las CAs autorizadas (p. ej. issue "letsencrypt.org") y declare una dirección "iodef" para recibir notificaciones ante intentos no autorizados.',
+  },
+  {
+    id: 'DNS-CAA-INVALID',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Registro DNS CAA con sintaxis inválida o flags no reconocidos',
+    description:
+      'Los registros CAA publicados contienen banderas críticas desconocidas o errores de formato según el RFC 8659, lo que puede provocar que las CAs rechacen la emisión legítima de certificados.',
+    recommendation:
+      'Corrija los registros CAA asegurando que el flag crítico no utilice bits reservados y las etiquetas sean válidas (issue, issuewild, iodef).',
+  },
+  {
+    id: 'DNS-NO-DNSSEC',
+    category: C.EMAIL_SECURITY,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'DNSSEC no habilitado en el dominio (RFC 4033)',
+    description:
+      'El dominio no cuenta con firmas criptográficas DNSSEC (sin registros DS en el registrador ni DNSKEY en la zona). Las respuestas DNS están expuestas a ataques de envenenamiento de caché (cache poisoning), suplantación y secuestro de tráfico.',
+    recommendation:
+      'Habilite DNSSEC en su registrador de dominios y proveedor DNS para firmar la zona y garantizar la integridad de todos los registros DNS del perímetro.',
+  },
+  {
+    id: 'DNS-DNSSEC-BOGUS',
+    category: C.EMAIL_SECURITY,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Cadena de confianza DNSSEC rota o inválida',
+    description:
+      'Se detectaron registros DNSSEC pero la validación criptográfica falló (estado BOGUS). Los resolutores recursivos con validación DNSSEC rechazarán las consultas hacia este dominio provocando fallos de resolución (SERVFAIL).',
+    recommendation:
+      'Sincronice de inmediato las claves DNSKEY de sus servidores de nombres autoritativos con los registros DS delegados en el registrador.',
+  },
+  {
+    id: 'EMAIL-IP-BLACKLISTED',
+    category: C.EMAIL_SECURITY,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Dirección IP de servidor de correo listada en lista negra (DNSBL)',
+    description:
+      'Una dirección IP asociada a los servidores de correo (MX) del dominio se encuentra listada en una lista negra de reputación (Spamhaus ZEN o SpamCop). Los proveedores y servidores de correo en Internet rechazarán los mensajes enviados por este servidor o los clasificarán como spam.',
+    recommendation:
+      'Identifique el motivo específico en la URL proporcionada por el proveedor DNSBL, resuelva la causa del envío abusivo o posible brecha y solicite la desclasificación (delisting) en el portal de Spamhaus o SpamCop.',
+  },
 ];
 
 export const FINDING_RULES: ReadonlyMap<string, FindingRule> = new Map(

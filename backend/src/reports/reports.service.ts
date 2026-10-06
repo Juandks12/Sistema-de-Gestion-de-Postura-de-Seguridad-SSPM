@@ -80,7 +80,17 @@ export class ReportsService {
           isActive: true,
           lastScannedAt: true,
           findings: {
-            where: { status: { in: [FindingStatus.OPEN, FindingStatus.ACCEPTED, FindingStatus.FALSE_POSITIVE] } },
+            where: {
+              status: {
+                in: [
+                  FindingStatus.OPEN,
+                  FindingStatus.IN_PROGRESS,
+                  FindingStatus.VERIFYING,
+                  FindingStatus.ACCEPTED,
+                  FindingStatus.FALSE_POSITIVE,
+                ],
+              },
+            },
             select: findingSelect,
           },
           scans: {
@@ -99,7 +109,7 @@ export class ReportsService {
     const assets: ReportAsset[] = [];
     for (const row of rows) {
       const open = row.findings
-        .filter((f) => f.status === FindingStatus.OPEN)
+        .filter((f) => f.status === FindingStatus.OPEN || f.status === FindingStatus.IN_PROGRESS || f.status === FindingStatus.VERIFYING)
         .sort((a, b) => severityRank(a.severity) - severityRank(b.severity) || Number(b.cvssScore ?? 0) - Number(a.cvssScore ?? 0));
       const counts = emptyCounts();
       for (const f of open) counts[f.severity] += 1;
