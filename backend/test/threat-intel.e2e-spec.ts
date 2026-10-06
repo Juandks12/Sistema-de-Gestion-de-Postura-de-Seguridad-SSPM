@@ -230,13 +230,25 @@ describe('Inteligencia de amenazas (e2e) - CVE, correo y subdominios', () => {
       expect(first.status).toBe('COMPLETED');
       expect(first.targetAddress).toBeNull();
       const open = await findings(domainAssetId, 'EMAIL_SECURITY', 'OPEN');
-      expect(open.map((f) => f.ruleId).sort()).toEqual(['MAIL-DKIM-NOT-FOUND', 'MAIL-DMARC-MISSING', 'MAIL-SPF-MISSING']);
+      expect(open.map((f) => f.ruleId).sort()).toEqual([
+        'DNS-NO-CAA',
+        'DNS-NO-DNSSEC',
+        'EMAIL-NO-MTA-STS',
+        'EMAIL-NO-TLS-RPT',
+        'MAIL-DKIM-NOT-FOUND',
+        'MAIL-DMARC-MISSING',
+        'MAIL-SPF-MISSING',
+      ]);
 
       zone.txt![domain] = ['v=spf1 mx -all'];
       zone.txt![`_dmarc.${domain}`] = [`v=DMARC1; p=none; rua=mailto:dmarc@${domain}`];
       const second = await runScan(domainAssetId, 'EMAIL_SECURITY');
       expect(second.summary.findings).toMatchObject({ resolved: 2 });
       expect((await findings(domainAssetId, 'EMAIL_SECURITY', 'OPEN')).map((f) => f.ruleId).sort()).toEqual([
+        'DNS-NO-CAA',
+        'DNS-NO-DNSSEC',
+        'EMAIL-NO-MTA-STS',
+        'EMAIL-NO-TLS-RPT',
         'MAIL-DKIM-NOT-FOUND',
         'MAIL-DMARC-MONITOR-ONLY',
       ]);
@@ -247,7 +259,7 @@ describe('Inteligencia de amenazas (e2e) - CVE, correo y subdominios', () => {
       const scan = await runScan(domainAssetId, 'EMAIL_SECURITY');
       expect(scan.status).toBe('FAILED');
       expect(scan.errorMessage).toContain('ESERVFAIL');
-      expect(await findings(domainAssetId, 'EMAIL_SECURITY', 'OPEN')).toHaveLength(2);
+      expect(await findings(domainAssetId, 'EMAIL_SECURITY', 'OPEN')).toHaveLength(6);
       zone.mx![domain] = [{ exchange: `mail.${domain}`, priority: 10 }];
     });
   });

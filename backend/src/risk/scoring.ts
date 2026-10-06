@@ -1,27 +1,28 @@
-import { FindingSeverity } from '@prisma/client';
+import { AssetCriticality, FindingSeverity } from '@prisma/client';
 
 /**
  * Motor de riesgo y Security Score (RF-07), sección 6.3 del documento.
  *
  * Modelo de puntuación:
- *   Score = 100 - Σ min(Tope_s, Peso_s × N_s)   para cada severidad s
+ *   Score = 100 - Σ min(Tope_s, Peso_s × FactorCriticidad × N_s)   para cada severidad s
  *   acotado al rango [0, 100].
  *
  * - Solo cuentan los hallazgos en estado OPEN. Los ACCEPTED (riesgo aceptado),
  *   FALSE_POSITIVE y RESOLVED no penalizan.
  * - Los pesos derivan de la severidad CVSS v3.1 de cada regla (6.3.3): un solo
- *   hallazgo crítico deja la postura en 75 y cuatro la llevan a 0.
+ *   hallazgo crítico deja la postura en 75 (o 62 en activo CRITICAL) y cuatro la llevan a 0.
  * - Cada severidad tiene un tope de penalización (6.3.4) para que muchos
  *   hallazgos menores no oculten uno crítico ni hundan el score por sí solos.
  * - La calificación por letra (6.3.5) traduce el número a un nivel comprensible.
+ * - Incorpora la fórmula de riesgo híbrida: Riesgo = CVSS × (1 + EPSS) × FactorCriticidad.
  *
  * Las constantes están aquí, en un único sitio, para poder ajustarlas tras el
  * caso de estudio (sección 13.4) sin tocar el resto del sistema.
  */
 
-export const SCORING_MODEL_VERSION = '1.0';
+export const SCORING_MODEL_VERSION = '1.1';
 
-/** Penalización por cada hallazgo abierto de la severidad. */
+/** Penalización por cada hallazgo abierto de la severidad (línea base). */
 export const SEVERITY_WEIGHTS: Record<FindingSeverity, number> = {
   CRITICAL: 25,
   HIGH: 10,
@@ -37,6 +38,14 @@ export const SEVERITY_CAPS: Record<FindingSeverity, number> = {
   MEDIUM: 30,
   LOW: 10,
   INFO: 0,
+};
+
+/** Multiplicador de impacto según la criticidad del activo para la organización. */
+export const CRITICALITY_FACTORS: Record<AssetCriticality, number> = {
+  CRITICAL: 1.5,
+  HIGH: 1.25,
+  MEDIUM: 1.0,
+  LOW: 0.75,
 };
 
 export const SEVERITY_ORDER: FindingSeverity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
@@ -80,6 +89,8 @@ export interface ScoreResult {
   totalPenalty: number;
   penalties: SeverityPenalty[];
   counts: SeverityCounts;
+  criticality: AssetCriticality;
+  criticalityFactor: number;
   modelVersion: string;
 }
 
@@ -92,17 +103,40 @@ export function gradeFor(score: number): GradeBand {
   return band ?? GRADE_BANDS[GRADE_BANDS.length - 1];
 }
 
-/** Calcula el Security Score a partir del conteo de hallazgos abiertos por severidad. */
-export function computeScore(counts: Partial<SeverityCounts>): ScoreResult {
+/**
+ * Calcula el riesgo compuesto de un hallazgo o CVE mediante la fórmula híbrida:
+ * Riesgo = CVSS × (1 + EPSS) × FactorCriticidad
+ */
+export function computeHybridRisk(
+  cvss: number,
+  epss: number = 0,
+  criticality: AssetCriticality = AssetCriticality.MEDIUM,
+): number {
+  const boundedCvss = Math.max(0, Math.min(10, cvss));
+  const boundedEpss = Math.max(0, Math.min(1, epss));
+  const factor = CRITICALITY_FACTORS[criticality] ?? 1.0;
+  const rawRisk = boundedCvss * (1 + boundedEpss) * factor;
+  return Math.round(rawRisk * 100) / 100;
+}
+
+/** Calcula el Security Score a partir del conteo de hallazgos abiertos por severidad y la criticidad del activo. */
+export function computeScore(
+  counts: Partial<SeverityCounts>,
+  criticality: AssetCriticality = AssetCriticality.MEDIUM,
+): ScoreResult {
   const full: SeverityCounts = { ...emptyCounts(), ...counts };
+  const criticalityFactor = CRITICALITY_FACTORS[criticality] ?? 1.0;
+
   const penalties: SeverityPenalty[] = SEVERITY_ORDER.map((severity) => {
     const count = Math.max(0, Math.floor(full[severity] ?? 0));
-    const weight = SEVERITY_WEIGHTS[severity];
+    const baseWeight = SEVERITY_WEIGHTS[severity];
+    const weight = Math.round(baseWeight * criticalityFactor * 100) / 100;
     const cap = SEVERITY_CAPS[severity];
-    const raw = weight * count;
+    const raw = Math.round(weight * count * 100) / 100;
     return { severity, count, weight, cap, penalty: Math.min(cap, raw), capped: raw > cap };
   });
-  const totalPenalty = penalties.reduce((acc, p) => acc + p.penalty, 0);
+
+  const totalPenalty = Math.round(penalties.reduce((acc, p) => acc + p.penalty, 0));
   const score = Math.max(0, Math.min(100, 100 - totalPenalty));
   const band = gradeFor(score);
   return {
@@ -113,6 +147,8 @@ export function computeScore(counts: Partial<SeverityCounts>): ScoreResult {
     totalPenalty,
     penalties,
     counts: full,
+    criticality,
+    criticalityFactor,
     modelVersion: SCORING_MODEL_VERSION,
   };
 }
@@ -132,12 +168,15 @@ export function aggregateScores(assetScores: number[]): number | null {
 export function describeModel() {
   return {
     version: SCORING_MODEL_VERSION,
-    formula: 'score = clamp(100 - Σ min(cap[s], weight[s] × open[s]), 0, 100)',
+    formula: 'score = clamp(100 - Σ min(cap[s], weight[s] × factor × open[s]), 0, 100)',
     countsOnly: ['OPEN'],
     excluded: ['RESOLVED', 'ACCEPTED', 'FALSE_POSITIVE'],
     weights: SEVERITY_WEIGHTS,
     caps: SEVERITY_CAPS,
+    criticalityFactors: CRITICALITY_FACTORS,
+    hybridRiskFormula: 'Riesgo = CVSS * (1 + EPSS) * FactorCriticidad',
     organizationScore: 'media redondeada de los scores de los activos con al menos un escaneo completado',
     grades: GRADE_BANDS,
   };
 }
+

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FindingCategory, ScanType } from '@prisma/client';
 import { CveLookupService } from '../../vulnerabilities/cve-lookup.service';
@@ -9,6 +9,7 @@ import { NmapRunner } from '../nmap/nmap.runner';
 import { NmapProfile } from '../nmap/nmap.types';
 import { ScanExecutionError } from '../scan.errors';
 import { abortReason, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
+import { INTERNETDB_SOURCE, InternetDbSource } from './internetdb.client';
 
 /**
  * RF-02 / RF-03: puertos abiertos y versiones de servicios con Nmap, y los CVE
@@ -22,6 +23,7 @@ export class PortScanScanner implements Scanner {
     private readonly runner: NmapRunner,
     private readonly config: ConfigService,
     private readonly cves: CveLookupService,
+    @Optional() @Inject(INTERNETDB_SOURCE) private readonly internetDb?: InternetDbSource,
   ) {}
 
   private profile(timeoutMs: number): NmapProfile {
@@ -37,8 +39,17 @@ export class PortScanScanner implements Scanner {
 
   async run(ctx: ScanContext): Promise<ScanOutcome> {
     const profile = this.profile(ctx.timeoutMs);
-    const args = buildNmapArgs(requireTarget(ctx).address, profile);
-    const output = await this.runner.run(args, { timeoutMs: ctx.timeoutMs, signal: ctx.signal });
+    const target = requireTarget(ctx);
+    const args = buildNmapArgs(target.address, profile);
+
+    const internetDbPromise = this.internetDb
+      ? this.internetDb.get(target.address, ctx.signal).catch(() => null)
+      : Promise.resolve(null);
+
+    const [output, internetDb] = await Promise.all([
+      this.runner.run(args, { timeoutMs: ctx.timeoutMs, signal: ctx.signal }),
+      internetDbPromise,
+    ]);
 
     if (output.cancelled || abortReason(ctx.signal)) {
       throw new ScanExecutionError('Escaneo interrumpido');
@@ -78,6 +89,15 @@ export class PortScanScanner implements Scanner {
         durationSeconds: Math.round(output.durationMs / 100) / 10,
         nmapVersion: result.version ?? null,
         cve: cve.summary,
+        internetDb: internetDb
+          ? {
+              ports: internetDb.ports,
+              cpes: internetDb.cpes,
+              hostnames: internetDb.hostnames,
+              tags: internetDb.tags,
+              vulns: internetDb.vulns,
+            }
+          : null,
       },
     };
   }

@@ -1,10 +1,11 @@
-import { DnsClient, DnsLookupError, MxRecord } from './dns-client';
+import { CaaRecord, DnsClient, DnsLookupError, MxRecord } from './dns-client';
 
 /** Zona DNS en memoria para pruebas. Un valor `'SERVFAIL'` simula un fallo del servidor. */
 export interface FakeZone {
   txt?: Record<string, string[] | 'SERVFAIL'>;
   mx?: Record<string, MxRecord[] | 'SERVFAIL'>;
   addresses?: Record<string, string[]>;
+  caa?: Record<string, CaaRecord[] | 'SERVFAIL'>;
 }
 
 export function fakeDns(zone: FakeZone): DnsClient & { queries: string[] } {
@@ -20,5 +21,6 @@ export function fakeDns(zone: FakeZone): DnsClient & { queries: string[] } {
     txt: async (name) => get(zone.txt, name),
     mx: async (name) => get(zone.mx, name),
     addresses: async (name) => get(zone.addresses, name),
+    caa: async (name) => get(zone.caa, name),
   };
 }

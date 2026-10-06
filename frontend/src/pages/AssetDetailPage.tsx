@@ -4,11 +4,12 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { AssetVerificationCard } from '@/components/AssetVerificationCard';
 import { DiscoveredHostsCard } from '@/components/DiscoveredHostsCard';
+import { DnsSecurityCard } from '@/components/DnsSecurityCard';
 import { EmailSecurityCard } from '@/components/EmailSecurityCard';
 import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { Alert } from '@/components/ui/Alert';
-import { ScanStatusBadge, SeverityBadge } from '@/components/ui/Badge';
+import { CriticalityBadge, ScanStatusBadge, SeverityBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -61,11 +62,25 @@ export function AssetDetailPage() {
         <ArrowLeft className="size-4" aria-hidden /> Activos
       </Link>
       <PageHeader
-        title={asset.name ?? asset.value}
+        title={
+          <span className="inline-flex items-center gap-2">
+            <span>{asset.name ?? asset.value}</span>
+            <CriticalityBadge criticality={asset.criticality} />
+          </span>
+        }
         description={
           <>
             {asset.value} · {asset.type === 'DOMAIN' ? 'Dominio' : 'Dirección IP'} · registrado {timeAgo(asset.createdAt)}
             {!asset.isActive ? <span className="ml-2 rounded-md bg-surface-2 px-1.5 py-0.5 text-xs text-muted">Inactivo</span> : null}
+            {asset.tags && asset.tags.length > 0 ? (
+              <span className="ml-2 inline-flex flex-wrap gap-1">
+                {asset.tags.map((t) => (
+                  <span key={t} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-xs text-muted">
+                    #{t}
+                  </span>
+                ))}
+              </span>
+            ) : null}
           </>
         }
         actions={
@@ -172,7 +187,7 @@ export function AssetDetailPage() {
 
       {isDomain ? (
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="min-w-0 lg:col-span-2">
+          <div className={emailScan ? 'min-w-0 lg:col-span-1' : 'min-w-0 lg:col-span-3'}>
             <DiscoveredHostsCard
               assetId={asset.id}
               canEdit={canEdit}
@@ -183,7 +198,10 @@ export function AssetDetailPage() {
             />
           </div>
           {emailScan ? (
-            <EmailSecurityCard summary={emailScan.summary as unknown as EmailSecuritySummary} finishedAt={emailScan.finishedAt} />
+            <>
+              <EmailSecurityCard summary={emailScan.summary as unknown as EmailSecuritySummary} finishedAt={emailScan.finishedAt} />
+              <DnsSecurityCard summary={emailScan.summary as unknown as EmailSecuritySummary} finishedAt={emailScan.finishedAt} />
+            </>
           ) : null}
         </div>
       ) : null}

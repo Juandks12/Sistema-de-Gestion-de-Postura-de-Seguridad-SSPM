@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AssetType } from '@prisma/client';
+import { AssetCriticality, AssetType } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { Equals, IsBoolean, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Equals, IsArray, IsBoolean, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateAssetDto {
   @ApiProperty({
@@ -20,6 +20,25 @@ export class CreateAssetDto {
   @IsOptional()
   @IsEnum(AssetType)
   type?: AssetType;
+
+  @ApiPropertyOptional({
+    enum: AssetCriticality,
+    default: AssetCriticality.MEDIUM,
+    description: 'Nivel de criticidad para el negocio.',
+  })
+  @IsOptional()
+  @IsEnum(AssetCriticality)
+  criticality?: AssetCriticality;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['produccion', 'pci-dss', 'aws'],
+    description: 'Etiquetas organizacionales para clasificación y filtrado.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   @ApiPropertyOptional({ example: 'Sitio web corporativo' })
   @IsOptional()

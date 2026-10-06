@@ -29,6 +29,14 @@ enum AssetType {
   IP
 }
 
+/// Nivel de criticidad del activo para el negocio (impacta el cálculo de riesgo).
+enum AssetCriticality {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
 /// Tipo de escaneo soportado.
 /// EMAIL_SECURITY y SUBDOMAIN_DISCOVERY son pasivos (solo DNS y registros públicos)
 /// y solo aplican a dominios.
@@ -65,11 +73,15 @@ enum FindingCategory {
 
 /// Estado de gestión de un hallazgo.
 /// OPEN            -> detectado en el último escaneo del tipo correspondiente
+/// IN_PROGRESS     -> asignado a un responsable en proceso de remediación
+/// VERIFYING       -> remediado, pendiente de re-test o verificación
 /// RESOLVED        -> dejó de detectarse en un escaneo posterior
 /// ACCEPTED        -> riesgo aceptado por la organización (no cuenta en el score)
 /// FALSE_POSITIVE  -> descartado por el usuario
 enum FindingStatus {
   OPEN
+  IN_PROGRESS
+  VERIFYING
   RESOLVED
   ACCEPTED
   FALSE_POSITIVE
@@ -209,6 +221,7 @@ model User {
   createdAssets      Asset[]        @relation("AssetCreatedBy")
   requestedScans     Scan[]         @relation("ScanRequestedBy")
   reviewedFindings   Finding[]      @relation("FindingReviewedBy")
+  assignedFindings   Finding[]      @relation("FindingAssignedTo")
   acknowledgedAlerts Alert[]        @relation("AlertAcknowledgedBy")
   createdChannels    AlertChannel[] @relation("AlertChannelCreatedBy")
   generatedReports   Report[]       @relation("ReportGeneratedBy")
@@ -228,6 +241,8 @@ model Asset {
   value                  String              @db.VarChar(253)
   name                   String?             @db.VarChar(150)
   description            String?
+  criticality            AssetCriticality    @default(MEDIUM)
+  tags                   String[]            @default([])
   isActive               Boolean             @default(true) @map("is_active")
   /// El usuario declara que posee autorización para escanear este activo (sección 1.6.3).
   authorizationConfirmed Boolean             @default(false) @map("authorization_confirmed")
@@ -359,20 +374,25 @@ model Finding {
   fingerprint    String          @db.VarChar(64)
   firstSeenAt    DateTime        @default(now()) @map("first_seen_at") @db.Timestamptz(6)
   lastSeenAt     DateTime        @default(now()) @map("last_seen_at") @db.Timestamptz(6)
-  resolvedAt     DateTime?       @map("resolved_at") @db.Timestamptz(6)
-  reviewedById   String?         @map("reviewed_by_id") @db.Uuid
-  reviewNote     String?         @map("review_note")
-  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resolvedAt      DateTime?       @map("resolved_at") @db.Timestamptz(6)
+  assignedToId    String?         @map("assigned_to_id") @db.Uuid
+  dueDate         DateTime?       @map("due_date") @db.Timestamptz(6)
+  remediationNote String?         @map("remediation_note")
+  reviewedById    String?         @map("reviewed_by_id") @db.Uuid
+  reviewNote      String?         @map("review_note")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
   lastScan     Scan?        @relation(fields: [lastScanId], references: [id], onDelete: SetNull)
   reviewedBy   User?        @relation("FindingReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  assignedTo   User?        @relation("FindingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
 
   @@unique([assetId, fingerprint])
   @@index([organizationId, status, severity])
   @@index([organizationId, assetId, category])
+  @@index([organizationId, assignedToId])
   @@map("findings")
 }
 
