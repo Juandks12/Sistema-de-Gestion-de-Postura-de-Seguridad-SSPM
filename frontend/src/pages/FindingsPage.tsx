@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, ShieldAlert } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -14,7 +14,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
 import { useFindings, useReviewFinding } from '@/hooks/queries';
-import { ApiError } from '@/lib/api';
+import { ApiError, downloadFile } from '@/lib/api';
 import { CATEGORY_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, STATUS_LABEL, cvss, formatDateTime, timeAgo } from '@/lib/format';
 import type { Finding, FindingCategory, FindingStatus, Severity } from '@/lib/types';
 
@@ -33,6 +33,24 @@ export function FindingsPage() {
   const q = useFindings(filter);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [review, setReview] = useState<{ finding: Finding; action: ReviewAction } | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleExport = async () => {
+    setDownloading(true);
+    try {
+      const sp = new URLSearchParams();
+      sp.set('format', 'csv');
+      if (filter.assetId) sp.set('assetId', filter.assetId);
+      if (filter.severity) sp.set('severity', filter.severity);
+      if (filter.status) sp.set('status', filter.status);
+      if (filter.category) sp.set('category', filter.category);
+      await downloadFile(`/findings/export?${sp.toString()}`, `findings-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (err) {
+      console.error('Export error:', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -47,7 +65,20 @@ export function FindingsPage() {
 
   return (
     <>
-      <PageHeader title="Hallazgos" description="Problemas detectados en tus activos, ordenados por severidad. Acepta un riesgo o descarta un falso positivo para que deje de penalizar el score." />
+      <PageHeader
+        title="Hallazgos"
+        description="Problemas detectados en tus activos, ordenados por severidad. Acepta un riesgo o descarta un falso positivo para que deje de penalizar el score."
+        actions={
+          <Button
+            variant="secondary"
+            icon={<Download className="size-4" />}
+            onClick={handleExport}
+            loading={downloading}
+          >
+            Exportar CSV
+          </Button>
+        }
+      />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3 lg:max-w-2xl">
         <div>
@@ -163,11 +194,18 @@ function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; ca
           <div><dt className="inline text-muted">Regla: </dt><dd className="inline">{f.ruleId} · {CATEGORY_LABEL[f.category]}</dd></div>
           <div><dt className="inline text-muted">Primera detección: </dt><dd className="inline">{formatDateTime(f.firstSeenAt)}</dd></div>
           <div><dt className="inline text-muted">Última detección: </dt><dd className="inline">{formatDateTime(f.lastSeenAt)}</dd></div>
+          {f.assignedTo ? <div><dt className="inline text-muted">Asignado a: </dt><dd className="inline font-medium text-ink">{f.assignedTo.fullName} ({f.assignedTo.email})</dd></div> : null}
+          {f.dueDate ? <div><dt className="inline text-muted">Fecha límite (SLA): </dt><dd className="inline font-medium text-ink">{formatDateTime(f.dueDate)}</dd></div> : null}
         </dl>
         {isCve && f.evidence ? (
           <div className="mt-4">
             <CveList evidence={f.evidence} />
           </div>
+        ) : null}
+        {f.remediationNote ? (
+          <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-ink-2">
+            <span className="font-medium text-amber-500">Nota de remediación: </span>{f.remediationNote}
+          </p>
         ) : null}
         {f.reviewNote ? (
           <p className="mt-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink-2">

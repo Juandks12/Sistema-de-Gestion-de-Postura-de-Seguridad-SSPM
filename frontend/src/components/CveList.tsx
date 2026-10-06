@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react';
-import { SeverityBadge } from '@/components/ui/Badge';
+import { CisaKevBadge, EpssBadge, SeverityBadge } from '@/components/ui/Badge';
 import { cvss } from '@/lib/format';
 import type { CveEvidence } from '@/lib/types';
 
@@ -21,10 +21,9 @@ export function CveList({ evidence }: { evidence: Record<string, unknown> }) {
               </a>
               <SeverityBadge severity={c.severity} />
               <span className="tabular text-xs text-ink-2">CVSS {cvss(c.cvss)}</span>
-              {c.kev ? (
-                <span className="rounded-md bg-critical/10 px-1.5 py-0.5 text-[11px] font-semibold text-critical" title="Catálogo KEV de CISA: explotada activamente">
-                  Explotada activamente
-                </span>
+              {c.kev ? <CisaKevBadge ransomware={c.ransomware} /> : null}
+              {c.epss !== undefined && c.epss !== null ? (
+                <EpssBadge epss={c.epss} percentile={c.epssPercentile} />
               ) : null}
             </div>
             {c.description ? <p className="mt-0.5 line-clamp-2 text-xs text-ink-2" title={c.description}>{c.description}</p> : null}

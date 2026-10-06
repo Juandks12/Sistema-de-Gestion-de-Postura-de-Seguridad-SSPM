@@ -2,10 +2,17 @@
 
 export type UserRole = 'ADMIN' | 'ANALYST' | 'VIEWER';
 export type AssetType = 'DOMAIN' | 'IP';
+export type AssetCriticality = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type ScanType = 'PORT_SCAN' | 'WEB_HEADERS' | 'SSL_CERT' | 'SENSITIVE_PATHS' | 'EMAIL_SECURITY' | 'SUBDOMAIN_DISCOVERY';
 export type ScanStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-export type FindingStatus = 'OPEN' | 'RESOLVED' | 'ACCEPTED' | 'FALSE_POSITIVE';
+export type FindingStatus =
+  | 'OPEN'
+  | 'IN_PROGRESS'
+  | 'VERIFYING'
+  | 'RESOLVED'
+  | 'ACCEPTED'
+  | 'FALSE_POSITIVE';
 export type FindingCategory =
   | 'EXPOSED_SERVICE'
   | 'VULNERABLE_SOFTWARE'
@@ -51,6 +58,8 @@ export interface Asset {
   value: string;
   name: string | null;
   description: string | null;
+  criticality?: AssetCriticality;
+  tags?: string[];
   isActive: boolean;
   authorizationConfirmed: boolean;
   verifiedAt?: string | null;
@@ -101,6 +110,10 @@ export interface Finding {
   firstSeenAt: string;
   lastSeenAt: string;
   resolvedAt: string | null;
+  assignedToId?: string | null;
+  assignedTo?: { id: string; fullName: string; email: string } | null;
+  dueDate?: string | null;
+  remediationNote?: string | null;
   reviewNote: string | null;
   asset: { id: string; type: AssetType; value: string; name: string | null };
   reviewedBy: { id: string; fullName: string; email: string } | null;
@@ -177,6 +190,8 @@ export interface DashboardAsset {
   type: AssetType;
   value: string;
   name: string | null;
+  criticality?: AssetCriticality;
+  tags?: string[];
   isActive: boolean;
   verified: boolean;
   verificationMethod: VerificationMethod | null;
@@ -405,6 +420,49 @@ export interface EmailSecuritySummary {
   spf: { record: string | null; records: number; lookups: number | null; all: string | null; errors: string[] };
   dmarc: { status: 'missing' | 'invalid' | 'ok'; record: string | null; domain: string | null; inherited: boolean; policy: string | null };
   dkim: { checked: boolean; selectors: Array<{ selector: string; keyType: string; bits: number | null }> };
+  mtaSts?: {
+    status: 'valid' | 'missing' | 'invalid';
+    policyId: string | null;
+    mode: string | null;
+    mx: string[];
+    error?: string;
+  };
+  tlsRpt?: {
+    status: 'valid' | 'missing' | 'invalid';
+    record: string | null;
+    rua: string[];
+    error?: string;
+  };
+  caa?: {
+    status: 'valid' | 'missing' | 'invalid';
+    domain: string;
+    inherited: boolean;
+    issue: string[];
+    issuewild: string[];
+    iodef: string[];
+    error?: string;
+  };
+  dnssec?: {
+    status: 'secure' | 'insecure' | 'bogus' | 'indeterminate';
+    domain: string;
+    adFlag: boolean;
+    dsCount: number;
+    dnskeyCount: number;
+    rrsigCount: number;
+    error?: string;
+  };
+  dnsbl?: {
+    checked: boolean;
+    totalIpsChecked: number;
+    clean: boolean;
+    listings: Array<{
+      ip: string;
+      exchange: string;
+      provider: string;
+      returnCodes: string[];
+      txt?: string;
+    }>;
+  };
 }
 
 /** Un CVE en la evidencia de un hallazgo VULN-KNOWN-CVE. */
@@ -415,6 +473,9 @@ export interface CveEvidence {
   published: string | null;
   kev: boolean;
   kevDueDate: string | null;
+  ransomware?: boolean;
+  epss?: number | null;
+  epssPercentile?: number | null;
   description: string;
   url: string;
 }

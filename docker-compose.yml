@@ -44,13 +44,15 @@ services:
       db:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-admin}@db:5432/sspm_db?schema=public
       JWT_SECRET: ${JWT_SECRET:-secreto-local-de-desarrollo-cambialo-en-produccion}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3001}
+      ASSET_VERIFICATION_REQUIRED: ${ASSET_VERIFICATION_REQUIRED:-true}
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
       # Crea la organización y los usuarios de demostración al arrancar.
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       # Motor de escaneo

@@ -1,8 +1,8 @@
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, ShieldAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { GRADE_LABEL, SCAN_STATUS_LABEL, SEVERITY_LABEL, STATUS_LABEL } from '@/lib/format';
-import type { FindingStatus, Grade, ScanStatus, Severity } from '@/lib/types';
+import type { AssetCriticality, FindingStatus, Grade, ScanStatus, Severity } from '@/lib/types';
 import { GRADE_STYLE, SEVERITY_STYLE } from './styles';
 
 export function SeverityBadge({ severity, compact = false }: { severity: Severity; compact?: boolean }) {
@@ -19,6 +19,8 @@ export function SeverityBadge({ severity, compact = false }: { severity: Severit
 
 const findingStatusStyle: Record<FindingStatus, string> = {
   OPEN: 'bg-critical/10 text-critical',
+  IN_PROGRESS: 'bg-amber-500/10 text-amber-500 dark:text-amber-400',
+  VERIFYING: 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400',
   RESOLVED: 'bg-good/12 text-good-text',
   ACCEPTED: 'bg-accent/12 text-accent-strong',
   FALSE_POSITIVE: 'bg-surface-2 text-ink-2',
@@ -76,3 +78,56 @@ export function Pill({ children, className }: { children: ReactNode; className?:
 export function GoodIcon() {
   return <CheckCircle2 className="size-4 text-good" aria-hidden />;
 }
+
+const criticalityStyle: Record<AssetCriticality, { chip: string; label: string }> = {
+  CRITICAL: { chip: 'bg-critical/15 text-critical border border-critical/30', label: 'Crítico (1.5x)' },
+  HIGH: { chip: 'bg-warning/15 text-[#8a5b00] dark:text-warning border border-warning/30', label: 'Alto (1.25x)' },
+  MEDIUM: { chip: 'bg-surface-2 text-ink-2 border border-border', label: 'Medio (1.0x)' },
+  LOW: { chip: 'bg-accent/10 text-accent border border-accent/20', label: 'Bajo (0.75x)' },
+};
+
+export function CriticalityBadge({ criticality }: { criticality?: AssetCriticality | null }) {
+  const c = (criticality && criticalityStyle[criticality]) ? criticalityStyle[criticality] : criticalityStyle.MEDIUM;
+  return (
+    <span className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold', c.chip)}>
+      {c.label}
+    </span>
+  );
+}
+
+export function CisaKevBadge({ ransomware = false }: { ransomware?: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md bg-critical/15 px-1.5 py-0.5 text-[11px] font-bold text-critical border border-critical/30"
+      title="Catálogo CISA KEV: vulnerabilidad explotada activamente en incidentes reales"
+    >
+      <ShieldAlert className="size-3 text-critical" aria-hidden />
+      CISA KEV{ransomware ? ' · Ransomware' : ''}
+    </span>
+  );
+}
+
+export function EpssBadge({ epss, percentile }: { epss?: number | null; percentile?: number | null }) {
+  if (epss === undefined || epss === null) return null;
+  const pct = (epss * 100).toFixed(1);
+  const isHigh = epss >= 0.36;
+  const isMedium = epss >= 0.1 && epss < 0.36;
+
+  const style = isHigh
+    ? 'bg-critical/15 text-critical border border-critical/30 font-bold'
+    : isMedium
+      ? 'bg-warning/15 text-[#8a5b00] dark:text-warning border border-warning/30'
+      : 'bg-surface-2 text-ink-2 border border-border';
+
+  const percentileText = percentile !== null && percentile !== undefined ? ` · p${(percentile * 100).toFixed(0)}` : '';
+
+  return (
+    <span
+      className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px]', style)}
+      title={`FIRST EPSS: Probabilidad de explotación estadística en ataques reales ${pct}%${percentileText}`}
+    >
+      EPSS {pct}%{percentileText}
+    </span>
+  );
+}
+
