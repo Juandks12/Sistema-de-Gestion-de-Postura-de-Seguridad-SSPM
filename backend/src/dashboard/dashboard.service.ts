@@ -49,9 +49,13 @@ export class DashboardService {
         this.prisma.asset.groupBy({ by: ['isActive'], where: { organizationId }, _count: { id: true } }),
         this.prisma.scan.groupBy({ by: ['status'], where: { organizationId, createdAt: { gte: weekAgo } }, _count: { id: true } }),
         this.prisma.finding.groupBy({ by: ['status'], where: { organizationId }, _count: { id: true } }),
-        this.prisma.finding.groupBy({ by: ['category'], where: { organizationId, status: FindingStatus.OPEN }, _count: { id: true } }),
+        this.prisma.finding.groupBy({
+          by: ['category'],
+          where: { organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] } },
+          _count: { id: true },
+        }),
         this.prisma.finding.findMany({
-          where: { organizationId, status: FindingStatus.OPEN },
+          where: { organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] } },
           orderBy: [{ cvssScore: 'desc' }, { lastSeenAt: 'desc' }],
           take: 10,
           select: topFindingSelect,
@@ -86,7 +90,14 @@ export class DashboardService {
       where: { organizationId, status: ScanStatus.COMPLETED, finishedAt: { gte: dayAgo } },
     });
 
-    const findingStatus: Record<string, number> = { OPEN: 0, RESOLVED: 0, ACCEPTED: 0, FALSE_POSITIVE: 0 };
+    const findingStatus: Record<string, number> = {
+      OPEN: 0,
+      IN_PROGRESS: 0,
+      VERIFYING: 0,
+      RESOLVED: 0,
+      ACCEPTED: 0,
+      FALSE_POSITIVE: 0,
+    };
     for (const row of findingsByStatus) findingStatus[row.status] = row._count.id;
     const byCategory: Record<string, number> = {};
     for (const row of byCategoryRows) byCategory[row.category] = row._count.id;
@@ -146,11 +157,16 @@ export class DashboardService {
         type: true,
         value: true,
         name: true,
+        criticality: true,
+        tags: true,
         isActive: true,
         verifiedAt: true,
         verificationMethod: true,
         lastScannedAt: true,
-        findings: { where: { status: FindingStatus.OPEN }, select: { severity: true } },
+        findings: {
+          where: { status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] } },
+          select: { severity: true },
+        },
         scans: {
           where: { status: ScanStatus.COMPLETED },
           orderBy: { finishedAt: 'desc' },
@@ -176,6 +192,8 @@ export class DashboardService {
         type: a.type,
         value: a.value,
         name: a.name,
+        criticality: a.criticality,
+        tags: a.tags,
         isActive: a.isActive,
         verified: a.verifiedAt !== null,
         verificationMethod: a.verificationMethod,
@@ -229,7 +247,7 @@ export class DashboardService {
       this.riskScores.current(organizationId, assetId),
       this.riskScores.history(organizationId, { assetId, granularity: 'day' }),
       this.prisma.finding.findMany({
-        where: { assetId, organizationId, status: FindingStatus.OPEN },
+        where: { assetId, organizationId, status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] } },
         orderBy: [{ cvssScore: 'desc' }, { lastSeenAt: 'desc' }],
         select: topFindingSelect,
       }),

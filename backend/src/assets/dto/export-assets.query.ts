@@ -1,9 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { AssetCriticality, AssetType } from '@prisma/client';
-import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsEnum, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
-export class ListAssetsQuery {
+export class ExportAssetsQuery {
+  @ApiPropertyOptional({ enum: ['csv'], default: 'csv', description: 'Formato de exportación' })
+  @IsOptional()
+  @IsIn(['csv'])
+  format?: string = 'csv';
+
   @ApiPropertyOptional({ enum: AssetType })
   @IsOptional()
   @IsEnum(AssetType)
@@ -30,19 +35,4 @@ export class ListAssetsQuery {
   @IsString()
   @MaxLength(100)
   search?: string;
-
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
-
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  pageSize: number = 20;
 }
