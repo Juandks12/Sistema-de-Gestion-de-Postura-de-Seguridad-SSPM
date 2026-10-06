@@ -4,6 +4,9 @@ import { FindingDraft } from '../scanner.interface';
 import { findDkimKeys } from './dkim';
 import { effectivePolicy, lookupDmarc } from './dmarc';
 import { evaluateSpf, isSpfRecord } from './spf';
+import { FetchPolicyFn, lookupMtaSts } from './mta-sts';
+import { lookupTlsRpt } from './tls-rpt';
+import { auditMailExchangersDnsbl, DnsblListing } from './dnsbl';
 
 export interface EmailSecuritySummary {
   receivesMail: boolean;
@@ -17,6 +20,25 @@ export interface EmailSecuritySummary {
     policy: string | null;
   };
   dkim: { checked: boolean; selectors: Array<{ selector: string; keyType: string; bits: number | null }> };
+  mtaSts?: {
+    status: 'valid' | 'missing' | 'invalid';
+    policyId: string | null;
+    mode: string | null;
+    mx: string[];
+    error?: string;
+  };
+  tlsRpt?: {
+    status: 'valid' | 'missing' | 'invalid';
+    record: string | null;
+    rua: string[];
+    error?: string;
+  };
+  dnsbl?: {
+    checked: boolean;
+    totalIpsChecked: number;
+    clean: boolean;
+    listings: DnsblListing[];
+  };
 }
 
 const QUALIFIER_TEXT: Record<string, string> = { '+': '+all', '-': '-all', '~': '~all', '?': '?all' };
@@ -29,6 +51,8 @@ const QUALIFIER_TEXT: Record<string, string> = { '+': '+all', '-': '-all', '~': 
 export async function analyzeEmailSecurity(
   domain: string,
   dns: DnsClient,
+  fetchPolicy?: FetchPolicyFn,
+  signal?: AbortSignal,
 ): Promise<{ findings: FindingDraft[]; summary: EmailSecuritySummary }> {
   const findings: FindingDraft[] = [];
 
@@ -142,6 +166,78 @@ export async function analyzeEmailSecurity(
     });
   }
 
+  // ----------------------------------------------------------------- MTA-STS & TLS-RPT
+  const [mtaSts, tlsRpt] = receivesMail
+    ? await Promise.all([
+        lookupMtaSts(domain, dns, fetchPolicy, signal),
+        lookupTlsRpt(domain, dns),
+      ])
+    : [null, null];
+
+  if (receivesMail && mtaSts) {
+    if (mtaSts.status === 'missing') {
+      findings.push({
+        ruleId: 'EMAIL-NO-MTA-STS',
+        location: `mta-sts:_mta-sts.${domain}`,
+        title: 'MTA-STS no implementado (RFC 8461)',
+        evidence: { status: 'missing', domain },
+      });
+    } else if (mtaSts.status === 'invalid') {
+      findings.push({
+        ruleId: 'EMAIL-NO-MTA-STS',
+        location: `mta-sts:_mta-sts.${domain}`,
+        title: 'Política MTA-STS inválida o inaccesible (RFC 8461)',
+        evidence: { status: 'invalid', error: mtaSts.error, dnsRecord: mtaSts.dnsRecord?.raw },
+      });
+    } else if (mtaSts.policy && mtaSts.policy.mode !== 'enforce') {
+      findings.push({
+        ruleId: 'EMAIL-NO-MTA-STS',
+        location: `mta-sts:_mta-sts.${domain}`,
+        title: `Política MTA-STS en modo no estricto (${mtaSts.policy.mode})`,
+        evidence: { mode: mtaSts.policy.mode, maxAge: mtaSts.policy.maxAge, mx: mtaSts.policy.mx },
+      });
+    }
+  }
+
+  if (receivesMail && tlsRpt) {
+    if (tlsRpt.status === 'missing') {
+      findings.push({
+        ruleId: 'EMAIL-NO-TLS-RPT',
+        location: `tls-rpt:_smtp._tls.${domain}`,
+        title: 'TLS-RPT no configurado (RFC 8460)',
+        evidence: { status: 'missing', domain },
+      });
+    } else if (tlsRpt.status === 'invalid') {
+      findings.push({
+        ruleId: 'EMAIL-NO-TLS-RPT',
+        location: `tls-rpt:_smtp._tls.${domain}`,
+        title: 'Registro TLS-RPT inválido (RFC 8460)',
+        evidence: { status: 'invalid', error: tlsRpt.error },
+      });
+    }
+  }
+
+  // ------------------------------------------------------------------- DNSBL
+  let dnsblResult: Awaited<ReturnType<typeof auditMailExchangersDnsbl>> | undefined;
+  if (receivesMail) {
+    dnsblResult = await auditMailExchangersDnsbl(mx, dns);
+    for (const listing of dnsblResult.listings) {
+      findings.push({
+        ruleId: 'EMAIL-IP-BLACKLISTED',
+        location: `dnsbl:${listing.exchange}:${listing.ip}`,
+        title: `Servidor de correo (${listing.exchange} / ${listing.ip}) listado en ${listing.provider}`,
+        evidence: {
+          domain,
+          exchange: listing.exchange,
+          ip: listing.ip,
+          provider: listing.provider,
+          returnCodes: listing.returnCodes,
+          txt: listing.txt,
+        },
+      });
+    }
+  }
+
   return {
     findings,
     summary: {
@@ -161,6 +257,31 @@ export async function analyzeEmailSecurity(
             ? { status: 'invalid', record: dmarc.records[0] ?? null, domain: dmarc.domain, inherited: dmarc.inherited, policy: null }
             : { status: 'missing', record: null, domain: null, inherited: false, policy: null },
       dkim: { checked: receivesMail, selectors: dkim },
+      mtaSts: mtaSts
+        ? {
+            status: mtaSts.status,
+            policyId: mtaSts.dnsRecord?.id ?? null,
+            mode: mtaSts.policy?.mode ?? null,
+            mx: mtaSts.policy?.mx ?? [],
+            error: mtaSts.error,
+          }
+        : undefined,
+      tlsRpt: tlsRpt
+        ? {
+            status: tlsRpt.status,
+            record: tlsRpt.record?.raw ?? null,
+            rua: tlsRpt.record?.rua ?? [],
+            error: tlsRpt.error,
+          }
+        : undefined,
+      dnsbl: dnsblResult
+        ? {
+            checked: dnsblResult.checked,
+            totalIpsChecked: dnsblResult.totalIpsChecked,
+            clean: dnsblResult.clean,
+            listings: dnsblResult.listings,
+          }
+        : undefined,
     },
   };
 }

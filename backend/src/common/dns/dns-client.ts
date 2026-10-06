@@ -6,9 +6,19 @@ export interface MxRecord {
   priority: number;
 }
 
+/** Registro CAA (RFC 8659) de autorización de Autoridades de Certificación. */
+export interface CaaRecord {
+  critical: number;
+  issue?: string;
+  issuewild?: string;
+  iodef?: string;
+  contactemail?: string;
+  contactphone?: string;
+}
+
 /**
- * Consultas DNS de los escáneres pasivos (seguridad del correo y
- * descubrimiento de subdominios). Se inyecta con `DNS_CLIENT` para poder
+ * Consultas DNS de los escáneres pasivos (seguridad del correo, CAA, DNSSEC
+ * y descubrimiento de subdominios). Se inyecta con `DNS_CLIENT` para poder
  * sustituirla en las pruebas.
  *
  * Un nombre inexistente o sin registros de ese tipo devuelve una lista vacía;
@@ -21,6 +31,8 @@ export interface DnsClient {
   mx(name: string): Promise<MxRecord[]>;
   /** Direcciones A y AAAA. */
   addresses(name: string): Promise<string[]>;
+  /** Registros CAA (RFC 8659). */
+  caa(name: string): Promise<CaaRecord[]>;
 }
 
 export const DNS_CLIENT = Symbol('DNS_CLIENT');
@@ -60,5 +72,6 @@ export function createDnsClient(timeoutMs = 4000): DnsClient {
       ]);
       return [...v4, ...v6];
     },
+    caa: (name) => orEmpty(name, () => resolver.resolveCaa(name)),
   };
 }
