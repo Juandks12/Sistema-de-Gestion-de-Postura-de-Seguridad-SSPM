@@ -1,7 +1,8 @@
-import { Download, Plus, Radar, Server, ShieldCheck, ShieldQuestion } from 'lucide-react';
+import { Download, Plus, Radar, Server, ShieldCheck, ShieldQuestion, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { DeleteAssetModal } from '@/components/DeleteAssetModal';
 import { Alert } from '@/components/ui/Alert';
 import { CriticalityBadge, GradeBadge } from '@/components/ui/Badge';
 import { SEVERITY_STYLE } from '@/components/ui/styles';
@@ -20,9 +21,10 @@ import { SEVERITY_LABEL, timeAgo } from '@/lib/format';
 import type { Asset, AssetCriticality, DashboardAsset } from '@/lib/types';
 
 export function AssetsPage() {
-  const { canEdit } = useAuth();
+  const { canEdit, hasRole } = useAuth();
   const assets = useDashboardAssets();
   const [open, setOpen] = useState(false);
+  const [assetToDelete, setAssetToDelete] = useState<DashboardAsset | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const requestScan = useRequestScan();
@@ -141,6 +143,18 @@ export function AssetsPage() {
                       <Link to={`/assets/${a.id}`} className="inline-flex h-8 items-center rounded-lg px-3 text-[13px] font-medium text-ink-2 hover:bg-surface-2 hover:text-ink">
                         Detalle
                       </Link>
+                      {hasRole('ADMIN') ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted hover:bg-critical/10 hover:text-critical"
+                          icon={<Trash2 className="size-3.5" />}
+                          onClick={() => setAssetToDelete(a)}
+                          title="Eliminar activo y registrar auditoría"
+                        >
+                          <span className="sr-only">Eliminar</span>
+                        </Button>
+                      ) : null}
                     </div>
                   </Td>
                 </tr>
@@ -157,6 +171,18 @@ export function AssetsPage() {
           asset.verifiedAt
             ? setNotice({ kind: 'success', text: `Activo ${asset.name ?? asset.value} registrado y ya verificado por su dominio superior. Lanza una auditoría para evaluarlo.` })
             : navigate(`/assets/${asset.id}`)
+        }
+      />
+
+      <DeleteAssetModal
+        open={!!assetToDelete}
+        asset={assetToDelete}
+        onClose={() => setAssetToDelete(null)}
+        onDeleted={(label) =>
+          setNotice({
+            kind: 'success',
+            text: `Activo ${label} eliminado. Su presencia y balance de acciones quedaron preservados en la auditoría.`,
+          })
         }
       />
     </>

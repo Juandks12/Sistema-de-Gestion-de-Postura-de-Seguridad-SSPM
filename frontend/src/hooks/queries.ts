@@ -23,6 +23,7 @@ import type {
   DashboardAsset,
   AuthResponse,
   Finding,
+  RetestFindingResult,
   FindingCategory,
   FindingStatus,
   OrgHistory,
@@ -157,7 +158,17 @@ export function useUpdateAsset() {
 
 export function useDeleteAsset() {
   const invalidate = useInvalidateAll();
-  return useMutation({ mutationFn: (id: string) => api<void>(`/assets/${id}`, { method: 'DELETE' }), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (arg: string | { id: string; reason?: string }) => {
+      const id = typeof arg === 'string' ? arg : arg.id;
+      const reason = typeof arg === 'string' ? undefined : arg.reason;
+      return api<void>(`/assets/${id}`, {
+        method: 'DELETE',
+        json: reason ? { reason } : undefined,
+      });
+    },
+    onSuccess: invalidate,
+  });
 }
 
 export interface AuditResult {
@@ -189,6 +200,14 @@ export function useReviewFinding() {
   const invalidate = useInvalidateAll();
   return useMutation({
     mutationFn: ({ id, status, note }: { id: string; status: 'OPEN' | 'ACCEPTED' | 'FALSE_POSITIVE'; note?: string }) => api<Finding>(`/findings/${id}`, { method: 'PATCH', json: { status, note } }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRetestFinding() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (id: string) => api<RetestFindingResult>(`/findings/${id}/retest`, { method: 'POST' }),
     onSuccess: invalidate,
   });
 }
@@ -281,6 +300,7 @@ export interface ChannelInput {
   type: AlertChannelType;
   name: string;
   target: string;
+  signingSecret?: string;
   minSeverity: Severity;
 }
 
@@ -295,7 +315,7 @@ export function useCreateChannel() {
 export function useUpdateChannel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...input }: { id: string; name?: string; target?: string; minSeverity?: Severity; isActive?: boolean }) =>
+    mutationFn: ({ id, ...input }: { id: string; name?: string; target?: string; signingSecret?: string; minSeverity?: Severity; isActive?: boolean }) =>
       api<AlertChannel>(`/alerts/channels/${id}`, { method: 'PATCH', json: input }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
   });

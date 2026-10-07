@@ -19,6 +19,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
+import { DeleteAssetDto } from './dto/delete-asset.dto';
 import { ExportAssetsQuery } from './dto/export-assets.query';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
@@ -106,8 +107,21 @@ export class AssetsController {
   @Delete(':id')
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Eliminar un activo y sus escaneos (solo ADMIN)' })
-  remove(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.assets.remove(user, id);
+  @ApiOperation({
+    summary: 'Eliminar un activo registrando la auditoría completa de su presencia y acciones (solo ADMIN)',
+    description:
+      'Retira el activo del inventario y del cálculo de postura. Conserva en el registro de auditoría (RNF-06) el balance inmutable de escaneos, hallazgos y acciones ejecutadas durante su ciclo de vida.',
+  })
+  @ApiResponse({ status: 204, description: 'Activo eliminado y auditoría preservada.' })
+  @ApiResponse({ status: 403, description: 'Solo el rol ADMIN puede eliminar activos.' })
+  @ApiResponse({ status: 404, description: 'Activo no encontrado en la organización.' })
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto?: DeleteAssetDto,
+    @Query('reason') queryReason?: string,
+  ) {
+    const reason = dto?.reason ?? queryReason;
+    return this.assets.remove(user, id, reason ? { reason } : undefined);
   }
 }

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Download, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useFindings, useReviewFinding } from '@/hooks/queries';
+import { useFindings, useRetestFinding, useReviewFinding } from '@/hooks/queries';
 import { ApiError, downloadFile } from '@/lib/api';
 import { CATEGORY_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, STATUS_LABEL, cvss, formatDateTime, timeAgo } from '@/lib/format';
 import type { Finding, FindingCategory, FindingStatus, Severity } from '@/lib/types';
@@ -180,6 +180,25 @@ export function FindingsPage() {
 }
 
 function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; canEdit: boolean; onReview: (a: ReviewAction) => void }) {
+  const retest = useRetestFinding();
+  const [retestResult, setRetestResult] = useState<{ stillReproducible: boolean; message: string } | null>(null);
+
+  const handleRetest = async () => {
+    setRetestResult(null);
+    try {
+      const res = await retest.mutateAsync(f.id);
+      setRetestResult({
+        stillReproducible: res.stillReproducible,
+        message: res.message,
+      });
+    } catch (err) {
+      setRetestResult({
+        stillReproducible: true,
+        message: err instanceof ApiError ? err.message : 'No se pudo completar la verificación puntual.',
+      });
+    }
+  };
+
   // Los CVE se muestran como lista; el resto de la evidencia, tal cual.
   const isCve = f.ruleId === 'VULN-KNOWN-CVE' && !!f.evidence;
   const evidence = isCve && f.evidence ? Object.fromEntries(Object.entries(f.evidence).filter(([k]) => k !== 'cves')) : f.evidence;
@@ -222,9 +241,26 @@ function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; ca
         ) : null}
         {canEdit ? (
           <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<RefreshCw className="size-3.5" />}
+              loading={retest.isPending}
+              onClick={handleRetest}
+              title="Disparar sonda rápida (2-5s) sobre la ubicación para verificar si ya fue remediado"
+            >
+              Re-verificar
+            </Button>
             {f.status !== 'ACCEPTED' ? <Button size="sm" variant="secondary" onClick={() => onReview('ACCEPTED')}>Aceptar riesgo</Button> : null}
             {f.status !== 'FALSE_POSITIVE' ? <Button size="sm" variant="secondary" onClick={() => onReview('FALSE_POSITIVE')}>Falso positivo</Button> : null}
             {f.status !== 'OPEN' ? <Button size="sm" variant="secondary" onClick={() => onReview('OPEN')}>Reabrir</Button> : null}
+          </div>
+        ) : null}
+        {retestResult ? (
+          <div className="mt-3">
+            <Alert kind={retestResult.stillReproducible ? 'error' : 'success'}>
+              {retestResult.message}
+            </Alert>
           </div>
         ) : null}
       </div>

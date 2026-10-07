@@ -1,7 +1,8 @@
-import { ArrowLeft, Radar, Server, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Radar, Server, ShieldAlert, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { DeleteAssetModal } from '@/components/DeleteAssetModal';
 import { AssetVerificationCard } from '@/components/AssetVerificationCard';
 import { DiscoveredHostsCard } from '@/components/DiscoveredHostsCard';
 import { DnsSecurityCard } from '@/components/DnsSecurityCard';
@@ -26,11 +27,13 @@ const SCAN_TYPES: ScanType[] = ['PORT_SCAN', 'WEB_HEADERS', 'SSL_CERT', 'SENSITI
 
 export function AssetDetailPage() {
   const { id = '' } = useParams();
-  const { canEdit } = useAuth();
+  const navigate = useNavigate();
+  const { canEdit, hasRole } = useAuth();
   const q = useDashboardAsset(id);
   const verification = useAssetVerification(id);
   const requestScan = useRequestScan();
   const update = useUpdateAsset();
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   if (q.isPending) return <Skeleton className="h-64" />;
@@ -101,6 +104,17 @@ export function AssetDetailPage() {
                   Auditoría completa
                 </Button>
               </>
+            ) : null}
+            {hasRole('ADMIN') ? (
+              <Button
+                variant="ghost"
+                size="md"
+                className="text-critical hover:bg-critical/10 hover:text-critical"
+                icon={<Trash2 className="size-4" />}
+                onClick={() => setDeleteOpen(true)}
+              >
+                Eliminar
+              </Button>
             ) : null}
           </>
         }
@@ -239,6 +253,13 @@ export function AssetDetailPage() {
           </Table>
         )}
       </Card>
+
+      <DeleteAssetModal
+        open={deleteOpen}
+        asset={asset}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => navigate('/assets', { replace: true })}
+      />
     </>
   );
 }

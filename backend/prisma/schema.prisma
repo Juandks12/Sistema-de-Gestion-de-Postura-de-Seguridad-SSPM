@@ -471,6 +471,8 @@ model AlertChannel {
   name               String           @db.VarChar(100)
   /// EMAIL: destinatarios separados por coma. WEBHOOK: URL https.
   target             String           @db.VarChar(1000)
+  /// Secreto para firma criptográfica HMAC-SHA256 en webhooks (cabecera X-SSPM-Signature).
+  signingSecret      String?          @map("signing_secret") @db.VarChar(64)
   /// Severidad mínima de las alertas que se envían por este canal.
   minSeverity        FindingSeverity  @default(HIGH) @map("min_severity")
   isActive           Boolean          @default(true) @map("is_active")

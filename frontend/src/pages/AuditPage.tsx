@@ -30,7 +30,36 @@ const DETAIL_LABEL: Record<string, string> = {
   minSeverity: 'Severidad mínima',
   type: 'Tipo',
   verificationMethod: 'Verificación',
+  assetValue: 'Valor del activo',
+  assetName: 'Nombre del activo',
+  assetType: 'Tipo de activo',
+  criticality: 'Criticidad',
+  tags: 'Etiquetas',
+  registeredAt: 'Fecha de registro',
+  verified: 'Verificado',
+  lastScannedAt: 'Último escaneo',
+  reason: 'Motivo de eliminación',
+  totalScans: 'Total de escaneos realizados',
+  scansByType: 'Escaneos por tipo',
+  totalFindings: 'Total de hallazgos detectados',
+  findingsBySeverity: 'Hallazgos por severidad',
+  findingsByStatus: 'Hallazgos por estado',
+  openPorts: 'Puertos abiertos identificados',
+  discoveredSubdomainsCount: 'Subdominios descubiertos',
+  lastScore: 'Último Security Score',
 };
+
+function formatDetailValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+  if (Array.isArray(value)) return value.length === 0 ? 'Ninguno' : value.join(', ');
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(' · ');
+  }
+  return String(value);
+}
 
 function DetailList({ detail }: { detail: Record<string, unknown> }) {
   const entries = Object.entries(detail).filter(([, v]) => v !== null && v !== undefined);
@@ -40,8 +69,8 @@ function DetailList({ detail }: { detail: Record<string, unknown> }) {
       {entries.map(([key, value]) => (
         <div key={key}>
           <dt className="inline text-muted">{DETAIL_LABEL[key] ?? key}: </dt>
-          <dd className="inline [overflow-wrap:anywhere]">
-            {typeof value === 'boolean' ? (value ? 'sí' : 'no') : String(value)}
+          <dd className="inline [overflow-wrap:anywhere] font-medium text-ink">
+            {formatDetailValue(value)}
           </dd>
         </div>
       ))}

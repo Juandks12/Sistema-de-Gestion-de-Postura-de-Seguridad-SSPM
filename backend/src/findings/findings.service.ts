@@ -1,13 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { FindingCategory, FindingSeverity, FindingStatus, Prisma, RiskScoreTrigger, ScanType } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { AssetType, FindingCategory, FindingSeverity, FindingStatus, Prisma, RiskScoreTrigger, ScanType } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
-import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AuditService } from '../audit/audit.service';
+import { createDnsClient } from '../common/dns/dns-client';
+import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { formatCsvRow, UTF8_BOM } from '../common/utils/csv';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
-import { UTF8_BOM, formatCsvRow } from '../common/utils/csv';
+import { analyzeHeaders } from '../scans/analyzers/headers.analyzer';
+import { analyzeTls } from '../scans/analyzers/tls.analyzer';
+import { analyzeEmailSecurity } from '../scans/email/email-security.analyzer';
 import { FindingDraft } from '../scans/scanner.interface';
+import { resolveScanTarget } from '../scans/target-resolver';
+import { httpProbe, HttpProbeOutcome } from '../scans/web/http-client';
+import { SENSITIVE_PATHS } from '../scans/web/sensitive-paths.catalog';
+import { tcpPortOpen, tlsProbe } from '../scans/web/tls-probe';
 import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
@@ -83,6 +93,16 @@ const findingSelect = {
   assignedTo: { select: { id: true, fullName: true, email: true } },
 } satisfies Prisma.FindingSelect;
 
+export type FindingRow = Prisma.FindingGetPayload<{ select: typeof findingSelect }>;
+
+export interface RetestFindingResult {
+  finding: FindingRow;
+  stillReproducible: boolean;
+  message: string;
+  testedAt: string;
+  details?: Record<string, unknown>;
+}
+
 export function fingerprintOf(ruleId: string, location: string): string {
   return createHash('sha256').update(`${ruleId}|${location}`).digest('hex');
 }
@@ -109,7 +129,12 @@ export class FindingsService {
     private readonly prisma: PrismaService,
     private readonly riskScores: RiskScoresService,
     private readonly audit: AuditService,
+    private readonly config?: ConfigService,
   ) {}
+
+  private get allowPrivate(): boolean {
+    return this.config?.get<boolean>('ALLOW_PRIVATE_TARGETS') === true;
+  }
 
   /**
    * Sincroniza los hallazgos de un escaneo completado dentro de una transacción:
@@ -305,6 +330,298 @@ export class FindingsService {
     });
 
     return reviewed;
+  }
+
+  /**
+   * Ejecuta una sonda puntual y rápida sobre la regla y ubicación del hallazgo.
+   */
+  async probeFinding(
+    finding: FindingRow,
+  ): Promise<{ stillReproducible: boolean; details?: Record<string, unknown> }> {
+    const { category, ruleId, location, asset } = finding;
+    const allowPrivate = this.allowPrivate;
+
+    switch (category) {
+      case FindingCategory.HTTP_HEADERS: {
+        const timeoutMs = this.config?.get<number>('WEB_REQUEST_TIMEOUT_MS') ?? 5000;
+        let targetUrl = location;
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+          targetUrl = `https://${asset.value}`;
+        }
+        let outcome: HttpProbeOutcome;
+        try {
+          outcome = await httpProbe(targetUrl, {
+            allowPrivate,
+            timeoutMs,
+            signal: AbortSignal.timeout(timeoutMs),
+            maxBodyBytes: 4096,
+          });
+        } catch (err) {
+          return { stillReproducible: false, details: { error: (err as Error).message } };
+        }
+
+        if (!outcome.ok) {
+          return { stillReproducible: false, details: { unreachable: true, error: outcome.error } };
+        }
+
+        const drafts = analyzeHeaders({
+          finalUrl: outcome.finalUrl,
+          status: outcome.status,
+          headers: outcome.headers,
+          httpsAvailable: new URL(outcome.finalUrl).protocol === 'https:',
+        });
+
+        const stillReproducible = drafts.some((d) => d.ruleId === ruleId);
+        return {
+          stillReproducible,
+          details: {
+            status: outcome.status,
+            finalUrl: outcome.finalUrl,
+            headersDetected: Object.keys(outcome.headers).length,
+            remainingRules: drafts.map((d) => d.ruleId),
+          },
+        };
+      }
+
+      case FindingCategory.SENSITIVE_PATH: {
+        const timeoutMs = this.config?.get<number>('WEB_REQUEST_TIMEOUT_MS') ?? 5000;
+        let targetUrl = location;
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+          targetUrl = `https://${asset.value}${location.startsWith('/') ? '' : '/'}${location}`;
+        }
+
+        let outcome: HttpProbeOutcome;
+        try {
+          outcome = await httpProbe(targetUrl, {
+            allowPrivate,
+            timeoutMs,
+            signal: AbortSignal.timeout(timeoutMs),
+            maxBodyBytes: 64 * 1024,
+            maxRedirects: 2,
+          });
+        } catch (err) {
+          return { stillReproducible: false, details: { error: (err as Error).message } };
+        }
+
+        if (!outcome.ok) {
+          return { stillReproducible: false, details: { unreachable: true, error: outcome.error } };
+        }
+
+        if (outcome.status === 404 || outcome.status === 403) {
+          return { stillReproducible: false, details: { status: outcome.status } };
+        }
+
+        const rule = SENSITIVE_PATHS.find((r) => r.ruleId === ruleId);
+        const candidate = (outcome.status >= 200 && outcome.status < 300) || outcome.status === 401;
+        const matched = candidate && (rule ? rule.signature({
+          status: outcome.status,
+          contentType: outcome.contentType,
+          body: outcome.body,
+          text: outcome.body.toString('utf8'),
+        }) : outcome.status === 200);
+
+        return {
+          stillReproducible: matched,
+          details: { status: outcome.status, matched },
+        };
+      }
+
+      case FindingCategory.TLS_CERTIFICATE: {
+        let hostname = asset.value;
+        let port = 443;
+        try {
+          if (location.startsWith('tls://') || location.startsWith('https://') || location.startsWith('http://')) {
+            const u = new URL(location.replace(/^tls:/, 'https:'));
+            hostname = u.hostname || hostname;
+            if (u.port) port = Number(u.port);
+          } else {
+            const match = location.match(/(?:tls:\/\/)?([^:/]+)(?::(\d+))?/);
+            if (match) {
+              hostname = match[1] || hostname;
+              if (match[2]) port = Number(match[2]);
+            }
+          }
+        } catch {
+          // fallback
+        }
+
+        let address: string;
+        try {
+          const target = await resolveScanTarget(hostname, isIP(hostname) ? AssetType.IP : AssetType.DOMAIN, allowPrivate);
+          address = target.address;
+        } catch (err) {
+          throw new BadRequestException(`No se pudo resolver el host ${hostname}: ${(err as Error).message}`);
+        }
+
+        const probeOutcome = await tlsProbe({
+          address,
+          port,
+          hostname,
+          timeoutMs: 5000,
+          signal: AbortSignal.timeout(5000),
+          checkLegacy: ruleId === 'TLS-LEGACY-PROTOCOL',
+        });
+
+        if (!probeOutcome.ok) {
+          if (probeOutcome.connectionRefused) {
+            return { stillReproducible: false, details: { connectionRefused: true } };
+          }
+          return { stillReproducible: true, details: { error: probeOutcome.error } };
+        }
+
+        const drafts = analyzeTls(probeOutcome.info);
+        const stillReproducible = drafts.some((d) => d.ruleId === ruleId);
+        return {
+          stillReproducible,
+          details: {
+            authorized: probeOutcome.info.authorized,
+            protocol: probeOutcome.info.protocol,
+            remainingRules: drafts.map((d) => d.ruleId),
+          },
+        };
+      }
+
+      case FindingCategory.EXPOSED_SERVICE: {
+        let port = 0;
+        if (finding.evidence && typeof finding.evidence === 'object' && 'port' in finding.evidence) {
+          port = Number((finding.evidence as { port?: unknown }).port);
+        }
+        if (!port) {
+          const m = location.match(/\d+/);
+          port = m ? Number(m[0]) : 0;
+        }
+        if (!port) {
+          return { stillReproducible: false, details: { error: 'No se pudo determinar el puerto' } };
+        }
+
+        let address: string;
+        try {
+          const target = await resolveScanTarget(asset.value, asset.type, allowPrivate);
+          address = target.address;
+        } catch (err) {
+          throw new BadRequestException(`No se pudo resolver el activo ${asset.value}: ${(err as Error).message}`);
+        }
+
+        const isOpen = await tcpPortOpen(address, port, 3000);
+        return {
+          stillReproducible: isOpen,
+          details: { port, open: isOpen },
+        };
+      }
+
+      case FindingCategory.EMAIL_SECURITY: {
+        const dns = createDnsClient(4000);
+        try {
+          const res = await analyzeEmailSecurity(asset.value, dns);
+          const stillReproducible = res.findings.some((d) => d.ruleId === ruleId);
+          return {
+            stillReproducible,
+            details: { remainingRules: res.findings.map((d) => d.ruleId) },
+          };
+        } catch (err) {
+          return { stillReproducible: true, details: { error: (err as Error).message } };
+        }
+      }
+
+      case FindingCategory.VULNERABLE_SOFTWARE: {
+        let port = 0;
+        if (finding.evidence && typeof finding.evidence === 'object' && 'port' in finding.evidence) {
+          port = Number((finding.evidence as { port?: unknown }).port);
+        }
+        if (port > 0) {
+          try {
+            const target = await resolveScanTarget(asset.value, asset.type, allowPrivate);
+            const isOpen = await tcpPortOpen(target.address, port, 3000);
+            if (!isOpen) {
+              return { stillReproducible: false, details: { port, open: false, portClosed: true } };
+            }
+          } catch {
+            // continue
+          }
+        }
+        return {
+          stillReproducible: true,
+          details: { note: 'El puerto asociado continúa respondiendo; se requiere escaneo de vulnerabilidades completo' },
+        };
+      }
+
+      default:
+        return {
+          stillReproducible: true,
+          details: { note: 'Categoría sin sonda directa puntual; se requiere escaneo completo' },
+        };
+    }
+  }
+
+  /**
+   * Re-test puntual de un hallazgo (Sprint 7): sonda directa de 2-5s sobre la regla y ubicación.
+   * Si la falla ya no se reproduce, marca RESOLVED, actualiza resolvedAt y recalcula el Security Score.
+   * Si sigue presente, actualiza lastSeenAt (y si estaba RESOLVED, lo reabre a OPEN).
+   */
+  async retest(actor: AuthUser, id: string): Promise<RetestFindingResult> {
+    const existing = await this.findOne(actor.organizationId, id);
+    const probe = await this.probeFinding(existing);
+    const { stillReproducible, details } = probe;
+    const now = new Date();
+
+    const updatedFinding = await this.prisma.$transaction(async (tx) => {
+      let data: Prisma.FindingUpdateInput;
+
+      if (!stillReproducible) {
+        data = {
+          status: FindingStatus.RESOLVED,
+          resolvedAt: now,
+          lastSeenAt: now,
+        };
+      } else {
+        data = {
+          lastSeenAt: now,
+          ...(existing.status === FindingStatus.RESOLVED ? { status: FindingStatus.OPEN, resolvedAt: null } : {}),
+        };
+      }
+
+      const updated = await tx.finding.update({
+        where: { id },
+        data,
+        select: findingSelect,
+      });
+
+      if (existing.status !== updated.status) {
+        await this.riskScores.snapshot(tx, {
+          organizationId: actor.organizationId,
+          assetId: existing.assetId,
+          trigger: RiskScoreTrigger.FINDING_REVIEWED,
+        });
+      }
+
+      return updated;
+    });
+
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'finding.review',
+      actor,
+      target: { type: 'finding', id: updatedFinding.id, label: `${updatedFinding.ruleId} · ${updatedFinding.location}` },
+      detail: {
+        retest: true,
+        stillReproducible,
+        previousStatus: existing.status,
+        newStatus: updatedFinding.status,
+        ruleId: existing.ruleId,
+        location: existing.location,
+        details,
+      },
+    });
+
+    return {
+      finding: updatedFinding,
+      stillReproducible,
+      message: stillReproducible
+        ? 'La vulnerabilidad o fallo de configuración sigue presente.'
+        : '¡Verificación exitosa! El fallo ya no se reproduce y el hallazgo ha sido marcado como RESUELTO.',
+      testedAt: now.toISOString(),
+      details,
+    };
   }
 
   /** Conteo de hallazgos abiertos por severidad y categoría (base del Security Score). */

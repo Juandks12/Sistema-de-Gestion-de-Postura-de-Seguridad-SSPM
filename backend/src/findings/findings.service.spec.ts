@@ -1,6 +1,10 @@
 import { FindingCategory, FindingSeverity, FindingStatus, Prisma } from '@prisma/client';
-import { FindingsService } from './findings.service';
+import { AuditService } from '../audit/audit.service';
+import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { UTF8_BOM } from '../common/utils/csv';
+import { PrismaService } from '../prisma/prisma.service';
+import { RiskScoresService } from '../risk/risk-scores.service';
+import { FindingsService } from './findings.service';
 
 describe('FindingsService - exportStream', () => {
   let service: FindingsService;
@@ -254,5 +258,176 @@ describe('FindingsService - review & lifecycle', () => {
     await expect(
       service.review(actor, 'f-100', { assignedToId: 'invalid-user' }),
     ).rejects.toThrow('El usuario asignado no pertenece a la organización');
+  });
+});
+
+describe('FindingsService - retest', () => {
+  let service: FindingsService;
+  let prismaMock: {
+    finding: {
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
+    $transaction: jest.Mock;
+  };
+  let riskScoresMock: { snapshot: jest.Mock };
+  let auditMock: { record: jest.Mock };
+
+  const actor: AuthUser = {
+    id: 'u-admin',
+    organizationId: 'org-1',
+    role: 'ADMIN',
+    fullName: 'Admin Tester',
+    email: 'admin@test.local',
+  };
+
+  beforeEach(() => {
+    prismaMock = {
+      finding: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
+      $transaction: jest.fn(async (cb) => cb(prismaMock)),
+    };
+    riskScoresMock = {
+      snapshot: jest.fn().mockResolvedValue(undefined),
+    };
+    auditMock = {
+      record: jest.fn(),
+    };
+    service = new FindingsService(
+      prismaMock as unknown as PrismaService,
+      riskScoresMock as unknown as RiskScoresService,
+      auditMock as unknown as AuditService,
+    );
+  });
+
+  it('marks finding as RESOLVED and snapshots score when flaw is no longer reproducible', async () => {
+    const finding = {
+      id: 'f-1',
+      organizationId: 'org-1',
+      assetId: 'a-1',
+      status: FindingStatus.OPEN,
+      category: FindingCategory.HTTP_HEADERS,
+      ruleId: 'HDR-HSTS-MISSING',
+      location: 'https://example.com',
+      asset: { id: 'a-1', value: 'example.com', type: 'DOMAIN', name: 'Example' },
+    };
+    prismaMock.finding.findFirst.mockResolvedValueOnce(finding);
+    prismaMock.finding.update.mockResolvedValueOnce({
+      ...finding,
+      status: FindingStatus.RESOLVED,
+      resolvedAt: new Date(),
+    });
+
+    // Mock probeFinding to simulate flaw fixed
+    jest.spyOn(service, 'probeFinding').mockResolvedValueOnce({
+      stillReproducible: false,
+      details: { status: 200, headersDetected: 10 },
+    });
+
+    const result = await service.retest(actor, 'f-1');
+
+    expect(result.stillReproducible).toBe(false);
+    expect(result.message).toContain('Verificación exitosa');
+    expect(prismaMock.finding.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'f-1' },
+        data: expect.objectContaining({
+          status: FindingStatus.RESOLVED,
+        }),
+      }),
+    );
+    expect(riskScoresMock.snapshot).toHaveBeenCalledTimes(1);
+    expect(auditMock.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'finding.review',
+        target: expect.objectContaining({ id: 'f-1' }),
+        detail: expect.objectContaining({ retest: true, stillReproducible: false }),
+      }),
+    );
+  });
+
+  it('leaves finding OPEN and updates lastSeenAt when flaw is still reproducible', async () => {
+    const finding = {
+      id: 'f-2',
+      organizationId: 'org-1',
+      assetId: 'a-1',
+      status: FindingStatus.OPEN,
+      category: FindingCategory.SENSITIVE_PATH,
+      ruleId: 'PATH-GIT-CONFIG',
+      location: 'https://example.com/.git/config',
+      asset: { id: 'a-1', value: 'example.com', type: 'DOMAIN', name: 'Example' },
+    };
+    prismaMock.finding.findFirst.mockResolvedValueOnce(finding);
+    prismaMock.finding.update.mockResolvedValueOnce({
+      ...finding,
+      lastSeenAt: new Date(),
+    });
+
+    jest.spyOn(service, 'probeFinding').mockResolvedValueOnce({
+      stillReproducible: true,
+      details: { status: 200, matched: true },
+    });
+
+    const result = await service.retest(actor, 'f-2');
+
+    expect(result.stillReproducible).toBe(true);
+    expect(result.message).toContain('sigue presente');
+    expect(prismaMock.finding.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'f-2' },
+        data: expect.objectContaining({
+          lastSeenAt: expect.any(Date),
+        }),
+      }),
+    );
+    // Score doesn't need to change if status remained OPEN
+    expect(riskScoresMock.snapshot).not.toHaveBeenCalled();
+    expect(auditMock.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({ retest: true, stillReproducible: true }),
+      }),
+    );
+  });
+
+  it('reopens finding from RESOLVED to OPEN if flaw reproduces again', async () => {
+    const finding = {
+      id: 'f-3',
+      organizationId: 'org-1',
+      assetId: 'a-1',
+      status: FindingStatus.RESOLVED,
+      resolvedAt: new Date('2026-10-01'),
+      category: FindingCategory.EXPOSED_SERVICE,
+      ruleId: 'SVC-DATABASE-EXPOSED',
+      location: 'tcp/5432',
+      evidence: { port: 5432 },
+      asset: { id: 'a-1', value: 'example.com', type: 'DOMAIN', name: 'Example' },
+    };
+    prismaMock.finding.findFirst.mockResolvedValueOnce(finding);
+    prismaMock.finding.update.mockResolvedValueOnce({
+      ...finding,
+      status: FindingStatus.OPEN,
+      resolvedAt: null,
+    });
+
+    jest.spyOn(service, 'probeFinding').mockResolvedValueOnce({
+      stillReproducible: true,
+      details: { port: 5432, open: true },
+    });
+
+    const result = await service.retest(actor, 'f-3');
+
+    expect(result.stillReproducible).toBe(true);
+    expect(prismaMock.finding.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'f-3' },
+        data: expect.objectContaining({
+          status: FindingStatus.OPEN,
+          resolvedAt: null,
+        }),
+      }),
+    );
+    expect(riskScoresMock.snapshot).toHaveBeenCalledTimes(1);
   });
 });

@@ -119,6 +119,14 @@ export interface Finding {
   reviewedBy: { id: string; fullName: string; email: string } | null;
 }
 
+export interface RetestFindingResult {
+  finding: Finding;
+  stillReproducible: boolean;
+  message: string;
+  testedAt: string;
+  details?: Record<string, unknown>;
+}
+
 export interface TopFinding {
   id: string;
   assetId: string;
@@ -317,6 +325,7 @@ export interface AlertChannel {
   name: string;
   /** Las URL de webhook llegan enmascaradas. */
   target: string;
+  signingSecret?: string | null;
   minSeverity: Severity;
   isActive: boolean;
   lastDeliveryAt: string | null;

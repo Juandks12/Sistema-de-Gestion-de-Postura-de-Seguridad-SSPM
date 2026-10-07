@@ -80,7 +80,12 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
       let body = '';
       req.on('data', (c: Buffer) => (body += c.toString()));
       req.on('end', () => {
-        received.push({ path: req.url, contentType: req.headers['content-type'], ...(JSON.parse(body) as Record<string, unknown>) });
+        received.push({
+          path: req.url,
+          headers: req.headers,
+          contentType: req.headers['content-type'],
+          ...(JSON.parse(body) as Record<string, unknown>),
+        });
         res.writeHead(204);
         res.end();
       });
@@ -160,6 +165,7 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
       webhookChannelId = hook.body.id;
       expect(hook.body.target).not.toContain('/hooks/sspm');
       expect(hook.body.target).toMatch(/…sspm$/);
+      expect(hook.body.signingSecret).toMatch(/^[0-9a-f]{64}$/);
 
       const email = await http_()
         .post('/api/v1/alerts/channels')
@@ -177,7 +183,10 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
     it('envía notificaciones de prueba', async () => {
       const hook = await http_().post(`/api/v1/alerts/channels/${webhookChannelId}/test`).set(auth(admin)).expect(200);
       expect(hook.body.status).toBe('SENT');
-      expect(received.at(-1)).toMatchObject({ path: '/hooks/sspm', contentType: 'application/json', event: 'alert.test', source: 'sspm' });
+      const last = received.at(-1) as Record<string, unknown> & { headers?: Record<string, string> };
+      expect(last).toMatchObject({ path: '/hooks/sspm', contentType: 'application/json', event: 'alert.test', source: 'sspm' });
+      expect(last.headers?.['x-sspm-signature']).toMatch(/^sha256=[0-9a-f]{64}$/);
+      expect(last.headers?.['x-sspm-timestamp']).toBeDefined();
 
       // Sin SMTP configurado el correo se omite y se informa el motivo.
       const email = await http_().post(`/api/v1/alerts/channels/${emailChannelId}/test`).set(auth(admin)).expect(200);
