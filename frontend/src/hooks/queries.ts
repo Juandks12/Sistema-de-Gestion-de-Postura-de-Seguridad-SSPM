@@ -23,6 +23,7 @@ import type {
   DashboardAsset,
   AuthResponse,
   Finding,
+  RetestFindingResult,
   FindingCategory,
   FindingStatus,
   OrgHistory,
@@ -203,6 +204,14 @@ export function useReviewFinding() {
   });
 }
 
+export function useRetestFinding() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (id: string) => api<RetestFindingResult>(`/findings/${id}/retest`, { method: 'POST' }),
+    onSuccess: invalidate,
+  });
+}
+
 export function useUsers(enabled = true) {
   return useQuery({ queryKey: keys.users, queryFn: () => api<OrgUser[]>('/users'), enabled });
 }
@@ -291,6 +300,7 @@ export interface ChannelInput {
   type: AlertChannelType;
   name: string;
   target: string;
+  signingSecret?: string;
   minSeverity: Severity;
 }
 
@@ -305,7 +315,7 @@ export function useCreateChannel() {
 export function useUpdateChannel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...input }: { id: string; name?: string; target?: string; minSeverity?: Severity; isActive?: boolean }) =>
+    mutationFn: ({ id, ...input }: { id: string; name?: string; target?: string; signingSecret?: string; minSeverity?: Severity; isActive?: boolean }) =>
       api<AlertChannel>(`/alerts/channels/${id}`, { method: 'PATCH', json: input }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.alertChannels }),
   });

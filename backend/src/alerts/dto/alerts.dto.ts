@@ -84,6 +84,17 @@ export class CreateAlertChannelDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Secreto para firma HMAC-SHA256 (hasta 64 caracteres; se genera automáticamente si se omite en webhooks)',
+    example: 'd9b3a019488392019485...',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(16)
+  @MaxLength(64)
+  signingSecret?: string;
 }
 
 export class UpdateAlertChannelDto {
@@ -102,6 +113,16 @@ export class UpdateAlertChannelDto {
   @MinLength(3)
   @MaxLength(1000)
   target?: string;
+
+  @ApiPropertyOptional({
+    description: 'Nuevo secreto para firma HMAC-SHA256 (hasta 64 caracteres)',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(16)
+  @MaxLength(64)
+  signingSecret?: string;
 
   @ApiPropertyOptional({ enum: FindingSeverity })
   @IsOptional()

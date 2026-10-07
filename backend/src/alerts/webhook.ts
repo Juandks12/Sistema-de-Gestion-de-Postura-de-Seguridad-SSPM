@@ -1,5 +1,6 @@
 import { AssetType, FindingSeverity } from '@prisma/client';
 import { isFQDN } from 'class-validator';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { Agent, request } from 'undici';
 import { isNonPublicHostname, isPrivateOrReservedIp } from '../common/utils/network.util';
@@ -118,17 +119,43 @@ export function buildWebhookBody(format: WebhookFormat, msg: NotificationMessage
   };
 }
 
+/**
+ * Calcula la firma criptográfica HMAC-SHA256 para el payload de un webhook.
+ * Formato estándar: sha256=<hex_digest>
+ */
+export function computeWebhookSignature(payload: string, secret: string): string {
+  const hmac = createHmac('sha256', secret).update(payload, 'utf8').digest('hex');
+  return `sha256=${hmac}`;
+}
+
+/**
+ * Valida la firma HMAC-SHA256 usando comparación en tiempo constante.
+ */
+export function verifyWebhookSignature(payload: string, secret: string, signatureHeader: string): boolean {
+  if (!signatureHeader || !secret) return false;
+  const expected = computeWebhookSignature(payload, secret);
+  try {
+    const sigBuf = Buffer.from(signatureHeader.trim());
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) return false;
+    return timingSafeEqual(sigBuf, expBuf);
+  } catch {
+    return false;
+  }
+}
+
 export type SendResult = { ok: true; detail: string } | { ok: false; error: string };
 
 /**
  * Envía el webhook sin seguir redirecciones, conectando a la IP ya validada
  * (el nombre viaja en Host/SNI) para que un cambio de DNS no pueda desviar la
  * petición a la red interna. El certificado TLS sí se valida.
+ * Incluye cabeceras X-SSPM-Signature y X-SSPM-Timestamp si se especifica un signingSecret.
  */
 export async function postWebhook(
   rawUrl: string,
   body: Record<string, unknown>,
-  options: { allowPrivate: boolean; timeoutMs: number },
+  options: { allowPrivate: boolean; timeoutMs: number; signingSecret?: string | null },
 ): Promise<SendResult> {
   const check = validateWebhookUrl(rawUrl, options.allowPrivate);
   if (!check.ok) return { ok: false, error: check.reason };
@@ -151,15 +178,21 @@ export async function postWebhook(
     connections: 1,
   });
   try {
+    const serializedBody = JSON.stringify(body);
+    const headers: Record<string, string> = {
+      host: url.port ? `${url.hostname}:${url.port}` : url.hostname,
+      'content-type': 'application/json',
+      'user-agent': USER_AGENT,
+    };
+    if (options.signingSecret) {
+      headers['x-sspm-signature'] = computeWebhookSignature(serializedBody, options.signingSecret);
+      headers['x-sspm-timestamp'] = Math.floor(Date.now() / 1000).toString();
+    }
     const res = await request(`${url.protocol}//${pinned}:${port}${url.pathname}${url.search}`, {
       dispatcher: agent,
       method: 'POST',
-      headers: {
-        host: url.port ? `${url.hostname}:${url.port}` : url.hostname,
-        'content-type': 'application/json',
-        'user-agent': USER_AGENT,
-      },
-      body: JSON.stringify(body),
+      headers,
+      body: serializedBody,
       headersTimeout: options.timeoutMs,
       bodyTimeout: options.timeoutMs,
     });

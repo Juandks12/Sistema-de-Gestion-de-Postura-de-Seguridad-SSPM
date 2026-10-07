@@ -1,4 +1,4 @@
-import { CalendarClock, Mail, Plus, Send, Trash2, Webhook } from 'lucide-react';
+import { CalendarClock, Check, Copy, Key, Mail, Plus, Send, Trash2, Webhook } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '@/auth/useAuth';
 import { Alert } from '@/components/ui/Alert';
@@ -137,6 +137,17 @@ function ChannelsCard() {
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<AlertChannel | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copySecret = async (channelId: string, secret: string) => {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopiedId(channelId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // ignore
+    }
+  };
 
   const runTest = async (c: AlertChannel) => {
     setNotice(null);
@@ -205,6 +216,22 @@ function ChannelsCard() {
                     {!c.isActive ? <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-normal text-muted">Pausado</span> : null}
                   </p>
                   <p className="mt-0.5 truncate pl-6 text-xs text-muted" title={c.target}>{c.target}</p>
+                  {c.type === 'WEBHOOK' && c.signingSecret ? (
+                    <div className="mt-1 flex items-center gap-2 pl-6 text-xs text-muted">
+                      <span className="inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-accent">
+                        <Key className="size-3" /> HMAC-SHA256
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copySecret(c.id, c.signingSecret!)}
+                        className="inline-flex items-center gap-1 text-ink-2 hover:text-ink hover:underline"
+                        title="Copiar clave secreta de firma criptográfica"
+                      >
+                        {copiedId === c.id ? <Check className="size-3 text-good" /> : <Copy className="size-3" />}
+                        {copiedId === c.id ? '¡Copiado!' : 'Copiar secreto'}
+                      </button>
+                    </div>
+                  ) : null}
                 </Td>
                 <Td className="hidden md:table-cell"><SeverityBadge severity={c.minSeverity} /></Td>
                 <Td className="hidden text-xs sm:table-cell">
@@ -271,6 +298,7 @@ function ChannelModal({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<AlertChannelType>('WEBHOOK');
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
+  const [signingSecret, setSigningSecret] = useState('');
   const [minSeverity, setMinSeverity] = useState<Severity>('HIGH');
   const [error, setError] = useState<string | null>(null);
 
@@ -278,7 +306,13 @@ function ChannelModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     setError(null);
     try {
-      await create.mutateAsync({ type, name: name.trim(), target: target.trim(), minSeverity });
+      await create.mutateAsync({
+        type,
+        name: name.trim(),
+        target: target.trim(),
+        minSeverity,
+        signingSecret: type === 'WEBHOOK' && signingSecret.trim() ? signingSecret.trim() : undefined,
+      });
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear el canal.');
@@ -333,6 +367,21 @@ function ChannelModal({ onClose }: { onClose: () => void }) {
               : 'Solo HTTPS. Los webhooks de Slack y Discord se formatean automáticamente; cualquier otra URL recibe un JSON con la alerta. La URL se guarda y se muestra enmascarada.'}
           </p>
         </div>
+        {type === 'WEBHOOK' ? (
+          <div>
+            <Label htmlFor="ch-secret" hint="(opcional)">Secreto de firma HMAC-SHA256</Label>
+            <Input
+              id="ch-secret"
+              value={signingSecret}
+              onChange={(e) => setSigningSecret(e.target.value)}
+              maxLength={64}
+              placeholder="Dejar vacío para generar automáticamente una clave segura"
+            />
+            <p className="mt-1 text-xs text-muted">
+              Se enviará en la cabecera <code className="font-mono text-ink">X-SSPM-Signature</code> para verificar la autenticidad del remitente en tu receptor.
+            </p>
+          </div>
+        ) : null}
         <div>
           <Label htmlFor="ch-severity">Notificar desde</Label>
           <Select id="ch-severity" value={minSeverity} onChange={(e) => setMinSeverity(e.target.value as Severity)}>

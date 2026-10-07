@@ -21,6 +21,7 @@ export interface ChannelTarget {
   type: AlertChannelType;
   name: string;
   target: string;
+  signingSecret?: string | null;
 }
 
 export function parseRecipients(target: string): string[] {
@@ -78,6 +79,7 @@ export class AlertNotifierService {
       const result = await postWebhook(channel.target, buildWebhookBody(webhookFormat(new URL(channel.target)), msg), {
         allowPrivate: this.allowPrivate,
         timeoutMs: this.timeoutMs,
+        signingSecret: channel.signingSecret,
       });
       return result.ok
         ? { ...base, status: 'SENT', detail: result.detail, at: at() }
