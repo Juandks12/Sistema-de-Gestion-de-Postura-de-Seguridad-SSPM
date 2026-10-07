@@ -1,6 +1,10 @@
 import { FindingCategory, FindingSeverity, FindingStatus, Prisma } from '@prisma/client';
-import { FindingsService } from './findings.service';
+import { AuditService } from '../audit/audit.service';
+import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { UTF8_BOM } from '../common/utils/csv';
+import { PrismaService } from '../prisma/prisma.service';
+import { RiskScoresService } from '../risk/risk-scores.service';
+import { FindingsService } from './findings.service';
 
 describe('FindingsService - exportStream', () => {
   let service: FindingsService;
