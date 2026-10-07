@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { AuditService } from '../src/audit/audit.service';
 import { PrismaClientExceptionFilter } from '../src/common/filters/prisma-exception.filter';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -13,6 +14,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 describe('Assets (e2e) - RF-01 y aislamiento multi-tenant', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let audit: AuditService;
   const suffix = Date.now();
   const orgIds: string[] = [];
 
@@ -40,6 +42,7 @@ describe('Assets (e2e) - RF-01 y aislamiento multi-tenant', () => {
     app.useGlobalFilters(new PrismaClientExceptionFilter());
     await app.init();
     prisma = app.get(PrismaService);
+    audit = app.get(AuditService);
 
     const a = await register(`Org A ${suffix}`, `admin-a-${suffix}@test.local`);
     tokenAdminA = a.accessToken;
@@ -173,7 +176,7 @@ describe('Assets (e2e) - RF-01 y aislamiento multi-tenant', () => {
       .expect(404);
   });
 
-  it('solo ADMIN elimina activos', async () => {
+  it('solo ADMIN elimina activos y preserva la auditoria con balance de acciones', async () => {
     await request(app.getHttpServer())
       .delete(`/api/v1/assets/${assetIdA}`)
       .set('Authorization', `Bearer ${tokenViewerA}`)
@@ -181,10 +184,31 @@ describe('Assets (e2e) - RF-01 y aislamiento multi-tenant', () => {
     await request(app.getHttpServer())
       .delete(`/api/v1/assets/${assetIdA}`)
       .set('Authorization', `Bearer ${tokenAdminA}`)
+      .send({ reason: 'Servidor fuera de servicio' })
       .expect(204);
     await request(app.getHttpServer())
       .get(`/api/v1/assets/${assetIdA}`)
       .set('Authorization', `Bearer ${tokenAdminA}`)
       .expect(404);
+
+    await audit.flush();
+    const auditRes = await request(app.getHttpServer())
+      .get('/api/v1/audit-log')
+      .query({ action: 'asset.delete' })
+      .set('Authorization', `Bearer ${tokenAdminA}`)
+      .expect(200);
+
+    expect(auditRes.body.items).toHaveLength(1);
+    expect(auditRes.body.items[0]).toMatchObject({
+      action: 'asset.delete',
+      targetType: 'asset',
+      targetLabel: 'www.example.org',
+      detail: expect.objectContaining({
+        assetValue: 'www.example.org',
+        reason: 'Servidor fuera de servicio',
+        totalScans: 0,
+        totalFindings: 0,
+      }),
+    });
   });
 });
