@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { IsOptional, IsUUID } from 'class-validator';
@@ -69,5 +69,15 @@ export class FindingsController {
     @Body() dto: ReviewFindingDto,
   ) {
     return this.findings.review(user, id, dto);
+  }
+
+  @Post(':id/retest')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @ApiOperation({ summary: 'Re-test puntual de un hallazgo para comprobar si ya ha sido remediado' })
+  retest(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.findings.retest(user, id);
   }
 }

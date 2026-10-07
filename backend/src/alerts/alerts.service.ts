@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicati
 import { ConfigService } from '@nestjs/config';
 import { AlertChannelType, FindingSeverity, Prisma, ScanStatus, ScanType } from '@prisma/client';
 import { isEmail } from 'class-validator';
+import { randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import type { OpenedFinding } from '../findings/findings.service';
@@ -34,6 +35,7 @@ const channelSelect = {
   type: true,
   name: true,
   target: true,
+  signingSecret: true,
   minSeverity: true,
   isActive: true,
   lastDeliveryAt: true,
@@ -196,7 +198,7 @@ export class AlertsService implements OnApplicationShutdown {
       if (!alert) continue;
       const channels = await this.prisma.alertChannel.findMany({
         where: { organizationId: alert.organizationId, isActive: true },
-        select: { id: true, type: true, name: true, target: true, minSeverity: true },
+        select: { id: true, type: true, name: true, target: true, minSeverity: true, signingSecret: true },
         orderBy: { createdAt: 'asc' },
       });
       const eligible = channels.filter((c) => meetsThreshold(alert.severity, c.minSeverity));
@@ -341,12 +343,17 @@ export class AlertsService implements OnApplicationShutdown {
   }
 
   async createChannel(actor: AuthUser, dto: CreateAlertChannelDto) {
+    let signingSecret: string | null = null;
+    if (dto.type === AlertChannelType.WEBHOOK) {
+      signingSecret = dto.signingSecret ? dto.signingSecret.trim() : randomBytes(32).toString('hex');
+    }
     const channel = await this.prisma.alertChannel.create({
       data: {
         organizationId: actor.organizationId,
         type: dto.type,
         name: dto.name,
         target: this.normalizeTarget(dto.type, dto.target),
+        signingSecret,
         minSeverity: dto.minSeverity ?? FindingSeverity.HIGH,
         isActive: dto.isActive ?? true,
         createdById: actor.id,
@@ -366,7 +373,7 @@ export class AlertsService implements OnApplicationShutdown {
   private async findChannel(organizationId: string, id: string) {
     const channel = await this.prisma.alertChannel.findFirst({
       where: { id, organizationId },
-      select: { id: true, type: true, name: true, target: true },
+      select: { id: true, type: true, name: true, target: true, signingSecret: true },
     });
     if (!channel) throw new NotFoundException('Canal no encontrado');
     return channel;
@@ -380,6 +387,7 @@ export class AlertsService implements OnApplicationShutdown {
       data: {
         name: dto.name,
         target: dto.target === undefined ? undefined : this.normalizeTarget(existing.type, dto.target),
+        signingSecret: dto.signingSecret !== undefined ? (dto.signingSecret ? dto.signingSecret.trim() : null) : undefined,
         minSeverity: dto.minSeverity,
         isActive: dto.isActive,
       },
@@ -393,6 +401,7 @@ export class AlertsService implements OnApplicationShutdown {
       detail: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.target !== undefined ? { target: true } : {}),
+        ...(dto.signingSecret !== undefined ? { signingSecret: true } : {}),
         ...(dto.minSeverity !== undefined ? { minSeverity: dto.minSeverity } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },

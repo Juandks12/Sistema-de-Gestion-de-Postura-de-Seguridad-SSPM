@@ -1,5 +1,7 @@
 // Variables de entorno para las pruebas e2e (tienen prioridad sobre .env).
 process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:admin@localhost:5432/sspm_test?schema=public';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'secreto-de-prueba-para-entorno-e2e-123456';
 process.env.SCAN_WORKER_ENABLED = 'true';
 process.env.SCAN_POLL_INTERVAL_MS = '500';
 process.env.SCAN_MAX_CONCURRENCY = '2';

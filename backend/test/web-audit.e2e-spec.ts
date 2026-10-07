@@ -261,6 +261,34 @@ describe('Web audit (e2e) - cabeceras, TLS, rutas sensibles y hallazgos', () => 
     expect(reopened.find((f) => f.ruleId === 'HDR-HSTS-MISSING')!.id).toBe(hstsBefore.id);
   });
 
+  it('re-test puntual de hallazgos (POST /api/v1/findings/:id/retest)', async () => {
+    // Tomar un hallazgo abierto de ruta sensible (/.env)
+    const sensitive = await openFindings('SENSITIVE_PATH');
+    const envFinding = sensitive.find((f) => f.ruleId === 'PATH-SECRETS-EXPOSED')!;
+    expect(envFinding).toBeDefined();
+
+    // Servidor sin endurecer: el re-test rápido comprueba que sigue reproduciéndose
+    hardened = false;
+    const failRetest = await http_()
+      .post(`/api/v1/findings/${envFinding.id}/retest`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    expect(failRetest.body.stillReproducible).toBe(true);
+    expect(failRetest.body.finding.status).toBe('OPEN');
+    expect(failRetest.body.message).toContain('sigue presente');
+
+    // Se endurece el servidor (/.env ya no existe) y el re-test puntual lo resuelve directamente sin escaneo completo
+    hardened = true;
+    const successRetest = await http_()
+      .post(`/api/v1/findings/${envFinding.id}/retest`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    expect(successRetest.body.stillReproducible).toBe(false);
+    expect(successRetest.body.finding.status).toBe('RESOLVED');
+    expect(successRetest.body.finding.resolvedAt).not.toBeNull();
+    expect(successRetest.body.message).toContain('Verificación exitosa');
+  });
+
   it('la auditoría completa encola todos los tipos y omite los que ya están en curso', async () => {
     // El worker real puede completar el escaneo más rápido (típicamente PORT_SCAN
     // contra localhost) antes de la segunda petición, liberando el cupo de
