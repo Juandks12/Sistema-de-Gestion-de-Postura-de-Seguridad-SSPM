@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { gradeFor } from '../risk/scoring';
 import { CreateAssetDto } from './dto/create-asset.dto';
+import { DeleteAssetDto } from './dto/delete-asset.dto';
 import { ExportAssetsQuery } from './dto/export-assets.query';
 import { ListAssetsQuery } from './dto/list-assets.query';
 import { UpdateAssetDto } from './dto/update-asset.dto';
@@ -169,18 +170,102 @@ export class AssetsService {
     return updated;
   }
 
-  async remove(actor: AuthUser, id: string): Promise<void> {
+  async remove(actor: AuthUser, id: string, dto?: DeleteAssetDto): Promise<void> {
     const organizationId = actor.organizationId;
     const existing = await this.findOne(organizationId, id);
+
+    // Recopilar balance de acciones realizadas sobre el activo para el registro histórico inmutable de auditoría
+    const [
+      scansCount,
+      scansByType,
+      findingsCount,
+      findingsBySeverity,
+      findingsByStatus,
+      openPorts,
+      discoveredHostsCount,
+      latestRiskScore,
+    ] = await Promise.all([
+      this.prisma.scan.count({ where: { assetId: id } }),
+      this.prisma.scan.groupBy({
+        by: ['type'],
+        where: { assetId: id },
+        _count: { _all: true },
+      }),
+      this.prisma.finding.count({ where: { assetId: id } }),
+      this.prisma.finding.groupBy({
+        by: ['severity'],
+        where: { assetId: id },
+        _count: { _all: true },
+      }),
+      this.prisma.finding.groupBy({
+        by: ['status'],
+        where: { assetId: id },
+        _count: { _all: true },
+      }),
+      this.prisma.scanPort.findMany({
+        where: { assetId: id, state: 'open' },
+        select: { port: true, protocol: true, serviceName: true },
+        distinct: ['port', 'protocol'],
+      }),
+      this.prisma.discoveredHost.count({ where: { assetId: id } }),
+      this.prisma.riskScore.findFirst({
+        where: { organizationId, assetId: id },
+        orderBy: { computedAt: 'desc' },
+        select: { score: true, grade: true },
+      }),
+    ]);
+
+    const scansSummary = scansByType.reduce<Record<string, number>>((acc, curr) => {
+      acc[curr.type] = curr._count._all;
+      return acc;
+    }, {});
+
+    const findingsSeveritySummary = findingsBySeverity.reduce<Record<string, number>>((acc, curr) => {
+      acc[curr.severity] = curr._count._all;
+      return acc;
+    }, {});
+
+    const findingsStatusSummary = findingsByStatus.reduce<Record<string, number>>((acc, curr) => {
+      acc[curr.status] = curr._count._all;
+      return acc;
+    }, {});
+
+    const openPortsSummary = openPorts.map(
+      (p) => `${p.port}/${p.protocol}${p.serviceName ? ` (${p.serviceName})` : ''}`,
+    );
+
+    const detail: Record<string, unknown> = {
+      assetValue: existing.value,
+      assetName: existing.name ?? null,
+      assetType: existing.type,
+      criticality: existing.criticality,
+      tags: existing.tags && existing.tags.length > 0 ? existing.tags : null,
+      registeredAt: existing.createdAt.toISOString(),
+      verified: !!existing.verifiedAt,
+      verificationMethod: existing.verificationMethod ?? null,
+      lastScannedAt: existing.lastScannedAt ? existing.lastScannedAt.toISOString() : null,
+      reason: dto?.reason?.trim() || null,
+      totalScans: scansCount,
+      scansByType: Object.keys(scansSummary).length > 0 ? scansSummary : null,
+      totalFindings: findingsCount,
+      findingsBySeverity: Object.keys(findingsSeveritySummary).length > 0 ? findingsSeveritySummary : null,
+      findingsByStatus: Object.keys(findingsStatusSummary).length > 0 ? findingsStatusSummary : null,
+      openPorts: openPortsSummary.length > 0 ? openPortsSummary : null,
+      discoveredSubdomainsCount: discoveredHostsCount > 0 ? discoveredHostsCount : null,
+      lastScore: latestRiskScore ? `${latestRiskScore.score} (${latestRiskScore.grade})` : null,
+    };
+
     await this.prisma.$transaction(async (tx) => {
       await tx.asset.delete({ where: { id } });
       await this.riskScores.snapshotOrganization(tx, organizationId, RiskScoreTrigger.ASSET_CHANGED);
     });
+
     this.audit.record({
       organizationId,
       action: 'asset.delete',
       actor,
       target: { type: 'asset', id: existing.id, label: existing.value },
+      detail,
     });
   }
 

@@ -157,7 +157,17 @@ export function useUpdateAsset() {
 
 export function useDeleteAsset() {
   const invalidate = useInvalidateAll();
-  return useMutation({ mutationFn: (id: string) => api<void>(`/assets/${id}`, { method: 'DELETE' }), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (arg: string | { id: string; reason?: string }) => {
+      const id = typeof arg === 'string' ? arg : arg.id;
+      const reason = typeof arg === 'string' ? undefined : arg.reason;
+      return api<void>(`/assets/${id}`, {
+        method: 'DELETE',
+        json: reason ? { reason } : undefined,
+      });
+    },
+    onSuccess: invalidate,
+  });
 }
 
 export interface AuditResult {
