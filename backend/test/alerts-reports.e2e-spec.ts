@@ -6,6 +6,7 @@ import { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import request from 'supertest';
 import { AlertsService } from '../src/alerts/alerts.service';
+import { AuditService } from '../src/audit/audit.service';
 import { PrismaClientExceptionFilter } from '../src/common/filters/prisma-exception.filter';
 import { MonitoringScheduler } from '../src/monitoring/monitoring.scheduler';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -295,6 +296,7 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
         nextRetryAt: null,
       });
 
+      await app.get(AuditService).flush();
       const audit = await http_().get('/api/v1/audit-log').set(auth(admin)).expect(200);
       expect(audit.body.items.some((i: any) => i.action === 'alert.retry')).toBe(true);
     });
@@ -326,6 +328,7 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
       expect(after.body.lastRunAt).not.toBeNull();
       expect(after.body.lastResult).toBeDefined();
 
+      await app.get(AuditService).flush();
       const audit = await http_().get('/api/v1/audit-log').set(auth(admin)).expect(200);
       expect(audit.body.items.some((i: any) => i.action === 'system.retention_cleanup')).toBe(true);
     });
