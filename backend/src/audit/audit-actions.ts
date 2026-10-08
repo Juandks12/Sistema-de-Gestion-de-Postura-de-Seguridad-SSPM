@@ -27,8 +27,10 @@ export const AUDIT_ACTIONS = {
   'alert_channel.create': 'Canal de alertas creado',
   'alert_channel.update': 'Canal de alertas modificado',
   'alert_channel.delete': 'Canal de alertas eliminado',
+  'alert.retry': 'Reintento de entrega de alerta',
   'monitoring.update': 'Monitoreo continuo cambiado',
   'organization.update': 'Organización modificada',
+  'system.retention_cleanup': 'Purga de retención de datos ejecutada',
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

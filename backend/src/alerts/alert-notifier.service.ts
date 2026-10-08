@@ -14,6 +14,9 @@ export interface DeliveryResult {
   detail?: string;
   error?: string;
   at: string;
+  attempts?: number;
+  lastAttemptAt?: string;
+  nextRetryAt?: string | null;
 }
 
 export interface ChannelTarget {

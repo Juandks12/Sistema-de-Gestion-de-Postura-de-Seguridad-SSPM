@@ -1,4 +1,4 @@
-import { CalendarClock, Check, Copy, Key, Mail, Plus, Send, Trash2, Webhook } from 'lucide-react';
+import { CalendarClock, Check, Copy, Database, Key, Mail, Plus, Send, Trash2, Webhook } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '@/auth/useAuth';
 import { Alert } from '@/components/ui/Alert';
@@ -16,6 +16,8 @@ import {
   useCreateChannel,
   useDeleteChannel,
   useMonitoring,
+  useRetentionStatus,
+  useRunRetention,
   useTestChannel,
   useUpdateChannel,
   useUpdateMonitoring,
@@ -34,9 +36,10 @@ export function SettingsPage() {
   }
   return (
     <>
-      <PageHeader title="Configuración" description="Monitoreo continuo de los activos y canales por los que se notifican las alertas." />
+      <PageHeader title="Configuración" description="Monitoreo continuo de los activos, canales de alerta y políticas de retención de datos." />
       <MonitoringCard />
       <ChannelsCard />
+      <DataRetentionCard />
     </>
   );
 }
@@ -397,3 +400,96 @@ function ChannelModal({ onClose }: { onClose: () => void }) {
     </Modal>
   );
 }
+
+function DataRetentionCard() {
+  const q = useRetentionStatus();
+  const run = useRunRetention();
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleRun = async () => {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await run.mutateAsync();
+      const total = res.scansPurged + res.scanPortsPurged + res.tokensPurged + res.loginAttemptsPurged + res.auditLogsPurged + res.reportsPurged;
+      setSuccessMsg(
+        `Limpieza completada con éxito. Se depuraron ${total} registro(s) expirados (${res.scansPurged} escaneos, ${res.scanPortsPurged} puertos, ${res.tokensPurged} tokens, ${res.loginAttemptsPurged} intentos de login, ${res.auditLogsPurged} logs de auditoría, ${res.reportsPurged} reportes).`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo ejecutar la limpieza de datos.');
+    }
+  };
+
+  const data = q.data;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Política de retención de datos"
+        subtitle="Control automático de ciclo de vida de escaneos históricos, logs de auditoría, reportes y sesiones para optimizar almacenamiento y resiliencia."
+        action={
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Database className="size-4" />}
+            onClick={handleRun}
+            loading={run.isPending}
+            disabled={!data?.enabled}
+          >
+            Ejecutar limpieza ahora
+          </Button>
+        }
+      />
+      <CardBody>
+        {q.isPending || !data ? (
+          <Skeleton className="h-24" />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border border-border bg-surface-2/40 p-3">
+                <span className="text-xs text-muted">Escaneos históricos</span>
+                <p className="mt-1 text-base font-semibold text-ink">{data.scansRetentionDays} días</p>
+                <p className="mt-0.5 text-xs text-ink-2">Se conserva siempre el último escaneo de cada activo.</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface-2/40 p-3">
+                <span className="text-xs text-muted">Auditoría de eventos</span>
+                <p className="mt-1 text-base font-semibold text-ink">{data.auditRetentionDays} días</p>
+                <p className="mt-0.5 text-xs text-ink-2">Logs de acciones administrativas y de seguridad.</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface-2/40 p-3">
+                <span className="text-xs text-muted">Tokens y sesiones temporales</span>
+                <p className="mt-1 text-base font-semibold text-ink">{data.tokensRetentionDays} días</p>
+                <p className="mt-0.5 text-xs text-ink-2">Tokens de activación, recuperación e intentos obsoletos.</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface-2/40 p-3">
+                <span className="text-xs text-muted">Reportes generados</span>
+                <p className="mt-1 text-base font-semibold text-ink">{data.reportsRetentionDays} días</p>
+                <p className="mt-0.5 text-xs text-ink-2">Histórico de informes ejecutivos y técnicos generados.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-ink-2">
+              <div>
+                <span className="font-medium text-ink">Estado de la retención: </span>
+                {data.enabled ? (
+                  <span className="inline-flex items-center text-good-text font-medium">Activa (automática cada 24 horas)</span>
+                ) : (
+                  <span className="text-muted">Desactivada por configuración de entorno</span>
+                )}
+              </div>
+              <div>
+                <span className="font-medium text-ink">Última ejecución: </span>
+                {data.lastRunAt ? formatDateTime(data.lastRunAt) : 'Pendiente del primer ciclo'}
+              </div>
+            </div>
+
+            {error ? <Alert kind="error">{error}</Alert> : null}
+            {successMsg ? <Alert kind="info">{successMsg}</Alert> : null}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+

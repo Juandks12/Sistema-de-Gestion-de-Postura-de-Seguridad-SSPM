@@ -88,11 +88,11 @@ RUN npm ci --omit=dev \
 # ---------------------------------------------------------------------------
 FROM base AS production
 ENV NODE_ENV=production
-COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/dist-seed ./dist-seed
-COPY package.json ./
-COPY prisma ./prisma
+COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
+COPY --chown=node:node --from=build /app/dist ./dist
+COPY --chown=node:node --from=build /app/dist-seed ./dist-seed
+COPY --chown=node:node package.json ./
+COPY --chown=node:node prisma ./prisma
 # La API y Nmap (escaneo -sT, sin privilegios) se ejecutan como usuario "node".
 USER node
 EXPOSE 3000

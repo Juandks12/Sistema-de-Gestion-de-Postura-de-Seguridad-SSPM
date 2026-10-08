@@ -94,4 +94,34 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...base, PASSWORD_RESET_TTL_MINUTES: '1' })).toThrow();
     expect(() => validateEnv({ ...base, INVITATION_TTL_HOURS: '0' })).toThrow();
   });
+
+  it('aplica los valores por defecto de reintentos de alertas y retención de datos', () => {
+    expect(validateEnv({ ...base })).toMatchObject({
+      ALERT_MAX_RETRIES: 3,
+      ALERT_RETRY_BASE_MS: 60000,
+      RETENTION_ENABLED: true,
+      RETENTION_SCANS_DAYS: 90,
+      RETENTION_AUDIT_DAYS: 365,
+      RETENTION_TOKENS_DAYS: 30,
+      RETENTION_REPORTS_DAYS: 180,
+    });
+    expect(
+      validateEnv({
+        ...base,
+        ALERT_MAX_RETRIES: '5',
+        ALERT_RETRY_BASE_MS: '30000',
+        RETENTION_ENABLED: 'false',
+        RETENTION_SCANS_DAYS: '180',
+        RETENTION_AUDIT_DAYS: '0',
+      }),
+    ).toMatchObject({
+      ALERT_MAX_RETRIES: 5,
+      ALERT_RETRY_BASE_MS: 30000,
+      RETENTION_ENABLED: false,
+      RETENTION_SCANS_DAYS: 180,
+      RETENTION_AUDIT_DAYS: 0,
+    });
+    expect(() => validateEnv({ ...base, ALERT_MAX_RETRIES: '0' })).toThrow();
+    expect(() => validateEnv({ ...base, RETENTION_TOKENS_DAYS: '0' })).toThrow();
+  });
 });

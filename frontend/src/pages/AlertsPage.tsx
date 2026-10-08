@@ -1,4 +1,4 @@
-import { BellRing, CheckCheck, ChevronDown, ChevronRight, Globe, Lock, Network, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { BellRing, CheckCheck, ChevronDown, ChevronRight, Globe, Lock, Network, RefreshCw, ShieldAlert, type LucideIcon } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -11,7 +11,7 @@ import { Label, Select } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useAcknowledgeAlert, useAcknowledgeAllAlerts, useAlerts, useAlertsSummary } from '@/hooks/queries';
+import { useAcknowledgeAlert, useAcknowledgeAllAlerts, useAlerts, useAlertsSummary, useRetryAlert } from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ALERT_TYPE_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, formatDateTime, timeAgo } from '@/lib/format';
@@ -199,6 +199,7 @@ function DeliveriesSummary({ deliveries }: { deliveries: DeliveryResult[] | null
 
 function AlertDetail({ alert: a, canEdit }: { alert: AlertItem; canEdit: boolean }) {
   const ack = useAcknowledgeAlert();
+  const retry = useRetryAlert();
   const [error, setError] = useState<string | null>(null);
   const acknowledge = async () => {
     setError(null);
@@ -208,6 +209,17 @@ function AlertDetail({ alert: a, canEdit }: { alert: AlertItem; canEdit: boolean
       setError(err instanceof ApiError ? err.message : 'No se pudo marcar la alerta.');
     }
   };
+
+  const handleRetry = async () => {
+    setError(null);
+    try {
+      await retry.mutateAsync({ id: a.id });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo reintentar el envío.');
+    }
+  };
+
+  const hasFailed = a.deliveries?.some((d) => d.status === 'FAILED');
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -232,18 +244,31 @@ function AlertDetail({ alert: a, canEdit }: { alert: AlertItem; canEdit: boolean
               <li key={d.channelId} className="text-sm">
                 <span className={cn('mr-2 inline-flex rounded-md px-1.5 py-0.5 text-xs font-medium', DELIVERY_STYLE[d.status].cls)}>{DELIVERY_STYLE[d.status].label}</span>
                 <span className="text-ink">{d.channelName}</span>
-                {d.error ? <p className="mt-0.5 text-xs text-muted">{d.error}</p> : null}
+                {d.attempts && d.attempts > 1 ? (
+                  <span className="ml-1 text-xs text-muted">({d.attempts} intentos)</span>
+                ) : null}
+                {d.error ? <p className="mt-0.5 text-xs text-critical">{d.error}</p> : null}
+                {d.nextRetryAt ? (
+                  <p className="mt-0.5 text-xs text-ink-2">Próximo reintento: {formatDateTime(d.nextRetryAt)}</p>
+                ) : null}
               </li>
             ))}
           </ul>
         ) : (
           <p className="mt-1 text-sm text-ink-2">Ningún canal activo cubre esta severidad.</p>
         )}
-        {canEdit && !a.acknowledgedAt ? (
-          <Button size="sm" className="mt-3" icon={<CheckCheck className="size-4" />} onClick={acknowledge} loading={ack.isPending}>
-            Marcar como revisada
-          </Button>
-        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canEdit && !a.acknowledgedAt ? (
+            <Button size="sm" icon={<CheckCheck className="size-4" />} onClick={acknowledge} loading={ack.isPending}>
+              Marcar como revisada
+            </Button>
+          ) : null}
+          {canEdit && hasFailed ? (
+            <Button size="sm" variant="secondary" icon={<RefreshCw className="size-4" />} onClick={handleRetry} loading={retry.isPending}>
+              Reintentar envío
+            </Button>
+          ) : null}
+        </div>
         {error ? <Alert kind="error" className="mt-2">{error}</Alert> : null}
       </div>
     </div>

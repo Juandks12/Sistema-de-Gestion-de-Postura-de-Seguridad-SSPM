@@ -19,6 +19,8 @@ import type {
   MonitoringFrequency,
   MonitoringStatus,
   ReportRecord,
+  RetentionResult,
+  RetentionStatus,
   AssetDashboard,
   DashboardAsset,
   AuthResponse,
@@ -59,6 +61,7 @@ export const keys = {
   alertChannels: ['alert-channels'] as const,
   monitoring: ['monitoring'] as const,
   reports: ['reports'] as const,
+  retention: ['system', 'retention'] as const,
 };
 
 export function useOverview() {
@@ -288,6 +291,22 @@ export function useAcknowledgeAllAlerts() {
   });
 }
 
+export function useRetryAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, channelId }: { id: string; channelId?: string }) =>
+      api<AlertItem>(`/alerts/${id}/retry${channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''}`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] });
+      qc.invalidateQueries({ queryKey: ['alerts-summary'] });
+      qc.invalidateQueries({ queryKey: ['alert-channels'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
+  });
+}
+
 export function useAlertChannels(enabled = true) {
   return useQuery({
     queryKey: keys.alertChannels,
@@ -487,5 +506,28 @@ export function useAuditActions() {
     queryKey: keys.auditActions,
     queryFn: () => api<{ actions: Record<string, string> }>('/audit-log/actions'),
     staleTime: Infinity,
+  });
+}
+
+// ------------------------------------------------ retención de datos
+
+export function useRetentionStatus(enabled = true) {
+  return useQuery({
+    queryKey: keys.retention,
+    queryFn: () => api<RetentionStatus>('/system/retention'),
+    enabled,
+  });
+}
+
+export function useRunRetention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<RetentionResult>('/system/retention/run', { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.retention });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+      qc.invalidateQueries({ queryKey: ['scans'] });
+      qc.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
 }

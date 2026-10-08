@@ -78,4 +78,16 @@ export class AlertsController {
   acknowledge(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.alerts.acknowledge(user, id);
   }
+
+  @Post(':id/retry')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reintentar el envío de notificaciones fallidas para una alerta' })
+  retry(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.alerts.retry(user, id, channelId);
+  }
 }
