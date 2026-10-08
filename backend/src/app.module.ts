@@ -21,6 +21,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { ReportsModule } from './reports/reports.module';
+import { RetentionModule } from './retention/retention.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { ReportsModule } from './reports/reports.module';
     AlertsModule,
     MonitoringModule,
     ReportsModule,
+    RetentionModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).

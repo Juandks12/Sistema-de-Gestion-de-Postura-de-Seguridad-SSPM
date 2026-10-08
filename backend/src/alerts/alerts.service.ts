@@ -15,6 +15,17 @@ import { maskUrl, NotificationMessage, validateWebhookUrl } from './webhook';
 
 const MAX_RECIPIENTS = 20;
 
+export function calculateNextRetry(
+  attempts: number,
+  maxRetries: number,
+  baseMs: number,
+  now: Date = new Date(),
+): string | null {
+  if (attempts >= maxRetries) return null;
+  const delayMs = baseMs * Math.pow(2, attempts - 1);
+  return new Date(now.getTime() + delayMs).toISOString();
+}
+
 const alertSelect = {
   id: true,
   type: true,
@@ -81,6 +92,14 @@ export class AlertsService implements OnApplicationShutdown {
 
   private get allowPrivate(): boolean {
     return this.config.get<boolean>('ALLOW_PRIVATE_TARGETS') === true;
+  }
+
+  private get maxRetries(): number {
+    return this.config.get<number>('ALERT_MAX_RETRIES') ?? 3;
+  }
+
+  private get retryBaseMs(): number {
+    return this.config.get<number>('ALERT_RETRY_BASE_MS') ?? 60000;
   }
 
   private appUrl(path: string): string {
@@ -219,6 +238,12 @@ export class AlertsService implements OnApplicationShutdown {
       const results: DeliveryResult[] = [];
       for (const channel of eligible) {
         const result = await this.notifier.send(channel, msg);
+        result.attempts = 1;
+        result.lastAttemptAt = result.at;
+        result.nextRetryAt =
+          result.status === 'FAILED'
+            ? calculateNextRetry(1, this.maxRetries, this.retryBaseMs, new Date(result.at))
+            : null;
         results.push(result);
         await this.recordChannelDelivery(channel.id, result);
       }
@@ -238,6 +263,221 @@ export class AlertsService implements OnApplicationShutdown {
         lastDeliveryError: result.error ? result.error.slice(0, 500) : null,
       },
     });
+  }
+
+  /**
+   * Reintenta automáticamente las entregas fallidas de alertas que ya cumplieron su tiempo de espera.
+   * Llamado de forma periódica por el planificador (MonitoringScheduler).
+   */
+  async retryFailedDeliveries(now: Date = new Date()): Promise<{
+    alertsChecked: number;
+    deliveriesRetried: number;
+    succeeded: number;
+    failed: number;
+  }> {
+    const cutoff = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const alerts = await this.prisma.alert.findMany({
+      where: {
+        createdAt: { gte: cutoff },
+        deliveries: { not: Prisma.JsonNull },
+        organization: { isActive: true },
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        type: true,
+        severity: true,
+        title: true,
+        message: true,
+        createdAt: true,
+        deliveries: true,
+        asset: { select: { id: true, value: true, name: true } },
+        organization: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    let deliveriesRetried = 0;
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const alert of alerts) {
+      if (!Array.isArray(alert.deliveries)) continue;
+      const deliveries = alert.deliveries as unknown as DeliveryResult[];
+      let updated = false;
+
+      for (const item of deliveries) {
+        const attempts = item.attempts ?? 1;
+        const isFailed = item.status === 'FAILED';
+        const isDue = !item.nextRetryAt || new Date(item.nextRetryAt) <= now;
+
+        if (!isFailed || attempts >= this.maxRetries || !isDue) {
+          continue;
+        }
+
+        const channel = await this.prisma.alertChannel.findFirst({
+          where: { id: item.channelId, organizationId: alert.organizationId, isActive: true },
+          select: { id: true, type: true, name: true, target: true, signingSecret: true },
+        });
+
+        if (!channel) {
+          item.status = 'SKIPPED';
+          item.error = 'Canal inactivo o eliminado';
+          item.nextRetryAt = null;
+          updated = true;
+          continue;
+        }
+
+        deliveriesRetried += 1;
+        const msg: NotificationMessage = {
+          kind: 'alert',
+          alertId: alert.id,
+          type: alert.type,
+          severity: alert.severity,
+          title: alert.title,
+          message: alert.message,
+          organizationName: alert.organization.name,
+          asset: alert.asset,
+          url: this.appUrl(alert.asset ? `/assets/${alert.asset.id}` : '/alerts'),
+          createdAt: alert.createdAt,
+        };
+
+        const result = await this.notifier.send(channel, msg);
+        const nextAttempts = attempts + 1;
+        item.attempts = nextAttempts;
+        item.lastAttemptAt = result.at;
+
+        if (result.status === 'SENT') {
+          item.status = 'SENT';
+          item.detail = result.detail;
+          item.error = undefined;
+          item.nextRetryAt = null;
+          succeeded += 1;
+        } else {
+          item.status = 'FAILED';
+          item.error = result.error;
+          item.nextRetryAt = calculateNextRetry(nextAttempts, this.maxRetries, this.retryBaseMs, new Date(result.at));
+          failed += 1;
+        }
+        await this.recordChannelDelivery(channel.id, result);
+        updated = true;
+      }
+
+      if (updated) {
+        await this.prisma.alert.update({
+          where: { id: alert.id },
+          data: { deliveries: deliveries as unknown as Prisma.InputJsonValue },
+        });
+      }
+    }
+
+    return {
+      alertsChecked: alerts.length,
+      deliveriesRetried,
+      succeeded,
+      failed,
+    };
+  }
+
+  /**
+   * Reintento manual bajo demanda de canales fallidos para una alerta específica.
+   */
+  async retry(actor: AuthUser, alertId: string, channelId?: string) {
+    const alert = await this.prisma.alert.findFirst({
+      where: { id: alertId, organizationId: actor.organizationId },
+      select: {
+        id: true,
+        organizationId: true,
+        type: true,
+        severity: true,
+        title: true,
+        message: true,
+        createdAt: true,
+        deliveries: true,
+        asset: { select: { id: true, value: true, name: true } },
+        organization: { select: { name: true } },
+      },
+    });
+    if (!alert) {
+      throw new NotFoundException('Alerta no encontrada');
+    }
+
+    if (!Array.isArray(alert.deliveries) || alert.deliveries.length === 0) {
+      throw new BadRequestException('Esta alerta no tiene canales de entrega registrados');
+    }
+
+    const deliveries = alert.deliveries as unknown as DeliveryResult[];
+    const targets = deliveries.filter((d) => {
+      if (channelId && d.channelId !== channelId) return false;
+      return d.status === 'FAILED';
+    });
+
+    if (targets.length === 0) {
+      throw new BadRequestException('No hay entregas fallidas para reintentar en esta alerta');
+    }
+
+    const msg: NotificationMessage = {
+      kind: 'alert',
+      alertId: alert.id,
+      type: alert.type,
+      severity: alert.severity,
+      title: alert.title,
+      message: alert.message,
+      organizationName: alert.organization.name,
+      asset: alert.asset,
+      url: this.appUrl(alert.asset ? `/assets/${alert.asset.id}` : '/alerts'),
+      createdAt: alert.createdAt,
+    };
+
+    for (const item of targets) {
+      const channel = await this.prisma.alertChannel.findFirst({
+        where: { id: item.channelId, organizationId: alert.organizationId, isActive: true },
+        select: { id: true, type: true, name: true, target: true, signingSecret: true },
+      });
+      if (!channel) {
+        item.status = 'SKIPPED';
+        item.error = 'Canal inactivo o eliminado';
+        item.nextRetryAt = null;
+        continue;
+      }
+
+      const nextAttempts = (item.attempts ?? 0) + 1;
+      const result = await this.notifier.send(channel, msg);
+      item.attempts = nextAttempts;
+      item.lastAttemptAt = result.at;
+
+      if (result.status === 'SENT') {
+        item.status = 'SENT';
+        item.detail = result.detail;
+        item.error = undefined;
+        item.nextRetryAt = null;
+      } else {
+        item.status = 'FAILED';
+        item.error = result.error;
+        item.nextRetryAt = calculateNextRetry(nextAttempts, this.maxRetries, this.retryBaseMs, new Date(result.at));
+      }
+      await this.recordChannelDelivery(channel.id, result);
+    }
+
+    const updated = await this.prisma.alert.update({
+      where: { id: alert.id },
+      data: { deliveries: deliveries as unknown as Prisma.InputJsonValue },
+      select: alertSelect,
+    });
+
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'alert.retry',
+      actor,
+      target: { type: 'alert', id: alert.id, label: alert.title },
+      detail: {
+        channelId: channelId ?? 'all',
+        retriedCount: targets.length,
+      },
+    });
+
+    return updated;
   }
 
   // ---------------------------------------------------------------- consultas

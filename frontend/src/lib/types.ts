@@ -296,6 +296,9 @@ export interface DeliveryResult {
   detail?: string;
   error?: string;
   at: string;
+  attempts?: number;
+  lastAttemptAt?: string;
+  nextRetryAt?: string | null;
 }
 
 export interface AlertItem {
@@ -541,4 +544,25 @@ export interface AuditEntry {
   detail: Record<string, unknown> | null;
   ip: string | null;
   createdAt: string;
+}
+
+export interface RetentionResult {
+  executedAt: string;
+  triggeredBy: string;
+  scansPurged: number;
+  scanPortsPurged: number;
+  tokensPurged: number;
+  loginAttemptsPurged: number;
+  auditLogsPurged: number;
+  reportsPurged: number;
+}
+
+export interface RetentionStatus {
+  enabled: boolean;
+  scansRetentionDays: number;
+  auditRetentionDays: number;
+  tokensRetentionDays: number;
+  reportsRetentionDays: number;
+  lastRunAt: string | null;
+  lastResult: RetentionResult | null;
 }

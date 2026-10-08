@@ -69,7 +69,10 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
     const deadline = Date.now() + 15000;
     for (;;) {
       const scan = await http_().get(`/api/v1/scans/${res.body.id}`).set(auth(admin)).expect(200);
-      if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(scan.body.status)) return scan.body;
+      if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(scan.body.status)) {
+        await new Promise((r) => setTimeout(r, 200));
+        return scan.body;
+      }
       if (Date.now() > deadline) throw new Error('El escaneo no terminó a tiempo');
       await new Promise((r) => setTimeout(r, 100));
     }
@@ -261,6 +264,70 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
       await http_().post(`/api/v1/alerts/${alertId}/acknowledge`).set(auth(otherOrg)).expect(404);
       await http_().patch(`/api/v1/alerts/channels/${webhookChannelId}`).set(auth(otherOrg)).send({ isActive: false }).expect(404);
       await http_().post(`/api/v1/alerts/channels/${webhookChannelId}/test`).set(auth(otherOrg)).expect(404);
+    });
+
+    it('reintento manual de entrega (POST /api/v1/alerts/:id/retry)', async () => {
+      await prisma.alert.update({
+        where: { id: alertId },
+        data: {
+          deliveries: [
+            {
+              channelId: webhookChannelId,
+              channelType: 'WEBHOOK',
+              channelName: 'Webhook test',
+              status: 'FAILED',
+              error: 'Connection timeout',
+              at: new Date(Date.now() - 120000).toISOString(),
+              attempts: 1,
+              nextRetryAt: new Date(Date.now() - 60000).toISOString(),
+            },
+          ],
+        },
+      });
+
+      await http_().post(`/api/v1/alerts/${alertId}/retry`).set(auth(viewer)).expect(403);
+
+      const retried = await http_().post(`/api/v1/alerts/${alertId}/retry`).set(auth(admin)).expect(200);
+      expect(retried.body.deliveries[0]).toMatchObject({
+        channelId: webhookChannelId,
+        status: 'SENT',
+        attempts: 2,
+        nextRetryAt: null,
+      });
+
+      const audit = await http_().get('/api/v1/audit-log').set(auth(admin)).expect(200);
+      expect(audit.body.items.some((i: any) => i.action === 'alert.retry')).toBe(true);
+    });
+  });
+
+  describe('política de retención de datos (Data Retention)', () => {
+    it('solo ADMIN consulta y ejecuta la purga de datos históricos', async () => {
+      await http_().get('/api/v1/system/retention').set(auth(viewer)).expect(403);
+      await http_().post('/api/v1/system/retention/run').set(auth(viewer)).expect(403);
+
+      const status = await http_().get('/api/v1/system/retention').set(auth(admin)).expect(200);
+      expect(status.body).toMatchObject({
+        enabled: true,
+        scansRetentionDays: 90,
+        auditRetentionDays: 365,
+        tokensRetentionDays: 30,
+        reportsRetentionDays: 180,
+      });
+
+      const run = await http_().post('/api/v1/system/retention/run').set(auth(admin)).expect(200);
+      expect(run.body).toMatchObject({
+        triggeredBy: `alert-${suffix}@test.local`,
+        scansPurged: expect.any(Number),
+        tokensPurged: expect.any(Number),
+        auditLogsPurged: expect.any(Number),
+      });
+
+      const after = await http_().get('/api/v1/system/retention').set(auth(admin)).expect(200);
+      expect(after.body.lastRunAt).not.toBeNull();
+      expect(after.body.lastResult).toBeDefined();
+
+      const audit = await http_().get('/api/v1/audit-log').set(auth(admin)).expect(200);
+      expect(audit.body.items.some((i: any) => i.action === 'system.retention_cleanup')).toBe(true);
     });
   });
 
