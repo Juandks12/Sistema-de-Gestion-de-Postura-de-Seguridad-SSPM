@@ -229,6 +229,20 @@ class EnvironmentVariables {
   @IsOptional()
   ALERT_DELIVERY_TIMEOUT_MS: number = 10000;
 
+  /** Número máximo de reintentos para notificaciones de alerta fallidas. */
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  @IsOptional()
+  ALERT_MAX_RETRIES: number = 3;
+
+  /** Intervalo base (en ms) para el backoff exponencial de reintentos de alerta. */
+  @IsInt()
+  @Min(1000)
+  @Max(3600000)
+  @IsOptional()
+  ALERT_RETRY_BASE_MS: number = 60000;
+
   // ------------------------------------------------------------------
   // Verificación de propiedad de activos (sección 1.6.3)
   // ------------------------------------------------------------------
@@ -346,6 +360,44 @@ class EnvironmentVariables {
   @Max(5000)
   @IsOptional()
   SUBDOMAIN_DISCOVERY_MAX_HOSTS: number = 500;
+
+  // ------------------------------------------------------------------
+  // Política de retención de datos y purga histórica
+  // ------------------------------------------------------------------
+
+  /** Habilita la purga automática periódica de datos históricos antiguos. */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  RETENTION_ENABLED: boolean = true;
+
+  /** Días de retención para escaneos completados/fallidos y sus puertos (0 = no purgar). */
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  @IsOptional()
+  RETENTION_SCANS_DAYS: number = 90;
+
+  /** Días de retención para registros de auditoría (0 = no purgar). */
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  @IsOptional()
+  RETENTION_AUDIT_DAYS: number = 365;
+
+  /** Días de retención para tokens de cuenta expirados o usados. */
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  @IsOptional()
+  RETENTION_TOKENS_DAYS: number = 30;
+
+  /** Días de retención para metadatos de reportes PDF generados (0 = no purgar). */
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  @IsOptional()
+  RETENTION_REPORTS_DAYS: number = 180;
 }
 
 function toBoolean(value: unknown): unknown {

@@ -1,7 +1,9 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MonitoringFrequency, Prisma, ScanSource } from '@prisma/client';
+import { AlertsService } from '../alerts/alerts.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RetentionService } from '../retention/retention.service';
 import { ScansService } from '../scans/scans.service';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -45,11 +47,14 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
   private readonly logger = new Logger(MonitoringScheduler.name);
   private timer?: NodeJS.Timeout;
   private running = false;
+  private lastRetentionCheck = 0;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly scans: ScansService,
+    private readonly alerts: AlertsService,
+    private readonly retention: RetentionService,
   ) {}
 
   get enabled(): boolean {
@@ -79,11 +84,34 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
     if (this.running) return;
     this.running = true;
     try {
-      const result = await this.runOnce();
+      const now = new Date();
+      const result = await this.runOnce(now);
       if (result.claimed > 0) {
         this.logger.log(
           `Monitoreo continuo: ${result.claimed} activo(s) reauditado(s), ${result.queuedScans} escaneo(s) encolado(s)`,
         );
+      }
+
+      // Reintentos automáticos de alertas con backoff exponencial
+      try {
+        const retryRes = await this.alerts.retryFailedDeliveries(now);
+        if (retryRes.deliveriesRetried > 0) {
+          this.logger.log(
+            `Reintentos de alertas: ${retryRes.deliveriesRetried} procesada(s), ${retryRes.succeeded} exitosa(s), ${retryRes.failed} fallida(s)`,
+          );
+        }
+      } catch (alertErr) {
+        this.logger.warn(`Error procesando reintentos de alertas: ${(alertErr as Error).message}`);
+      }
+
+      // Purga de retención de datos periódica (cada 24 horas)
+      if (Date.now() - this.lastRetentionCheck > 24 * HOUR_MS) {
+        this.lastRetentionCheck = Date.now();
+        try {
+          await this.retention.runRetention(null, now);
+        } catch (retentionErr) {
+          this.logger.warn(`Error en purga de retención de datos: ${(retentionErr as Error).message}`);
+        }
       }
     } catch (err) {
       this.logger.error(`Error en el monitoreo continuo: ${(err as Error).message}`);
