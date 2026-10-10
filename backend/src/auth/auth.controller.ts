@@ -6,7 +6,18 @@ import { Public } from '../common/decorators/public.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AccountTokensService } from './account-tokens.service';
 import { AuthService } from './auth.service';
-import { AcceptInvitationDto, DisableMfaDto, ForgotPasswordDto, MfaCodeDto, MfaLoginDto, ResetPasswordWithTokenDto } from './dto/account.dto';
+import {
+  AcceptInvitationDto,
+  ConfirmEmailChangeDto,
+  DisableMfaDto,
+  ForgotPasswordDto,
+  MfaCodeDto,
+  MfaLoginDto,
+  RequestEmailChangeDto,
+  ResendVerificationDto,
+  ResetPasswordWithTokenDto,
+  VerifyEmailDto,
+} from './dto/account.dto';
 import { MfaService } from './mfa.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
@@ -29,8 +40,10 @@ export class AuthController {
   @ApiResponse({ status: 201, description: 'Organización creada. Devuelve el token de acceso.' })
   @ApiResponse({ status: 409, description: 'El correo ya está registrado.' })
   @ApiResponse({ status: 429, description: 'Demasiados registros desde la misma IP.' })
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto);
+  async register(@Body() dto: RegisterDto) {
+    const res = await this.auth.register(dto);
+    await this.accountTokens.sendRegistrationVerification(res.user);
+    return res;
   }
 
   @Public()
@@ -167,4 +180,60 @@ export class AuthController {
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
     return this.auth.changePassword(user, dto);
   }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ register: true, forgot: true })
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verificar correo electrónico con el token del enlace' })
+  @ApiResponse({ status: 200, description: 'Correo electrónico verificado exitosamente.' })
+  @ApiResponse({ status: 400, description: 'Token inválido o caducado.' })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.accountTokens.verifyEmail(dto.token);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ register: true, forgot: true })
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reenviar enlace de verificación de correo' })
+  @ApiResponse({ status: 200, description: 'Enlace enviado si la cuenta existe.' })
+  resendVerification(@Body() dto: ResendVerificationDto, @CurrentUser() user?: AuthUser) {
+    return this.accountTokens.resendVerification(dto.email, user);
+  }
+
+  @Post('me/change-email')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Solicitar cambio de correo electrónico propio (requiere contraseña actual)' })
+  @ApiResponse({ status: 200, description: 'Confirmación enviada al nuevo correo o cambio inmediato si no hay SMTP.' })
+  @ApiResponse({ status: 400, description: 'Contraseña incorrecta o correo igual al actual.' })
+  @ApiResponse({ status: 409, description: 'El nuevo correo ya está registrado.' })
+  requestEmailChange(@CurrentUser() user: AuthUser, @Body() dto: RequestEmailChangeDto) {
+    return this.accountTokens.requestEmailChange(user, dto.newEmail, dto.password);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ register: true, forgot: true })
+  @Post('confirm-email-change')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirmar cambio de correo electrónico con el token' })
+  @ApiResponse({ status: 200, description: 'Correo modificado. Devuelve el nuevo token de acceso.' })
+  @ApiResponse({ status: 400, description: 'Token inválido o caducado.' })
+  confirmEmailChange(@Body() dto: ConfirmEmailChangeDto) {
+    return this.accountTokens.confirmEmailChange(dto.token);
+  }
+
+  @Delete('me/pending-email')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancelar solicitud de cambio de correo pendiente' })
+  @ApiResponse({ status: 200, description: 'Cambio de correo cancelado.' })
+  cancelPendingEmail(@CurrentUser() user: AuthUser) {
+    return this.accountTokens.cancelPendingEmailChange(user);
+  }
 }
+

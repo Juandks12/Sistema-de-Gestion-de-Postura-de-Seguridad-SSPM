@@ -65,3 +65,64 @@ export const ROLE_EMAIL_LABEL: Record<string, string> = {
   ANALYST: 'analista',
   VIEWER: 'solo lectura (gerencia)',
 };
+
+export function emailVerificationEmail(to: string, fullName: string, url: string, ttlHours: number): OutgoingMail {
+  const title = 'Verifica tu correo electrónico';
+  return {
+    to,
+    subject: '[SSPM] Verifica tu correo electrónico',
+    text:
+      `Hola ${fullName}:\n\n` +
+      `Gracias por registrarte en SSPM. Confirma que tienes acceso a este correo abriendo este enlace (caduca en ${ttlHours} horas):\n\n${url}\n\n` +
+      `Si no creaste esta cuenta, puedes ignorar este mensaje.\n`,
+    html: layout(
+      title,
+      `<p style="margin:0 0 8px;line-height:1.5">Hola <strong>${escapeHtml(fullName)}</strong>: gracias por registrarte en SSPM.</p>` +
+        `<p style="margin:0 0 8px;line-height:1.5">Confirma que tienes acceso a este correo para activar todas las funciones de seguridad. El enlace caduca en <strong>${ttlHours} horas</strong>.</p>`,
+      url,
+      'Verificar mi correo',
+    ),
+  };
+}
+
+export function emailChangeConfirmationEmail(to: string, fullName: string, url: string, ttlHours: number): OutgoingMail {
+  const title = 'Confirma tu nueva dirección de correo';
+  return {
+    to,
+    subject: '[SSPM] Confirma tu nueva dirección de correo electrónico',
+    text:
+      `Hola ${fullName}:\n\n` +
+      `Has solicitado cambiar la dirección de correo de tu cuenta en SSPM a este buzón.\n` +
+      `Abre este enlace para confirmar el cambio (caduca en ${ttlHours} horas y solo sirve una vez):\n\n${url}\n\n` +
+      `Si no solicitaste este cambio, ignora este correo.\n`,
+    html: layout(
+      title,
+      `<p style="margin:0 0 8px;line-height:1.5">Hola <strong>${escapeHtml(fullName)}</strong>: has solicitado cambiar tu correo electrónico en SSPM a esta dirección.</p>` +
+        `<p style="margin:0 0 8px;line-height:1.5">El enlace caduca en <strong>${ttlHours} horas</strong> y solo sirve una vez. Si no lo solicitaste, ignora este mensaje.</p>`,
+      url,
+      'Confirmar nuevo correo',
+    ),
+  };
+}
+
+export function emailChangeNoticeOldEmail(to: string, fullName: string, newEmail: string): OutgoingMail {
+  const title = 'Solicitud de cambio de correo electrónico';
+  return {
+    to,
+    subject: '[SSPM] Aviso de seguridad: Solicitud de cambio de correo electrónico',
+    text:
+      `Hola ${fullName}:\n\n` +
+      `Se ha solicitado cambiar la dirección de correo de tu cuenta en SSPM a ${newEmail}.\n` +
+      `Si fuiste tú, confirma la solicitud desde el enlace que enviamos al nuevo correo.\n` +
+      `Si NO solicitaste este cambio, te recomendamos cambiar tu contraseña de inmediato y revisar los accesos de tu cuenta.\n`,
+    html:
+      `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;max-width:560px">` +
+      `<p style="margin:0 0 4px;font-size:12px;color:#6b7280">SSPM · Postura de seguridad</p>` +
+      `<h2 style="margin:0 0 12px;font-size:18px;color:#dc2626">${escapeHtml(title)}</h2>` +
+      `<p style="margin:0 0 8px;line-height:1.5">Hola <strong>${escapeHtml(fullName)}</strong>: se ha solicitado cambiar el correo de tu cuenta en SSPM a <strong>${escapeHtml(newEmail)}</strong>.</p>` +
+      `<p style="margin:0 0 8px;line-height:1.5">Si fuiste tú, debes confirmar la solicitud desde el enlace enviado al nuevo correo.</p>` +
+      `<p style="margin:0 0 8px;line-height:1.5;color:#dc2626"><strong>Si no reconoces esta acción</strong>, cambia tu contraseña de inmediato para proteger tu cuenta.</p>` +
+      `</div>`,
+  };
+}
+

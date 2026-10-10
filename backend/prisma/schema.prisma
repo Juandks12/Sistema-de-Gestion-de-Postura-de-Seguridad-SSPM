@@ -141,11 +141,15 @@ enum VerificationMethod {
 }
 
 /// Token de un solo uso enviado por correo (sección 11.1).
-/// PASSWORD_RESET -> restablecer la contraseña de un usuario existente
-/// INVITATION     -> invitación para unirse a la organización
+/// PASSWORD_RESET     -> restablecer la contraseña de un usuario existente
+/// INVITATION         -> invitación para unirse a la organización
+/// EMAIL_VERIFICATION -> verificación del correo electrónico al registrarse
+/// EMAIL_CHANGE       -> confirmación del nuevo correo electrónico solicitado
 enum AccountTokenType {
   PASSWORD_RESET
   INVITATION
+  EMAIL_VERIFICATION
+  EMAIL_CHANGE
 }
 
 /// Tipo de reporte PDF (RF-09, sección 9).
@@ -203,6 +207,10 @@ model User {
   role              UserRole  @default(VIEWER)
   isActive          Boolean   @default(true) @map("is_active")
   lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(6)
+  /// Fecha de verificación del correo electrónico.
+  emailVerifiedAt   DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  /// Correo solicitado durante un cambio de dirección; pasa a email al confirmar el token.
+  pendingEmail      String?   @map("pending_email") @db.VarChar(254)
   /// Se incrementa al cambiar o restablecer la contraseña; invalida los JWT emitidos antes.
   tokenVersion      Int       @default(0) @map("token_version")
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(6)

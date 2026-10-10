@@ -12,6 +12,7 @@ import { AuditPage } from './pages/AuditPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { InvitationPage } from './pages/auth/InvitationPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
+import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ScansPage } from './pages/ScansPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -24,6 +25,7 @@ export function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/invitation" element={<InvitationPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route index element={<DashboardPage />} />

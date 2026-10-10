@@ -90,9 +90,14 @@ describe('validateEnv', () => {
       AUTH_FORGOT_RATE_PER_HOUR: 10,
       PASSWORD_RESET_TTL_MINUTES: 30,
       INVITATION_TTL_HOURS: 72,
+      EMAIL_VERIFICATION_REQUIRED: false,
+      EMAIL_VERIFICATION_TTL_HOURS: 24,
+      EMAIL_CHANGE_TTL_HOURS: 2,
     });
     expect(() => validateEnv({ ...base, PASSWORD_RESET_TTL_MINUTES: '1' })).toThrow();
     expect(() => validateEnv({ ...base, INVITATION_TTL_HOURS: '0' })).toThrow();
+    expect(() => validateEnv({ ...base, EMAIL_VERIFICATION_TTL_HOURS: '0' })).toThrow();
+    expect(() => validateEnv({ ...base, EMAIL_CHANGE_TTL_HOURS: '0' })).toThrow();
   });
 
   it('aplica los valores por defecto de reintentos de alertas y retención de datos', () => {
