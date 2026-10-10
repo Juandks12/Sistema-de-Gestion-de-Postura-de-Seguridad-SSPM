@@ -18,6 +18,8 @@ const userSelect = {
   role: true,
   isActive: true,
   mfaEnabled: true,
+  emailVerifiedAt: true,
+  pendingEmail: true,
   lastLoginAt: true,
   passwordChangedAt: true,
   organizationId: true,
@@ -67,6 +69,7 @@ export class UsersService {
         passwordHash,
         role: dto.role,
         organizationId: actor.organizationId, // siempre el tenant del administrador
+        emailVerifiedAt: new Date(),
       },
       select: userSelect,
     });

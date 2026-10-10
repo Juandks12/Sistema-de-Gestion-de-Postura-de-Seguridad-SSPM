@@ -309,6 +309,26 @@ class EnvironmentVariables {
   @IsOptional()
   INVITATION_TTL_HOURS: number = 72;
 
+  /** Exige que el correo del usuario esté verificado para operaciones protegidas. */
+  @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
+  @IsBoolean()
+  @IsOptional()
+  EMAIL_VERIFICATION_REQUIRED: boolean = false;
+
+  /** Horas de validez del enlace de verificación de correo electrónico. */
+  @IsInt()
+  @Min(1)
+  @Max(168)
+  @IsOptional()
+  EMAIL_VERIFICATION_TTL_HOURS: number = 24;
+
+  /** Horas de validez del enlace de confirmación de cambio de correo electrónico. */
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  @IsOptional()
+  EMAIL_CHANGE_TTL_HOURS: number = 2;
+
   /**
    * Proxies de confianza delante de la API (valor de `trust proxy` de Express):
    * vacío = ninguno; un número = saltos (1 con el Nginx de la imagen web);

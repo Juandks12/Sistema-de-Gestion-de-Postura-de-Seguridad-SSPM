@@ -44,7 +44,9 @@ export function LoginPage() {
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 401
-          ? 'Correo o contraseña incorrectos.'
+          ? /verificar/i.test(err.message)
+            ? err.message
+            : 'Correo o contraseña incorrectos.'
           : err instanceof ApiError && err.status === 429
             ? err.message
             : 'No se pudo iniciar sesión. Comprueba que la API esté disponible.',

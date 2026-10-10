@@ -531,3 +531,55 @@ export function useRunRetention() {
     },
   });
 }
+
+// ------------------------------------------------ verificación y cambio de correo
+
+export function useVerifyEmail() {
+  return useMutation({
+    mutationFn: (token: string) =>
+      api<{ message: string; emailVerified: boolean }>('/auth/verify-email', {
+        method: 'POST',
+        json: { token },
+      }),
+  });
+}
+
+export function useResendVerification() {
+  return useMutation({
+    mutationFn: (email?: string) =>
+      api<{ message: string; emailVerified?: boolean; emailEnabled: boolean }>('/auth/resend-verification', {
+        method: 'POST',
+        json: email ? { email } : {},
+      }),
+  });
+}
+
+export function useRequestEmailChange() {
+  return useMutation({
+    mutationFn: (input: { newEmail: string; currentPassword: string }) =>
+      api<{ immediate?: boolean; message: string; pendingEmail?: string; newEmail?: string; emailEnabled: boolean }>(
+        '/auth/me/change-email',
+        { method: 'POST', json: input },
+      ),
+  });
+}
+
+export function useConfirmEmailChange() {
+  return useMutation({
+    mutationFn: (token: string) =>
+      api<AuthResponse>('/auth/confirm-email-change', {
+        method: 'POST',
+        json: { token },
+      }),
+  });
+}
+
+export function useCancelPendingEmail() {
+  return useMutation({
+    mutationFn: () =>
+      api<{ message: string }>('/auth/me/pending-email', {
+        method: 'DELETE',
+      }),
+  });
+}
+

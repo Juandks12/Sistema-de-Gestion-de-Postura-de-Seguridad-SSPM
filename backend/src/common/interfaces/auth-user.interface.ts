@@ -8,6 +8,8 @@ export interface AuthUser {
   role: UserRole;
   /** Tenant al que pertenece el usuario. Toda consulta debe filtrarse por este valor. */
   organizationId: string;
+  emailVerified?: boolean;
+  pendingEmail?: string | null;
 }
 
 /** Contenido firmado dentro del JWT. */

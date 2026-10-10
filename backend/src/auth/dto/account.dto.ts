@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { UserRole } from '@prisma/client';
 import { IsStrongPassword } from '../../common/validators/password';
 
@@ -80,3 +80,41 @@ export class DisableMfaDto extends MfaCodeDto {
   @MaxLength(72)
   password!: string;
 }
+
+export class VerifyEmailDto {
+  @ApiProperty({ description: 'Token de verificación de correo' })
+  @IsString()
+  @Matches(TOKEN_PATTERN, { message: 'El token no es válido' })
+  token!: string;
+}
+
+export class ResendVerificationDto {
+  @ApiPropertyOptional({ example: 'ana@mipyme.com' })
+  @IsEmail()
+  @MaxLength(254)
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  email?: string;
+}
+
+export class RequestEmailChangeDto {
+  @ApiProperty({ example: 'nuevo@mipyme.com' })
+  @IsEmail()
+  @MaxLength(254)
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  newEmail!: string;
+
+  @ApiProperty({ example: 'Password123!', description: 'Contraseña actual del usuario por seguridad' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(72)
+  password!: string;
+}
+
+export class ConfirmEmailChangeDto {
+  @ApiProperty({ description: 'Token de confirmación de cambio de correo' })
+  @IsString()
+  @Matches(TOKEN_PATTERN, { message: 'El token no es válido' })
+  token!: string;
+}
+

@@ -6,6 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { AuthUser, JwtPayload } from '../common/interfaces/auth-user.interface';
+import { MailerService } from '../common/mail/mailer.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly organizations: OrganizationsService,
     private readonly loginProtection: LoginProtectionService,
     private readonly audit: AuditService,
+    private readonly mailer: MailerService,
   ) {}
 
   /**
@@ -62,6 +64,7 @@ export class AuthService {
           passwordHash,
           role: UserRole.ADMIN,
           organizationId: organization.id,
+          emailVerifiedAt: this.mailer.enabled ? null : new Date(),
         },
       });
     });
@@ -99,6 +102,12 @@ export class AuthService {
     }
     if (!user.isActive || !user.organization.isActive) {
       throw new UnauthorizedException('Usuario u organización inactivos');
+    }
+
+    if (this.config.get<boolean>('EMAIL_VERIFICATION_REQUIRED') && !user.emailVerifiedAt) {
+      throw new UnauthorizedException(
+        'Debes verificar tu correo electrónico antes de iniciar sesión. Revisa tu buzón o solicita un nuevo enlace.',
+      );
     }
 
     if (user.mfaEnabled) {
@@ -185,6 +194,8 @@ export class AuthService {
         fullName: user.fullName,
         role: user.role,
         organizationId: user.organizationId,
+        emailVerified: !!user.emailVerifiedAt,
+        pendingEmail: user.pendingEmail,
       },
     };
   }
