@@ -6,7 +6,15 @@ import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { MailerService } from '../common/mail/mailer.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { invitationEmail, passwordResetEmail, ROLE_EMAIL_LABEL } from './account-emails';
+import * as bcrypt from 'bcrypt';
+import {
+  emailChangeConfirmationEmail,
+  emailChangeNoticeOldEmail,
+  emailVerificationEmail,
+  invitationEmail,
+  passwordResetEmail,
+  ROLE_EMAIL_LABEL,
+} from './account-emails';
 import { AuthResponse, AuthService, MfaChallenge } from './auth.service';
 import { loginAttemptKey } from './login-protection.service';
 
@@ -28,8 +36,8 @@ const invitationSelect = {
 
 /**
  * Tokens de un solo uso enviados por correo (sección 11.1): restablecer la
- * contraseña e invitaciones a la organización. En la base de datos solo vive
- * el hash sha256 del token; el valor real va únicamente en el enlace.
+ * contraseña, invitaciones, verificación de correo y cambio de email. En la
+ * base de datos solo vive el hash sha256 del token; el valor real va en el enlace.
  */
 @Injectable()
 export class AccountTokensService {
@@ -49,6 +57,14 @@ export class AccountTokensService {
 
   private get invitationTtlHours(): number {
     return this.config.get<number>('INVITATION_TTL_HOURS') ?? 72;
+  }
+
+  private get verificationTtlHours(): number {
+    return this.config.get<number>('EMAIL_VERIFICATION_TTL_HOURS') ?? 24;
+  }
+
+  private get emailChangeTtlHours(): number {
+    return this.config.get<number>('EMAIL_CHANGE_TTL_HOURS') ?? 2;
   }
 
   private appUrl(path: string): string {
@@ -341,6 +357,7 @@ export class AccountTokensService {
           passwordHash,
           role: row.role!,
           organizationId: row.organizationId,
+          emailVerifiedAt: new Date(),
         },
       });
       // Se marcan usadas todas las invitaciones de ese correo (también las reenviadas y caducadas).
@@ -359,5 +376,254 @@ export class AccountTokensService {
       detail: { role: user.role },
     });
     return this.auth.buildAuthResponse(user);
+  }
+
+  // ------------------------------------------------ verificación de correo
+
+  async sendRegistrationVerification(user: { id: string; email: string; fullName: string; organizationId: string }): Promise<void> {
+    if (!this.mailer.enabled) {
+      return;
+    }
+    const { token, row } = await this.issue({
+      organizationId: user.organizationId,
+      type: AccountTokenType.EMAIL_VERIFICATION,
+      email: user.email,
+      userId: user.id,
+      ttlMs: this.verificationTtlHours * 60 * 60 * 1000,
+    });
+    const url = this.appUrl(`/verify-email?token=${token}`);
+    const result = await this.mailer.send(emailVerificationEmail(user.email, user.fullName, url, this.verificationTtlHours));
+    await this.recordDelivery(row.id, result);
+    this.audit.record({
+      organizationId: user.organizationId,
+      action: 'auth.email_verification_requested',
+      actor: { id: user.id, email: user.email, fullName: user.fullName },
+      target: { type: 'user', id: user.id, label: user.email },
+      detail: { delivery: result.status },
+    });
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string; emailVerified: boolean }> {
+    const invalid = () => new BadRequestException('El enlace de verificación no es válido o ya caducó. Solicita uno nuevo.');
+    const row = await this.findValid(AccountTokenType.EMAIL_VERIFICATION, token);
+    if (!row || !row.userId) {
+      throw invalid();
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: row.userId },
+      include: { organization: { select: { isActive: true } } },
+    });
+    if (!user || !user.isActive || !user.organization.isActive) {
+      throw invalid();
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.accountToken.updateMany({
+        where: { id: row.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (consumed.count === 0) {
+        throw invalid();
+      }
+      await tx.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: new Date() },
+      });
+    });
+
+    this.audit.record({
+      organizationId: user.organizationId,
+      action: 'auth.email_verified',
+      actor: { id: user.id, email: user.email, fullName: user.fullName },
+      target: { type: 'user', id: user.id, label: user.email },
+    });
+
+    return { message: 'Correo electrónico verificado correctamente.', emailVerified: true };
+  }
+
+  async resendVerification(rawEmail?: string, actor?: AuthUser): Promise<{ message: string; emailVerified?: boolean; emailEnabled: boolean }> {
+    const email = rawEmail ? this.normalizeEmail(rawEmail) : actor?.email;
+    if (!email) {
+      throw new BadRequestException('Debe indicar un correo electrónico.');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { organization: { select: { isActive: true } } },
+    });
+    if (!user || !user.isActive || !user.organization.isActive) {
+      return { message: 'Si el correo está registrado, recibirás un nuevo enlace de verificación.', emailEnabled: this.mailer.enabled };
+    }
+    if (user.emailVerifiedAt) {
+      return { message: 'El correo electrónico ya se encuentra verificado.', emailVerified: true, emailEnabled: this.mailer.enabled };
+    }
+
+    if (!this.mailer.enabled) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: new Date() },
+      });
+      return { message: 'Correo verificado automáticamente (servidor de correo no configurado).', emailVerified: true, emailEnabled: false };
+    }
+
+    await this.sendRegistrationVerification(user);
+    return { message: 'Se ha enviado un nuevo enlace de verificación a tu correo.', emailEnabled: true };
+  }
+
+  // ------------------------------------------------ cambio de correo
+
+  async requestEmailChange(
+    actor: AuthUser,
+    rawNewEmail: string,
+    currentPassword: string,
+  ): Promise<{ immediate: boolean; message: string; newEmail: string }> {
+    const newEmail = this.normalizeEmail(rawNewEmail);
+    if (newEmail === actor.email) {
+      throw new BadRequestException('El nuevo correo electrónico debe ser distinto del actual.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: actor.id } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado.');
+    }
+
+    const passwordOk = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!passwordOk) {
+      throw new BadRequestException('La contraseña actual no es correcta.');
+    }
+
+    const existing = await this.prisma.user.findUnique({ where: { email: newEmail } });
+    if (existing) {
+      throw new ConflictException('Ya existe una cuenta con ese correo electrónico.');
+    }
+
+    if (!this.mailer.enabled) {
+      // Modo sin correo: se actualiza directamente
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          email: newEmail,
+          pendingEmail: null,
+          emailVerifiedAt: new Date(),
+          tokenVersion: { increment: 1 },
+        },
+      });
+      this.audit.record({
+        organizationId: actor.organizationId,
+        action: 'auth.email_changed',
+        actor,
+        target: { type: 'user', id: actor.id, label: newEmail },
+        detail: { previousEmail: actor.email, immediate: true },
+      });
+      return { immediate: true, message: 'Correo electrónico modificado exitosamente.', newEmail };
+    }
+
+    // Modo con correo: guarda pendingEmail, emite token y notifica
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { pendingEmail: newEmail },
+    });
+
+    const { token, row } = await this.issue({
+      organizationId: actor.organizationId,
+      type: AccountTokenType.EMAIL_CHANGE,
+      email: newEmail,
+      userId: actor.id,
+      ttlMs: this.emailChangeTtlHours * 60 * 60 * 1000,
+    });
+
+    const confirmUrl = this.appUrl(`/verify-email?token=${token}&type=change`);
+    const deliveryRes = await this.mailer.send(
+      emailChangeConfirmationEmail(newEmail, actor.fullName, confirmUrl, this.emailChangeTtlHours),
+    );
+    await this.recordDelivery(row.id, deliveryRes);
+
+    // Aviso de seguridad al correo antiguo
+    await this.mailer.send(emailChangeNoticeOldEmail(actor.email, actor.fullName, newEmail));
+
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'auth.email_change_requested',
+      actor,
+      target: { type: 'user', id: actor.id, label: newEmail },
+      detail: { delivery: deliveryRes.status },
+    });
+
+    return {
+      immediate: false,
+      message: 'Se ha enviado un enlace de confirmación a tu nueva dirección de correo.',
+      newEmail,
+    };
+  }
+
+  async confirmEmailChange(token: string): Promise<AuthResponse> {
+    const invalid = () => new BadRequestException('El enlace de confirmación no es válido o ya caducó. Solicita el cambio nuevamente.');
+    const row = await this.findValid(AccountTokenType.EMAIL_CHANGE, token);
+    if (!row || !row.userId) {
+      throw invalid();
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: row.userId },
+      include: { organization: { select: { isActive: true } } },
+    });
+    if (!user || !user.isActive || !user.organization.isActive) {
+      throw invalid();
+    }
+
+    const conflict = await this.prisma.user.findUnique({ where: { email: row.email } });
+    if (conflict && conflict.id !== user.id) {
+      throw new ConflictException('Ese correo electrónico ya fue ocupado por otro usuario.');
+    }
+
+    const previousEmail = user.email;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.accountToken.updateMany({
+        where: { id: row.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (consumed.count === 0) {
+        throw invalid();
+      }
+      await tx.loginAttempt.deleteMany({
+        where: { key: { in: [loginAttemptKey(previousEmail), loginAttemptKey(row.email)] } },
+      });
+      return tx.user.update({
+        where: { id: user.id },
+        data: {
+          email: row.email,
+          pendingEmail: null,
+          emailVerifiedAt: new Date(),
+          tokenVersion: { increment: 1 },
+        },
+      });
+    });
+
+    this.audit.record({
+      organizationId: user.organizationId,
+      action: 'auth.email_changed',
+      actor: { id: user.id, email: row.email, fullName: user.fullName },
+      target: { type: 'user', id: user.id, label: row.email },
+      detail: { previousEmail },
+    });
+
+    return this.auth.buildAuthResponse(updated);
+  }
+
+  async cancelPendingEmailChange(actor: AuthUser): Promise<{ message: string }> {
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: actor.id },
+        data: { pendingEmail: null },
+      }),
+      this.prisma.accountToken.updateMany({
+        where: {
+          userId: actor.id,
+          type: AccountTokenType.EMAIL_CHANGE,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { expiresAt: new Date() },
+      }),
+    ]);
+    return { message: 'Solicitud de cambio de correo cancelada.' };
   }
 }

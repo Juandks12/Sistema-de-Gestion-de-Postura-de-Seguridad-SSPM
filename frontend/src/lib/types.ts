@@ -37,6 +37,8 @@ export interface AuthUser {
   fullName: string;
   role: UserRole;
   organizationId: string;
+  emailVerified?: boolean;
+  pendingEmail?: string | null;
 }
 
 export interface AuthResponse {

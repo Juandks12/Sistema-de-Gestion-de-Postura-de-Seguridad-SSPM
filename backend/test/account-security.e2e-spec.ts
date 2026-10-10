@@ -368,4 +368,84 @@ describe('Cuentas y auditoría (e2e)', () => {
       expect((await http_().get('/api/v1/auth/me/mfa').set(auth(analystToken)).expect(200)).body.enabled).toBe(false);
     });
   });
+
+  describe('Verificación de correo y cambio de email', () => {
+    const userEmail = `verify-${suffix}@test.local`;
+    const newEmail = `verify-new-${suffix}@test.local`;
+    let userToken: string;
+
+    it('al registrarse se envía correo de verificación y la cuenta inicia sin verificar', async () => {
+      const reg = await http_()
+        .post('/api/v1/auth/register')
+        .send({ organizationName: `Verify Org ${suffix}`, fullName: 'Valeria Verify', email: userEmail, password: 'Password123' })
+        .expect(201);
+      userToken = reg.body.accessToken;
+      orgIds.push(reg.body.user.organizationId);
+
+      expect(reg.body.user.emailVerified).toBe(false);
+
+      const me = await http_().get('/api/v1/auth/me').set(auth(userToken)).expect(200);
+      expect(me.body.emailVerified).toBe(false);
+
+      const tok = mailer.token(userEmail);
+      expect(tok).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('puede verificar el correo con el token recibido y queda auditado', async () => {
+      const tok = mailer.token(userEmail);
+      const res = await http_().post('/api/v1/auth/verify-email').send({ token: tok }).expect(200);
+      expect(res.body.emailVerified).toBe(true);
+
+      const me = await http_().get('/api/v1/auth/me').set(auth(userToken)).expect(200);
+      expect(me.body.emailVerified).toBe(true);
+
+      await audit.flush();
+      const auditRes = await http_().get('/api/v1/audit-log').query({ pageSize: 100 }).set(auth(userToken)).expect(200);
+      expect(auditRes.body.items.some((i: any) => i.action === 'auth.email_verified')).toBe(true);
+    });
+
+    it('reenviar verificación responde que ya está verificado', async () => {
+      const res = await http_().post('/api/v1/auth/resend-verification').send({ email: userEmail }).expect(200);
+      expect(res.body.emailVerified).toBe(true);
+    });
+
+    it('solicitar cambio de correo valida contraseña y envía confirmación', async () => {
+      await http_()
+        .post('/api/v1/auth/me/change-email')
+        .set(auth(userToken))
+        .send({ newEmail, password: 'WrongPassword' })
+        .expect(400);
+
+      const res = await http_()
+        .post('/api/v1/auth/me/change-email')
+        .set(auth(userToken))
+        .send({ newEmail, password: 'Password123' })
+        .expect(200);
+      expect(res.body.immediate).toBe(false);
+      expect(res.body.newEmail).toBe(newEmail);
+
+      const me = await http_().get('/api/v1/auth/me').set(auth(userToken)).expect(200);
+      expect(me.body.pendingEmail).toBe(newEmail);
+
+      const tok = mailer.token(newEmail);
+      expect(tok).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('confirmar cambio de correo actualiza la dirección y emite nueva sesión', async () => {
+      const tok = mailer.token(newEmail);
+      const res = await http_().post('/api/v1/auth/confirm-email-change').send({ token: tok }).expect(200);
+      expect(res.body.user.email).toBe(newEmail);
+      expect(res.body.user.pendingEmail).toBeNull();
+      expect(res.body.user.emailVerified).toBe(true);
+
+      userToken = res.body.accessToken;
+      const me = await http_().get('/api/v1/auth/me').set(auth(userToken)).expect(200);
+      expect(me.body.email).toBe(newEmail);
+      expect(me.body.pendingEmail).toBeNull();
+
+      await audit.flush();
+      const auditRes = await http_().get('/api/v1/audit-log').query({ pageSize: 100 }).set(auth(userToken)).expect(200);
+      expect(auditRes.body.items.some((i: any) => i.action === 'auth.email_changed')).toBe(true);
+    });
+  });
 });
