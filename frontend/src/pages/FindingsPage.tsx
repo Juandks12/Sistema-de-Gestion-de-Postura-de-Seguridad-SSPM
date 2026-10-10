@@ -3,6 +3,7 @@ import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { CveList } from '@/components/CveList';
+import { RemediationGuideCard } from '@/components/RemediationGuideCard';
 import { Alert } from '@/components/ui/Alert';
 import { FindingStatusBadge, SeverityBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -220,6 +221,9 @@ function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; ca
           <div className="mt-4">
             <CveList evidence={f.evidence} />
           </div>
+        ) : null}
+        {f.remediationGuide ? (
+          <RemediationGuideCard guide={f.remediationGuide} />
         ) : null}
         {f.remediationNote ? (
           <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-ink-2">

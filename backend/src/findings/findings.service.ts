@@ -22,6 +22,7 @@ import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
 import { getRule } from './rules.catalog';
+import { getRemediationGuide, RemediationGuide } from './remediation.catalog';
 
 /** Categorías de hallazgo que produce cada tipo de escaneo. */
 export const CATEGORIES_BY_SCAN_TYPE: Record<ScanType, FindingCategory[]> = {
@@ -242,8 +243,12 @@ export class FindingsService {
       }),
       this.prisma.finding.count({ where }),
     ]);
+    const enrichedItems = items.map((f) => ({
+      ...f,
+      remediationGuide: getRemediationGuide(f.ruleId, f.recommendation),
+    }));
     return {
-      items,
+      items: enrichedItems,
       meta: { total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) },
     };
   }
@@ -253,7 +258,15 @@ export class FindingsService {
     if (!finding) {
       throw new NotFoundException('Hallazgo no encontrado');
     }
-    return finding;
+    return {
+      ...finding,
+      remediationGuide: getRemediationGuide(finding.ruleId, finding.recommendation),
+    };
+  }
+
+  async getRemediation(organizationId: string, id: string): Promise<RemediationGuide> {
+    const finding = await this.findOne(organizationId, id);
+    return finding.remediationGuide;
   }
 
   async review(actor: AuthUser, id: string, dto: ReviewFindingDto) {
