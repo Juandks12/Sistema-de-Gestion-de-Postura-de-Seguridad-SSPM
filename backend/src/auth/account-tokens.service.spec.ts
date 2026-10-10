@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AccountTokenType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -6,7 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { MailerService } from '../common/mail/mailer.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AccountTokensService, accountTokenHash } from './account-tokens.service';
+import { AccountTokensService } from './account-tokens.service';
 import { AuthService } from './auth.service';
 
 describe('AccountTokensService (Email Verification & Email Change)', () => {
