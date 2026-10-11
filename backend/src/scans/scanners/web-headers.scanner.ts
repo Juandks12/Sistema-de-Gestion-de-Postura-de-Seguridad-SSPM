@@ -5,9 +5,10 @@ import { analyzeHeaders } from '../analyzers/headers.analyzer';
 import { ScanExecutionError } from '../scan.errors';
 import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
 import { httpProbe, HttpProbeOutcome } from '../web/http-client';
+import { DetectedTechnology, fingerprintTechnologies } from '../web/tech-fingerprint';
 import { webTargetsFor } from './web-targets';
 
-/** RF-04: auditoría de cabeceras HTTP de seguridad. */
+/** RF-04: auditoría de cabeceras HTTP de seguridad y fingerprinting tecnológico. */
 @Injectable()
 export class WebHeadersScanner implements Scanner {
   readonly type = ScanType.WEB_HEADERS;
@@ -26,7 +27,7 @@ export class WebHeadersScanner implements Scanner {
         signal: ctx.signal,
         timeoutMs,
         pinnedAddress: requireTarget(ctx).address,
-        maxBodyBytes: 4096,
+        maxBodyBytes: 64 * 1024,
       });
       probes.push({ target, outcome });
     }
@@ -41,6 +42,7 @@ export class WebHeadersScanner implements Scanner {
     const httpsAvailable = reachable.some((p) => p.outcome.ok && new URL(p.outcome.finalUrl).protocol === 'https:');
     const findings: FindingDraft[] = [];
     const audited: Record<string, unknown>[] = [];
+    const allTechnologies: DetectedTechnology[] = [];
 
     for (const { target, outcome } of probes) {
       if (!outcome.ok) {
@@ -53,20 +55,40 @@ export class WebHeadersScanner implements Scanner {
         headers: outcome.headers,
         httpsAvailable,
       });
-      findings.push(...drafts);
+      const techResult = fingerprintTechnologies({
+        finalUrl: outcome.finalUrl,
+        status: outcome.status,
+        headers: outcome.headers,
+        bodyText: outcome.body.toString('utf8'),
+      });
+
+      findings.push(...drafts, ...techResult.findings);
+      allTechnologies.push(...techResult.technologies);
+
       audited.push({
         url: target.url,
         reachable: true,
         finalUrl: outcome.finalUrl,
         status: outcome.status,
         redirects: outcome.hops.length - 1,
-        findings: drafts.length,
+        findings: drafts.length + techResult.findings.length,
+        technologies: techResult.technologies,
         headers: Object.fromEntries(
           Object.entries(outcome.headers).filter(([k]) => k !== 'set-cookie'),
         ),
         cookies: ([] as string[]).concat(outcome.headers['set-cookie'] ?? []).map((c) => c.split('=')[0]),
       });
     }
+
+    // Deduplicar tecnologías por nombre conservando la de mayor confianza
+    const uniqueTechMap = new Map<string, DetectedTechnology>();
+    for (const tech of allTechnologies) {
+      const existing = uniqueTechMap.get(tech.name);
+      if (!existing || (tech.version && !existing.version) || (tech.confidence > existing.confidence)) {
+        uniqueTechMap.set(tech.name, tech);
+      }
+    }
+    const technologies = Array.from(uniqueTechMap.values()).sort((a, b) => b.confidence - a.confidence);
 
     return {
       parameters: { targets: targets.map((t) => t.url), timeoutMs, userAgentPinnedAddress: requireTarget(ctx).address },
@@ -77,6 +99,7 @@ export class WebHeadersScanner implements Scanner {
         targetsReachable: reachable.length,
         httpsAvailable,
         findingsCount: findings.length,
+        technologies,
         urls: audited.map((a) => ({ url: a.url, reachable: a.reachable, finalUrl: a.finalUrl ?? null, status: a.status ?? null })),
       },
     };
