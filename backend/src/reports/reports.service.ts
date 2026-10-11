@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { computeScore, emptyCounts } from '../risk/scoring';
 import { renderReport } from './pdf-renderer';
+import { generateHeuristicSummary } from './heuristic-synthesis';
 import { ReportAsset, ReportData, severityRank } from './report-data';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -158,7 +159,7 @@ export class ReportsService {
     }
 
     const currentOrg = current as { scoredAssets?: number; totalAssets?: number };
-    return {
+    const reportData: ReportData = {
       type,
       generatedAt: now,
       generatedBy: actor.fullName,
@@ -178,6 +179,12 @@ export class ReportsService {
       assets,
       alerts: { last30Days: alertsLast30, unacknowledged: alertsPending },
     };
+
+    if (type === ReportType.EXECUTIVE) {
+      reportData.executiveSummary = generateHeuristicSummary(reportData);
+    }
+
+    return reportData;
   }
 
   async generate(actor: AuthUser, type: ReportType, assetId?: string): Promise<GeneratedReport> {

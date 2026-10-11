@@ -5,6 +5,7 @@ import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { GradeBadge, ScanStatusBadge, SeverityBadge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ExecutiveSummaryCard } from '@/components/ExecutiveSummaryCard';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ScoreHero } from '@/components/ui/ScoreHero';
 import { SeverityBars } from '@/components/ui/SeverityBars';
@@ -59,6 +60,10 @@ export function DashboardPage() {
         <StatTile label="Hallazgos críticos y altos" value={o.findings.bySeverity.CRITICAL + o.findings.bySeverity.HIGH} hint="Requieren acción prioritaria" icon={ShieldAlert} tone={o.findings.bySeverity.CRITICAL > 0 ? 'critical' : 'default'} />
         <StatTile label="Escaneos en curso" value={o.scans.inProgress} hint={`${o.scans.completedLast24h} completados en 24 h`} icon={Radar} tone={o.scans.inProgress > 0 ? 'accent' : 'default'} />
         <StatTile label="Último escaneo" value={o.scans.lastCompletedAt ? timeAgoShort(o.scans.lastCompletedAt) : '—'} hint={`${o.scans.last7Days.COMPLETED} completados en 7 días`} icon={Activity} />
+      </div>
+
+      <div className="mt-4">
+        <ExecutiveSummaryCard />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">

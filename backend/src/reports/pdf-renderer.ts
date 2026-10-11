@@ -316,7 +316,29 @@ function renderExecutive(doc: Doc, data: ReportData): void {
   titleBlock(doc, data, 'Reporte ejecutivo de postura de seguridad');
   heading(doc, 'Resumen');
   scoreBlock(doc, data);
-  for (const p of executiveSummary(data)) paragraph(doc, p);
+  if (data.executiveSummary) {
+    paragraph(doc, `Diagnóstico: ${data.executiveSummary.headline}`, { bold: true, color: COLOR.ink });
+    paragraph(doc, data.executiveSummary.executiveOverview);
+  } else {
+    for (const p of executiveSummary(data)) paragraph(doc, p);
+  }
+
+  if (data.executiveSummary?.businessImpacts && data.executiveSummary.businessImpacts.length > 0) {
+    heading(doc, 'Impacto Potencial en el Negocio');
+    table(
+      doc,
+      [
+        { header: 'Área', width: 2 },
+        { header: 'Nivel', width: 1.5 },
+        { header: 'Impacto Potencial', width: 6.5 },
+      ],
+      data.executiveSummary.businessImpacts.map((b) => [
+        { text: b.area, bold: true },
+        b.severity,
+        b.description,
+      ]),
+    );
+  }
 
   heading(doc, 'Hallazgos abiertos por severidad');
   severityBars(doc, data.score.counts);
@@ -388,6 +410,23 @@ function renderExecutive(doc: Doc, data: ReportData): void {
         ]),
       );
     }
+  }
+
+  if (data.executiveSummary?.topPriorities && data.executiveSummary.topPriorities.length > 0) {
+    heading(doc, 'Acciones Estratégicas Prioritarias (Enfoque C-Level)');
+    data.executiveSummary.topPriorities.forEach((p) => {
+      doc.font(FONT_BOLD).fontSize(10);
+      ensureSpace(doc, 45);
+      doc.fillColor(COLOR.ink).text(t(`${p.order}. ${p.title} `), MARGIN, doc.y, { continued: true });
+      doc.fillColor(COLOR.muted).fontSize(9).text(t(`[${p.affectedTarget}]`));
+      paragraph(doc, p.action, { bold: false, color: COLOR.ink });
+      paragraph(doc, `Justificación de negocio: ${p.businessJustification}`, { color: COLOR.muted, size: 9 });
+    });
+  }
+
+  if (data.executiveSummary?.technicalDebtSummary) {
+    heading(doc, 'Deuda Técnica y Obsolescencia');
+    paragraph(doc, data.executiveSummary.technicalDebtSummary, { color: COLOR.ink2 });
   }
 
   heading(doc, 'Alertas');

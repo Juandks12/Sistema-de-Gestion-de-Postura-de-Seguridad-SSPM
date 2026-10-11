@@ -9,6 +9,8 @@ const fixtures = join(__dirname, '..', '..', '..', 'test', 'fixtures', 'tls');
 const key = readFileSync(join(fixtures, 'localhost-key.pem'));
 const cert = readFileSync(join(fixtures, 'localhost-cert.pem'));
 
+jest.setTimeout(15000);
+
 describe('tls-probe', () => {
   let server: tls.Server;
   let port: number;

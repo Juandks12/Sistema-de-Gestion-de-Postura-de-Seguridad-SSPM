@@ -1,5 +1,6 @@
 import { AssetType, FindingCategory, FindingSeverity, ReportType, ScanType } from '@prisma/client';
 import { SEVERITY_ORDER, SeverityCounts } from '../risk/scoring';
+import { ExecutiveBusinessSummary } from './executive-summary.interface';
 
 export interface ReportFinding {
   id: string;
@@ -61,6 +62,7 @@ export interface ReportData {
   history: Array<{ date: Date; score: number | null }>;
   assets: ReportAsset[];
   alerts: { last30Days: number; unacknowledged: number };
+  executiveSummary?: ExecutiveBusinessSummary;
 }
 
 export const SEVERITY_LABEL: Record<FindingSeverity, string> = {
