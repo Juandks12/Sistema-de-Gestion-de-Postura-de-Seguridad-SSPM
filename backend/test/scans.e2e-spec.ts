@@ -29,14 +29,15 @@ class FakeNmapRunner {
     if (this.mode === 'hang') {
       this.running += 1;
       return new Promise((resolve) => {
-        options.signal?.addEventListener(
-          'abort',
-          () => {
-            this.running -= 1;
-            resolve({ stdout: '', stderr: '', exitCode: null, timedOut: false, cancelled: true, durationMs: 1 });
-          },
-          { once: true },
-        );
+        const finish = () => {
+          this.running -= 1;
+          resolve({ stdout: '', stderr: '', exitCode: null, timedOut: false, cancelled: true, durationMs: 1 });
+        };
+        if (options.signal?.aborted) {
+          finish();
+          return;
+        }
+        options.signal?.addEventListener('abort', finish, { once: true });
       });
     }
     return { ...base, stdout: FIXTURE, exitCode: 0 };
@@ -128,10 +129,14 @@ describe('Scans (e2e) - RF-02/RF-03 con Nmap', () => {
     ).body.id;
   });
 
+  afterEach(() => {
+    fake.mode = 'ok';
+  });
+
   afterAll(async () => {
     await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
     await app.close();
-  });
+  }, 60000);
 
   it('VIEWER no puede lanzar escaneos (403)', async () => {
     await requestScan(tokenViewerA).expect(403);

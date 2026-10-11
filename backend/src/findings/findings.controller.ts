@@ -60,6 +60,12 @@ export class FindingsController {
     return this.findings.findOne(user.organizationId, id);
   }
 
+  @Get(':id/remediation')
+  @ApiOperation({ summary: 'Obtener guía de remediación interactiva y snippets técnicos de configuración' })
+  remediation(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.findings.getRemediation(user.organizationId, id);
+  }
+
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.ANALYST)
   @ApiOperation({ summary: 'Aceptar el riesgo, marcar como falso positivo o reabrir un hallazgo' })

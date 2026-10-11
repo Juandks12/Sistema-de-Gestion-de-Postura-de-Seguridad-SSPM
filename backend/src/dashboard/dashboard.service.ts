@@ -276,6 +276,9 @@ export class DashboardService {
     const byCategory: Record<string, number> = {};
     for (const f of findings) byCategory[f.category] = (byCategory[f.category] ?? 0) + 1;
 
+    const webScan = scansByType.find((s) => s.type === ScanType.WEB_HEADERS && s.summary);
+    const techSummary = (webScan?.summary as { technologies?: unknown[] } | null)?.technologies ?? [];
+
     return {
       asset,
       securityScore: score,
@@ -286,6 +289,7 @@ export class DashboardService {
         scannedAt: lastPortScan?.finishedAt ?? null,
         targetAddress: lastPortScan?.targetAddress ?? null,
         openPorts: lastPortScan?.ports ?? [],
+        technologies: techSummary,
       },
       latestScans: scansByType,
     };

@@ -119,6 +119,32 @@ export interface Finding {
   reviewNote: string | null;
   asset: { id: string; type: AssetType; value: string; name: string | null };
   reviewedBy: { id: string; fullName: string; email: string } | null;
+  remediationGuide?: RemediationGuide;
+}
+
+export interface RemediationSnippet {
+  platform: 'Nginx' | 'Apache' | 'Cloudflare' | 'Docker' | 'Spring Boot' | 'Node.js' | 'General';
+  code: string;
+  description: string;
+}
+
+export interface RemediationGuide {
+  ruleId: string;
+  owasp?: string;
+  cwe?: string;
+  summary: string;
+  verificationCommand?: string;
+  snippets: RemediationSnippet[];
+}
+
+export interface DetectedTechnology {
+  name: string;
+  category: 'Web Server' | 'Framework' | 'CMS' | 'Programming Language' | 'Frontend Library' | 'CDN/Proxy';
+  version?: string;
+  confidence: number;
+  eol?: boolean;
+  eolNotice?: string;
+  matchedFrom?: string;
 }
 
 export interface RetestFindingResult {
@@ -250,7 +276,13 @@ export interface AssetDashboard {
   securityScore: AssetScore;
   history: HistoryPoint[];
   findings: { open: number; byCategory: Partial<Record<FindingCategory, number>>; items: TopFinding[] };
-  exposure: { scanId: string | null; scannedAt: string | null; targetAddress: string | null; openPorts: OpenPort[] };
+  exposure: {
+    scanId: string | null;
+    scannedAt: string | null;
+    targetAddress: string | null;
+    openPorts: OpenPort[];
+    technologies?: DetectedTechnology[];
+  };
   latestScans: Array<{
     id: string;
     type: ScanType;

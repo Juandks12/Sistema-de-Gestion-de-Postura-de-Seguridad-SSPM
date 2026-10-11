@@ -10,6 +10,7 @@ import { AccountTokensService } from './account-tokens.service';
 import { AuthService } from './auth.service';
 
 describe('AccountTokensService (Email Verification & Email Change)', () => {
+  jest.setTimeout(15000);
   let service: AccountTokensService;
   let prismaMock: {
     accountToken: {

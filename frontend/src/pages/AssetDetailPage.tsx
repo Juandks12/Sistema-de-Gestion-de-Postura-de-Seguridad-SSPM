@@ -7,6 +7,7 @@ import { AssetVerificationCard } from '@/components/AssetVerificationCard';
 import { DiscoveredHostsCard } from '@/components/DiscoveredHostsCard';
 import { DnsSecurityCard } from '@/components/DnsSecurityCard';
 import { EmailSecurityCard } from '@/components/EmailSecurityCard';
+import { TechStackCard } from '@/components/TechStackCard';
 import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
 import { Alert } from '@/components/ui/Alert';
@@ -219,6 +220,10 @@ export function AssetDetailPage() {
           ) : null}
         </div>
       ) : null}
+
+      <div className="mt-4">
+        <TechStackCard technologies={exposure.technologies} />
+      </div>
 
       <Card className="mt-4">
         <CardHeader title="Hallazgos abiertos" subtitle={`${findings.open} en total`} action={<Link to={`/findings?assetId=${asset.id}`} className="text-sm font-medium text-accent hover:underline">Gestionar</Link>} />

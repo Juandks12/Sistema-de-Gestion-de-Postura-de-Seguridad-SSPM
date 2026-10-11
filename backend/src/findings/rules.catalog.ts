@@ -242,6 +242,28 @@ const rules: FindingRule[] = [
     description: 'El contenido está disponible sin cifrar aunque exista HTTPS; los usuarios pueden navegar y autenticarse por HTTP.',
     recommendation: 'Redirija de forma permanente (301) todo el tráfico HTTP a HTTPS.',
   },
+  {
+    id: 'HDR-OUTDATED-TECH',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Componente o tecnología web con versión desactualizada detectado',
+    description:
+      'La cabecera del servidor o respuesta HTTP revela un componente o tecnología con una versión desactualizada o sin soporte activo.',
+    recommendation:
+      'Actualice el servidor o framework a la versión estable más reciente y configure el servidor para ocultar firmas de versión.',
+  },
+  {
+    id: 'HDR-EOL-TECH',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Tecnología web en Fin de Ciclo de Vida (End-of-Life / EOL)',
+    description:
+      'El servidor web, entorno de ejecución o CMS detectado ha alcanzado su fecha de fin de ciclo de vida (EOL). El fabricante ya no publica parches de seguridad para esta versión, dejándola expuesta a vulnerabilidades conocidas y exploits públicos.',
+    recommendation:
+      'Planifique y ejecute de forma prioritaria la migración hacia una versión con soporte de seguridad activo.',
+  },
 
   // ------------------------------------------------------------------- TLS
   {
@@ -407,6 +429,50 @@ const rules: FindingRule[] = [
     title: 'Documentación de la API accesible públicamente',
     description: 'La especificación OpenAPI/Swagger está publicada y describe todos los endpoints disponibles.',
     recommendation: 'Valore si la documentación debe ser pública; de lo contrario, protéjala con autenticación.',
+  },
+  {
+    id: 'API-SWAGGER-EXPOSED',
+    category: C.SENSITIVE_PATH,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Documentación interactiva Swagger / OpenAPI expuesta públicamente',
+    description:
+      'La interfaz Swagger UI o especificación OpenAPI expone la definición completa de endpoints, parámetros, métodos HTTP y modelos de datos de la API sin autenticación.',
+    recommendation:
+      'Deshabilite la interfaz Swagger en entornos de producción o limite su acceso mediante autenticación o lista blanca de IPs.',
+  },
+  {
+    id: 'API-ACTUATOR-ENV-EXPOSED',
+    category: C.SENSITIVE_PATH,
+    severity: S.CRITICAL,
+    cvss: 9.8,
+    title: 'Endpoints de telemetría y entorno de microservicios expuestos (Actuator /env o /heapdump)',
+    description:
+      'Se detectó acceso público a endpoints administrativos o de telemetría de Spring Boot (/env, /heapdump, /logfile). Estos endpoints exponen variables de entorno, tokens de nube, cadenas de conexión y memoria RAM del servidor en texto claro.',
+    recommendation:
+      'Bloquee inmediatamente el acceso exterior al prefijo /actuator y excluya endpoints críticos en la configuración (management.endpoints.web.exposure.exclude=env,heapdump).',
+  },
+  {
+    id: 'API-GRAPHQL-INTROSPECTION',
+    category: C.SENSITIVE_PATH,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Introspección GraphQL habilitada en producción',
+    description:
+      'El endpoint GraphQL responde a consultas de introspección del esquema (__schema), permitiendo a cualquier usuario descargar el catálogo completo de tipos, consultas y mutaciones de la API.',
+    recommendation:
+      'Deshabilite la introspección GraphQL en entornos productivos (p. ej. introspection: false en Apollo Server o graphql-js).',
+  },
+  {
+    id: 'API-METRICS-EXPOSED',
+    category: C.SENSITIVE_PATH,
+    severity: S.LOW,
+    cvss: 3.1,
+    title: 'Métricas operativas de infraestructura expuestas (/metrics o Prometheus)',
+    description:
+      'El endpoint /metrics o /actuator/prometheus es accesible públicamente sin autenticación, revelando telemetría interna, tasas de error y detalles de la infraestructura.',
+    recommendation:
+      'Restrinja el acceso al endpoint de métricas únicamente a la red interna o servicio de monitorización mediante mTLS o autenticación básica.',
   },
   // ------------------------------------------------------- vulnerabilidades (CVE)
   {
