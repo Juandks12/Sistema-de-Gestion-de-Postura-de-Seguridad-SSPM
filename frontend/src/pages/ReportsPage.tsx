@@ -7,6 +7,7 @@ import { GradeBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ExecutiveSummaryCard } from '@/components/ExecutiveSummaryCard';
 import { Label, Select } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Spinner';
@@ -82,6 +83,13 @@ export function ReportsPage() {
             </CardBody>
           </Card>
         ))}
+      </div>
+
+      <div className="mt-4">
+        <ExecutiveSummaryCard
+          assetId={scope || undefined}
+          title={scope ? 'Resumen Ejecutivo del Activo' : 'Resumen Ejecutivo de la Organización'}
+        />
       </div>
 
       <Card className="mt-4">

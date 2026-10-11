@@ -409,5 +409,22 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
       expect(res.body.items[1]).toMatchObject({ type: 'EXECUTIVE', asset: null, generatedBy: { fullName: 'Gerente' } });
       expect(res.body.items[1].pages).toBeGreaterThanOrEqual(2);
     });
+
+    it('obtiene el resumen ejecutivo asistido por IA / síntesis de negocio', async () => {
+      const res = await http_().get('/api/v1/reports/executive-summary').set(auth(viewer)).expect(200);
+      expect(res.body).toMatchObject({
+        riskLevel: expect.stringMatching(/CRÍTICO|ALTO|MODERADO|BAJO/),
+        headline: expect.any(String),
+        executiveOverview: expect.any(String),
+        businessImpacts: expect.arrayContaining([
+          expect.objectContaining({ area: 'Operativa' }),
+          expect.objectContaining({ area: 'Financiera' }),
+          expect.objectContaining({ area: 'Regulatoria/Legal' }),
+          expect.objectContaining({ area: 'Reputacional' }),
+        ]),
+        topPriorities: expect.any(Array),
+      });
+      expect(res.body.topPriorities.length).toBeGreaterThanOrEqual(1);
+    });
   });
 });
