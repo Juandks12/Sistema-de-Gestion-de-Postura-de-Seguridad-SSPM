@@ -418,6 +418,25 @@ class EnvironmentVariables {
   @Max(3650)
   @IsOptional()
   RETENTION_REPORTS_DAYS: number = 180;
+
+  // ------------------------------------------------------------------
+  // Resumen ejecutivo con IA (Fase 3 - Opcional)
+  // ------------------------------------------------------------------
+
+  /** Clave de API para el proveedor de LLM (OpenAI, Anthropic, Gemini o compatible). */
+  @IsString()
+  @IsOptional()
+  AI_API_KEY?: string;
+
+  /** Endpoint base de la API de IA (por defecto: https://api.openai.com/v1). */
+  @IsString()
+  @IsOptional()
+  AI_API_URL: string = 'https://api.openai.com/v1';
+
+  /** Modelo de IA para síntesis ejecutiva (por defecto: gpt-4o-mini). */
+  @IsString()
+  @IsOptional()
+  AI_MODEL: string = 'gpt-4o-mini';
 }
 
 function toBoolean(value: unknown): unknown {

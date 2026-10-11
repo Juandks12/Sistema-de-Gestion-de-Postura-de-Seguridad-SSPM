@@ -12,6 +12,7 @@ import type {
   AssetVerification,
   DeliveryResult,
   DiscoveredHosts,
+  ExecutiveBusinessSummary,
   ImportDiscoveredResult,
   Invitation,
   MfaSetup,
@@ -374,6 +375,33 @@ export function useUpdateMonitoring() {
 
 export function useReports() {
   return useQuery({ queryKey: keys.reports, queryFn: () => api<{ items: ReportRecord[] }>('/reports') });
+}
+
+export function useExecutiveSummary(assetId?: string) {
+  return useQuery({
+    queryKey: ['executive-summary', assetId ?? 'all'],
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      if (assetId) sp.set('assetId', assetId);
+      return api<ExecutiveBusinessSummary>(`/reports/executive-summary${sp.toString() ? `?${sp.toString()}` : ''}`);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useRefreshExecutiveSummary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (assetId?: string) => {
+      const sp = new URLSearchParams();
+      if (assetId) sp.set('assetId', assetId);
+      sp.set('refresh', 'true');
+      return api<ExecutiveBusinessSummary>(`/reports/executive-summary?${sp.toString()}`);
+    },
+    onSuccess: (data, assetId) => {
+      qc.setQueryData(['executive-summary', assetId ?? 'all'], data);
+    },
+  });
 }
 
 // ------------------------------------------------- verificación de activos

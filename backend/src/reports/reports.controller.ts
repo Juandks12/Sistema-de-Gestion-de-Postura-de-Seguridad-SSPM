@@ -4,6 +4,7 @@ import { ReportType } from '@prisma/client';
 import { IsOptional, IsUUID } from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { ExecutiveSummaryService } from './executive-summary.service';
 import { ReportsService } from './reports.service';
 
 class ReportQuery {
@@ -12,12 +13,30 @@ class ReportQuery {
   assetId?: string;
 }
 
+class ExecutiveSummaryQuery {
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
+
+  @IsOptional()
+  refresh?: string;
+}
+
 /** Todos los roles pueden descargar reportes: la gerencia (VIEWER) es su destinatario principal. */
 @ApiTags('reports')
 @ApiBearerAuth()
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly executiveSummaryService: ExecutiveSummaryService,
+  ) {}
+
+  @Get('executive-summary')
+  @ApiOperation({ summary: 'Resumen ejecutivo de postura de seguridad en lenguaje de negocio (IA / síntesis experta)' })
+  executiveSummary(@CurrentUser() user: AuthUser, @Query() query: ExecutiveSummaryQuery) {
+    return this.executiveSummaryService.getSummary(user, query.assetId, query.refresh === 'true');
+  }
 
   @Get()
   @ApiOperation({ summary: 'Historial de reportes generados en la organización' })
