@@ -120,6 +120,7 @@ enum AlertType {
   CERT_EXPIRING
   CRITICAL_FINDING
   NEW_SUBDOMAIN
+  SCORE_ANOMALY
 }
 
 /// Canal por el que se notifica una alerta (secciones 10.2 y 10.3).

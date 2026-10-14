@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AlertChannelType, FindingSeverity, Prisma, ScanStatus, ScanType } from '@prisma/client';
+import { AlertChannelType, FindingSeverity, Prisma, RiskScoreScope, ScanStatus, ScanType } from '@prisma/client';
 import { isEmail } from 'class-validator';
 import { randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
@@ -9,7 +9,7 @@ import type { OpenedFinding } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SEVERITY_ORDER } from '../risk/scoring';
 import { AlertNotifierService, DeliveryResult, parseRecipients } from './alert-notifier.service';
-import { detectAlerts, diffOpenPorts, meetsThreshold, PortInfo } from './alert-rules';
+import { detectAlerts, diffOpenPorts, meetsThreshold, PortInfo, ScoreAnomalyInput } from './alert-rules';
 import { CreateAlertChannelDto, ListAlertsQuery, UpdateAlertChannelDto } from './dto/alerts.dto';
 import { maskUrl, NotificationMessage, validateWebhookUrl } from './webhook';
 
@@ -151,6 +151,29 @@ export class AlertsService implements OnApplicationShutdown {
     return diffOpenPorts(previous.ports, current.ports);
   }
 
+  /** Historial reciente de puntuaciones para detectar caídas anómalas tras un escaneo. */
+  private async scoreChange(organizationId: string, assetId: string): Promise<ScoreAnomalyInput | null> {
+    const snapshots = await this.prisma.riskScore.findMany({
+      where: {
+        organizationId,
+        scope: RiskScoreScope.ASSET,
+        assetId,
+        score: { not: null },
+      },
+      orderBy: { computedAt: 'desc' },
+      take: 15,
+      select: { score: true },
+    });
+    if (snapshots.length < 2 || snapshots[0].score === null || snapshots[1].score === null) {
+      return null;
+    }
+    return {
+      currentScore: snapshots[0].score,
+      previousScore: snapshots[1].score,
+      historyScores: snapshots.slice(1).map((s) => s.score as number),
+    };
+  }
+
   /** Evalúa las reglas de alerta tras un escaneo completado. Nunca lanza: una alerta no debe romper un escaneo. */
   async handleScanCompleted(event: ScanCompletedEvent): Promise<number> {
     try {
@@ -160,13 +183,17 @@ export class AlertsService implements OnApplicationShutdown {
       });
       if (!asset) return 0;
 
-      const newOpenPorts = event.scanType === ScanType.PORT_SCAN ? await this.newOpenPorts(asset.id, event.scanId) : null;
+      const [newOpenPorts, scoreChange] = await Promise.all([
+        event.scanType === ScanType.PORT_SCAN ? this.newOpenPorts(asset.id, event.scanId) : null,
+        this.scoreChange(event.organizationId, asset.id),
+      ]);
       const drafts = detectAlerts({
         asset,
         scan: { id: event.scanId, type: event.scanType },
         opened: event.opened,
         newOpenPorts,
         newHosts: event.newHosts,
+        scoreChange,
       });
       if (drafts.length === 0) return 0;
 
