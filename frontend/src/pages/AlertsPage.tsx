@@ -253,6 +253,21 @@ function AlertDetail({ alert: a, canEdit }: { alert: AlertItem; canEdit: boolean
                 Z-Score: {Number((a.data as Record<string, unknown>).zScore)}σ
               </span>
             ) : null}
+            {Array.isArray((a.data as Record<string, unknown>).penaltyDrivers) &&
+            ((a.data as Record<string, unknown>).penaltyDrivers as Array<{ title: string; location: string; severity: Severity }>).length > 0 ? (
+              <div className="mt-2.5 w-full border-t border-line/60 pt-2">
+                <span className="mb-1 block font-medium text-ink">Hallazgos concurrentes que detonaron la penalización:</span>
+                <ul className="space-y-1">
+                  {((a.data as Record<string, unknown>).penaltyDrivers as Array<{ title: string; location: string; severity: Severity }>).map((d, i) => (
+                    <li key={i} className="flex items-center gap-1.5 text-ink-2">
+                      <span className="size-1.5 shrink-0 rounded-full bg-critical" />
+                      <span className="font-medium text-ink">{d.title}</span>
+                      <span className="font-mono text-muted">({d.location})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : null}
         <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-ink-2 sm:grid-cols-2">

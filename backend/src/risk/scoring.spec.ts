@@ -1,10 +1,12 @@
-import { AssetCriticality } from '@prisma/client';
+import { AssetCriticality, FindingSeverity } from '@prisma/client';
 import {
   aggregateScores,
+  calculateScoreStats,
   computeHybridRisk,
   computeScore,
   CRITICALITY_FACTORS,
   describeModel,
+  evaluateScoreAnomaly,
   GRADE_BANDS,
   gradeFor,
   SEVERITY_CAPS,
@@ -118,4 +120,54 @@ describe('scoring', () => {
       expect(risk).toBe(20);
     });
   });
+
+  describe('detección y evaluación estadística de anomalías de postura', () => {
+    it('calcula media y desviación estándar de muestras históricas', () => {
+      expect(calculateScoreStats([])).toEqual({ mean: 0, stdDev: 0 });
+      expect(calculateScoreStats([85])).toEqual({ mean: 85, stdDev: 0 });
+      const stats = calculateScoreStats([80, 85, 90]);
+      expect(stats.mean).toBe(85);
+      expect(stats.stdDev).toBe(5);
+    });
+
+    it('no detecta anomalía ante variaciones menores (< 10 puntos) o mejoras', () => {
+      expect(evaluateScoreAnomaly(90, 85).isAnomaly).toBe(false);
+      expect(evaluateScoreAnomaly(80, 85).isAnomaly).toBe(false);
+      expect(evaluateScoreAnomaly(78, 87).isAnomaly).toBe(false);
+    });
+
+    it('detecta anomalía ante caídas directas significativas (15+ puntos)', () => {
+      const res = evaluateScoreAnomaly(70, 88);
+      expect(res.isAnomaly).toBe(true);
+      expect(res.drop).toBe(18);
+      expect(res.severity).toBe(FindingSeverity.HIGH);
+    });
+
+    it('asigna severidad CRITICAL ante caídas severas (25+ puntos o caída a zona crítica)', () => {
+      const res1 = evaluateScoreAnomaly(55, 85);
+      expect(res1.isAnomaly).toBe(true);
+      expect(res1.severity).toBe(FindingSeverity.CRITICAL);
+
+      const res2 = evaluateScoreAnomaly(35, 52);
+      expect(res2.isAnomaly).toBe(true);
+      expect(res2.severity).toBe(FindingSeverity.CRITICAL);
+    });
+
+    it('detecta anomalía estadística por Z-Score (>= 2.0) en activos con histórico estable', () => {
+      // Histórico con media 90 y stdDev 5: caída de 11 puntos -> z = 2.2 (MEDIUM)
+      const historyMedium = [85, 90, 95];
+      const resMedium = evaluateScoreAnomaly(79, 90, historyMedium);
+      expect(resMedium.isAnomaly).toBe(true);
+      expect(resMedium.zScore).toBe(2.2);
+      expect(resMedium.severity).toBe(FindingSeverity.MEDIUM);
+
+      // Histórico muy estable: caída con z >= 2.5 escala a HIGH
+      const historyHigh = [90, 91, 90, 89];
+      const resHigh = evaluateScoreAnomaly(79, 90, historyHigh);
+      expect(resHigh.isAnomaly).toBe(true);
+      expect(resHigh.zScore).toBeGreaterThanOrEqual(2.5);
+      expect(resHigh.severity).toBe(FindingSeverity.HIGH);
+    });
+  });
 });
+

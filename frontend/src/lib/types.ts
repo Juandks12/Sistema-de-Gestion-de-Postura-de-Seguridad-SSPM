@@ -200,6 +200,12 @@ export interface TopFinding {
   asset: { id: string; value: string; name: string | null; type: AssetType };
 }
 
+export interface HistoryPointAnomaly {
+  drop: number;
+  zScore?: number | null;
+  severity: Severity;
+}
+
 export interface HistoryPoint {
   computedAt: string;
   score: number | null;
@@ -207,6 +213,7 @@ export interface HistoryPoint {
   counts: SeverityCounts;
   trigger: string;
   scanId: string | null;
+  anomaly?: HistoryPointAnomaly | null;
 }
 
 export interface Overview {

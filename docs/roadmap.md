@@ -62,20 +62,20 @@ Ver README para el detalle funcional completo.
 Priorizar usos de IA que reduzcan trabajo humano real, no "features de IA"
 decorativas:
 
-1. **Resumen ejecutivo generado por LLM**: a partir de los hallazgos
+1. ~~**Resumen ejecutivo generado por LLM**~~ (completado): a partir de los hallazgos
    abiertos y el histórico de score, generar el texto del reporte
    ejecutivo (no el técnico, que debe ser preciso y verificable) en
    lenguaje de negocio. Alto valor, bajo riesgo (es prosa, no una decisión
    de seguridad).
-2. **Triage asistido de hallazgos**: sugerir si un hallazgo es
-   probablemente un falso positivo dado el contexto del activo (ya
-   existe el catálogo de reglas; un LLM puede argumentar el porqué,
-   con el analista humano confirmando siempre la decisión final).
-3. **Detección de anomalías en el histórico de score**: alertar si el
+2. ~~**Triage asistido de hallazgos**~~ (completado): sugerir si un hallazgo es
+   probablemente un falso positivo dado el contexto del activo (con catálogo
+   de reglas heurísticas expertas y síntesis LLM con fallback, confirmando
+   siempre el analista la decisión).
+3. ~~**Detección de anomalías en el histórico de score**~~ (completado): alertar si el
    score de un activo cae de forma atípica respecto a su propia
-   tendencia (esto puede empezar como una regla estadística simple antes
-   de justificar un modelo). Encaja como un cuarto tipo en
-   `backend/src/alerts/alert-rules.ts`, reutilizando canales y entrega.
+   tendencia (reglas estadísticas de z-score y caídas abruptas contextualizadas con
+   los hallazgos detonantes). Encaja como quinto tipo en `backend/src/alerts/alert-rules.ts`,
+   reutilizando canales, entrega y visualización temporal en gráficos.
 
 Explícitamente **no** priorizar: "chatbot de seguridad" genérico o
 generación automática de remediación de código — no hay evidencia de que
