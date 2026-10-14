@@ -8,6 +8,7 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
+import { FindingTriageService } from './finding-triage.service';
 import { FindingsService } from './findings.service';
 import { FINDING_RULES } from './rules.catalog';
 
@@ -21,7 +22,10 @@ class SummaryQuery {
 @ApiBearerAuth()
 @Controller('findings')
 export class FindingsController {
-  constructor(private readonly findings: FindingsService) {}
+  constructor(
+    private readonly findings: FindingsService,
+    private readonly triageService: FindingTriageService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'RF-08: listar hallazgos de mi organización, ordenados por severidad' })
@@ -64,6 +68,18 @@ export class FindingsController {
   @ApiOperation({ summary: 'Obtener guía de remediación interactiva y snippets técnicos de configuración' })
   remediation(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.findings.getRemediation(user.organizationId, id);
+  }
+
+  @Get(':id/triage')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @ApiOperation({ summary: 'Triage asistido por IA / motor experto para evaluación de falso positivo' })
+  @ApiQuery({ name: 'refresh', required: false, description: 'Fuerza la regeneración del análisis evitando la caché' })
+  triage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('refresh') refresh?: string,
+  ) {
+    return this.triageService.analyze(user.organizationId, id, refresh === 'true');
   }
 
   @Patch(':id')

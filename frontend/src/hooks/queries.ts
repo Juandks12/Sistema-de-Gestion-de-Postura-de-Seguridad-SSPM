@@ -26,6 +26,7 @@ import type {
   DashboardAsset,
   AuthResponse,
   Finding,
+  FindingTriageAnalysis,
   RetestFindingResult,
   FindingCategory,
   FindingStatus,
@@ -50,6 +51,7 @@ export const keys = {
   discovered: (id: string) => ['assets', id, 'discovered-hosts'] as const,
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
+  findingTriage: (id: string) => ['findings', id, 'triage'] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
   users: ['users'] as const,
   invitations: ['users', 'invitations'] as const,
@@ -215,6 +217,27 @@ export function useRetestFinding() {
     onSuccess: invalidate,
   });
 }
+
+export function useFindingTriage(findingId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: findingId ? keys.findingTriage(findingId) : ['findings', 'triage', 'null'],
+    queryFn: () => api<FindingTriageAnalysis>(`/findings/${findingId}/triage`),
+    enabled: Boolean(findingId && enabled),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useRefreshFindingTriage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (findingId: string) =>
+      api<FindingTriageAnalysis>(`/findings/${findingId}/triage?refresh=true`),
+    onSuccess: (data, findingId) => {
+      qc.setQueryData(keys.findingTriage(findingId), data);
+    },
+  });
+}
+
 
 export function useUsers(enabled = true) {
   return useQuery({ queryKey: keys.users, queryFn: () => api<OrgUser[]>('/users'), enabled });
