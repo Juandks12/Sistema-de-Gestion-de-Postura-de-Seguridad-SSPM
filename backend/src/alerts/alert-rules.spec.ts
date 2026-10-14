@@ -251,5 +251,31 @@ describe('detectScoreAnomaly - anomalías en Security Score', () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0].type).toBe(AlertType.SCORE_ANOMALY);
   });
+
+  it('adjunta los hallazgos abiertos causantes como penaltyDrivers en el mensaje y datos', () => {
+    const f1 = opened({ ruleId: 'SVC-DATABASE-EXPOSED', severity: FindingSeverity.CRITICAL, location: 'tcp/5432', title: 'PostgreSQL expuesto' });
+    const f2 = opened({ ruleId: 'TLS-WEAK-CIPHER', severity: FindingSeverity.MEDIUM, location: 'tcp/443', title: 'Cifrado débil' });
+
+    const alerts = detectAlerts({
+      asset,
+      scan: { id: 's10', type: ScanType.PORT_SCAN },
+      opened: [f1, f2],
+      newOpenPorts: null,
+      scoreChange: {
+        currentScore: 65,
+        previousScore: 90,
+        historyScores: [90, 89, 91],
+      },
+    });
+
+    const anomalyAlert = alerts.find((a) => a.type === AlertType.SCORE_ANOMALY);
+    expect(anomalyAlert).toBeDefined();
+    expect(anomalyAlert?.message).toContain('PostgreSQL expuesto');
+    expect(anomalyAlert?.data.penaltyDrivers).toEqual([
+      expect.objectContaining({ ruleId: 'SVC-DATABASE-EXPOSED', severity: FindingSeverity.CRITICAL }),
+      expect.objectContaining({ ruleId: 'TLS-WEAK-CIPHER', severity: FindingSeverity.MEDIUM }),
+    ]);
+  });
 });
+
 

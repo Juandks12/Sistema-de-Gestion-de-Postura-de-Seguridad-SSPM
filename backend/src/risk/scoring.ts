@@ -180,3 +180,82 @@ export function describeModel() {
   };
 }
 
+export interface ScoreStats {
+  mean: number;
+  stdDev: number;
+}
+
+export function calculateScoreStats(scores: number[]): ScoreStats {
+  if (scores.length === 0) return { mean: 0, stdDev: 0 };
+  const mean = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+  if (scores.length === 1) return { mean: Math.round(mean * 10) / 10, stdDev: 0 };
+  const variance = scores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / (scores.length - 1);
+  const stdDev = Math.sqrt(variance);
+  return {
+    mean: Math.round(mean * 10) / 10,
+    stdDev: Math.round(stdDev * 10) / 10,
+  };
+}
+
+export interface ScoreAnomalyEvaluation {
+  isAnomaly: boolean;
+  drop: number;
+  zScore?: number;
+  mean?: number;
+  stdDev?: number;
+  severity?: FindingSeverity;
+}
+
+/**
+ * Evalúa si una variación en el Security Score representa una anomalía estadística
+ * o un descenso atípico relevante.
+ * - Caídas < 10 puntos nunca alertan.
+ * - En activos con histórico (>= 3 muestras), evalúa Z-Score (z >= 2.0 = anomalía atípica).
+ * - Caídas abruptas (>= 15 pts, o >= 12 pts si el score cae a zona crítica < 50) se consideran anomalías directas.
+ */
+export function evaluateScoreAnomaly(
+  currentScore: number,
+  previousScore: number,
+  historyScores: number[] = [],
+): ScoreAnomalyEvaluation {
+  const drop = previousScore - currentScore;
+  if (drop < 10) {
+    return { isAnomaly: false, drop };
+  }
+
+  let isAnomaly = false;
+  let zScore: number | undefined;
+  let mean: number | undefined;
+  let stdDev: number | undefined;
+
+  if (historyScores.length >= 3) {
+    const stats = calculateScoreStats(historyScores);
+    mean = stats.mean;
+    stdDev = stats.stdDev;
+    if (stdDev > 0) {
+      zScore = Math.round(((mean - currentScore) / stdDev) * 100) / 100;
+      if (zScore >= 2.0) {
+        isAnomaly = true;
+      }
+    }
+  }
+
+  if (drop >= 15 || (drop >= 12 && currentScore < 50)) {
+    isAnomaly = true;
+  }
+
+  if (!isAnomaly) {
+    return { isAnomaly: false, drop, mean, stdDev, zScore };
+  }
+
+  let severity: FindingSeverity = FindingSeverity.MEDIUM;
+  if (drop >= 25 || (drop >= 15 && currentScore < 40)) {
+    severity = FindingSeverity.CRITICAL;
+  } else if (drop >= 15 || (zScore !== undefined && zScore >= 2.5)) {
+    severity = FindingSeverity.HIGH;
+  }
+
+  return { isAnomaly: true, drop, mean, stdDev, zScore, severity };
+}
+
+

@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { AssetCriticality, FindingStatus, Prisma, RiskScore, RiskScoreScope, RiskScoreTrigger, ScanStatus } from '@prisma/client';
+import { AssetCriticality, FindingSeverity, FindingStatus, Prisma, RiskScore, RiskScoreScope, RiskScoreTrigger, ScanStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HistoryQuery } from './dto/history.query';
-import { aggregateScores, computeScore, emptyCounts, gradeFor, ScoreResult, SeverityCounts } from './scoring';
+import { aggregateScores, computeScore, emptyCounts, evaluateScoreAnomaly, gradeFor, ScoreResult, SeverityCounts } from './scoring';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
@@ -287,20 +287,41 @@ export class RiskScoresService {
       take: 2000,
     });
     const points = query.granularity === 'raw' ? rows : collapseByDay(rows);
-    return {
-      scope: query.assetId ? RiskScoreScope.ASSET : RiskScoreScope.ORGANIZATION,
-      assetId: query.assetId ?? null,
-      granularity: query.granularity,
-      from: query.from ?? null,
-      to: query.to ?? null,
-      points: points.map((p) => ({
+    const historyScores: number[] = [];
+    const enrichedPoints = points.map((p, idx) => {
+      let anomaly: { drop: number; zScore?: number; severity: FindingSeverity } | null = null;
+      if (p.score !== null && idx > 0 && points[idx - 1].score !== null) {
+        const prev = points[idx - 1].score as number;
+        const evaluation = evaluateScoreAnomaly(p.score, prev, historyScores);
+        if (evaluation.isAnomaly && evaluation.severity) {
+          anomaly = {
+            drop: evaluation.drop,
+            zScore: evaluation.zScore,
+            severity: evaluation.severity,
+          };
+        }
+      }
+      if (p.score !== null) {
+        historyScores.push(p.score);
+      }
+      return {
         computedAt: p.computedAt,
         score: p.score,
         grade: p.grade,
         counts: { CRITICAL: p.criticalCount, HIGH: p.highCount, MEDIUM: p.mediumCount, LOW: p.lowCount, INFO: p.infoCount },
         trigger: p.trigger,
         scanId: p.scanId,
-      })),
+        anomaly,
+      };
+    });
+
+    return {
+      scope: query.assetId ? RiskScoreScope.ASSET : RiskScoreScope.ORGANIZATION,
+      assetId: query.assetId ?? null,
+      granularity: query.granularity,
+      from: query.from ?? null,
+      to: query.to ?? null,
+      points: enrichedPoints,
     };
   }
 }
