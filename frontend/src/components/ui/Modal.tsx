@@ -1,7 +1,28 @@
 import { X } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
+import { cn } from '@/lib/cn';
 
-export function Modal({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode }) {
+const sizeClasses = {
+  md: 'sm:max-w-lg',
+  lg: 'sm:max-w-2xl',
+  xl: 'sm:max-w-3xl',
+};
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  size = 'md',
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  size?: 'md' | 'lg' | 'xl';
+}) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -16,7 +37,8 @@ export function Modal({ open, onClose, title, children, footer }: { open: boolea
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="modal-title" className="w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border border-border bg-surface shadow-xl sm:max-w-lg sm:rounded-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="modal-title" className={cn('w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border border-border bg-surface shadow-xl sm:rounded-2xl', sizeClasses[size])}>
+
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <h2 id="modal-title" className="text-base font-semibold text-ink">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink">
