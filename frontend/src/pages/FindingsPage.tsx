@@ -1,8 +1,9 @@
-import { ChevronDown, ChevronRight, Download, RefreshCw, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, RefreshCw, ShieldAlert, Sparkles } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { CveList } from '@/components/CveList';
+import { FindingTriageModal } from '@/components/FindingTriageModal';
 import { RemediationGuideCard } from '@/components/RemediationGuideCard';
 import { Alert } from '@/components/ui/Alert';
 import { FindingStatusBadge, SeverityBadge } from '@/components/ui/Badge';
@@ -34,6 +35,7 @@ export function FindingsPage() {
   const q = useFindings(filter);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [review, setReview] = useState<{ finding: Finding; action: ReviewAction } | null>(null);
+  const [triageFinding, setTriageFinding] = useState<Finding | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   const handleExport = async () => {
@@ -154,7 +156,12 @@ export function FindingsPage() {
                     {isOpen ? (
                       <tr className="bg-surface-2/40">
                         <td colSpan={7} className="border-b border-line px-5 py-4">
-                          <FindingDetail finding={f} canEdit={canEdit} onReview={(action) => setReview({ finding: f, action })} />
+                          <FindingDetail
+                            finding={f}
+                            canEdit={canEdit}
+                            onReview={(action) => setReview({ finding: f, action })}
+                            onTriage={(item) => setTriageFinding(item)}
+                          />
                         </td>
                       </tr>
                     ) : null}
@@ -176,11 +183,28 @@ export function FindingsPage() {
       </Card>
 
       {review ? <ReviewModal finding={review.finding} action={review.action} onClose={() => setReview(null)} /> : null}
+      {triageFinding ? (
+        <FindingTriageModal
+          finding={triageFinding}
+          canEdit={canEdit}
+          onClose={() => setTriageFinding(null)}
+        />
+      ) : null}
     </>
   );
 }
 
-function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; canEdit: boolean; onReview: (a: ReviewAction) => void }) {
+function FindingDetail({
+  finding: f,
+  canEdit,
+  onReview,
+  onTriage,
+}: {
+  finding: Finding;
+  canEdit: boolean;
+  onReview: (a: ReviewAction) => void;
+  onTriage: (finding: Finding) => void;
+}) {
   const retest = useRetestFinding();
   const [retestResult, setRetestResult] = useState<{ stillReproducible: boolean; message: string } | null>(null);
 
@@ -245,6 +269,15 @@ function FindingDetail({ finding: f, canEdit, onReview }: { finding: Finding; ca
         ) : null}
         {canEdit ? (
           <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Sparkles className="size-3.5 text-accent-strong" />}
+              onClick={() => onTriage(f)}
+              title="Analizar con motor heurístico y síntesis de IA para triage contextual y detección de falsos positivos"
+            >
+              Triage IA
+            </Button>
             <Button
               size="sm"
               variant="secondary"
