@@ -131,6 +131,7 @@ export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
   CERT_EXPIRING: 'Certificado por vencer',
   CRITICAL_FINDING: 'Hallazgo crítico',
   NEW_SUBDOMAIN: 'Subdominio nuevo',
+  SCORE_ANOMALY: 'Anomalía de score',
 };
 
 export const FREQUENCY_LABEL: Record<MonitoringFrequency, string> = {

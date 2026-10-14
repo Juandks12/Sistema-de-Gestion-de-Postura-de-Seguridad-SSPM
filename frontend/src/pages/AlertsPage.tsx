@@ -1,4 +1,4 @@
-import { BellRing, CheckCheck, ChevronDown, ChevronRight, Globe, Lock, Network, RefreshCw, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { BellRing, CheckCheck, ChevronDown, ChevronRight, Globe, Lock, Network, RefreshCw, ShieldAlert, TrendingDown, type LucideIcon } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -22,6 +22,7 @@ const TYPE_ICON: Record<AlertType, LucideIcon> = {
   CERT_EXPIRING: Lock,
   CRITICAL_FINDING: ShieldAlert,
   NEW_SUBDOMAIN: Globe,
+  SCORE_ANOMALY: TrendingDown,
 };
 
 const DELIVERY_STYLE: Record<DeliveryResult['status'], { cls: string; label: string }> = {
@@ -225,6 +226,35 @@ function AlertDetail({ alert: a, canEdit }: { alert: AlertItem; canEdit: boolean
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <p className="text-sm text-ink">{a.message}</p>
+        {a.type === 'SCORE_ANOMALY' && a.data && typeof a.data === 'object' ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2.5 rounded-lg border border-line bg-surface-2 p-3 text-xs">
+            <span className="font-semibold text-critical">
+              Caída: -{Number((a.data as Record<string, unknown>).drop ?? 0)} pts
+            </span>
+            <span className="text-muted">·</span>
+            <span className="text-ink-2">
+              Previo: <span className="font-medium text-ink">{Number((a.data as Record<string, unknown>).previousScore ?? 0)}</span>
+            </span>
+            <span className="text-muted">→</span>
+            <span className="text-ink-2">
+              Actual: <span className="font-medium text-ink">{Number((a.data as Record<string, unknown>).currentScore ?? 0)}</span>
+            </span>
+            {(a.data as Record<string, unknown>).mean !== undefined && (a.data as Record<string, unknown>).mean !== null ? (
+              <>
+                <span className="text-muted">·</span>
+                <span className="text-ink-2">
+                  Media histórica: {Number((a.data as Record<string, unknown>).mean)}
+                  {(a.data as Record<string, unknown>).stdDev ? ` (± ${Number((a.data as Record<string, unknown>).stdDev)})` : ''}
+                </span>
+              </>
+            ) : null}
+            {(a.data as Record<string, unknown>).zScore !== undefined && (a.data as Record<string, unknown>).zScore !== null ? (
+              <span className="rounded bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent">
+                Z-Score: {Number((a.data as Record<string, unknown>).zScore)}σ
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-ink-2 sm:grid-cols-2">
           <div><dt className="inline text-muted">Generada: </dt><dd className="inline">{formatDateTime(a.createdAt)}</dd></div>
           {a.acknowledgedAt ? (

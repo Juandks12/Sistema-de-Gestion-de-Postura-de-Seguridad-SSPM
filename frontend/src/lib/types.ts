@@ -22,7 +22,7 @@ export type FindingCategory =
   | 'EMAIL_SECURITY';
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
 export type ScanSource = 'MANUAL' | 'SCHEDULED';
-export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING' | 'NEW_SUBDOMAIN';
+export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING' | 'NEW_SUBDOMAIN' | 'SCORE_ANOMALY';
 export type AlertChannelType = 'EMAIL' | 'WEBHOOK';
 export type MonitoringFrequency = 'OFF' | 'DAILY' | 'WEEKLY';
 export type ReportType = 'EXECUTIVE' | 'TECHNICAL';
