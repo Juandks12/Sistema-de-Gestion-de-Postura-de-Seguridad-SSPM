@@ -259,6 +259,11 @@ describe('Alertas, monitoreo y reportes (e2e)', () => {
       expect((await http_().get('/api/v1/alerts/summary').set(auth(admin)).expect(200)).body.unacknowledged).toBe(0);
     });
 
+    it('permite filtrar alertas por tipo SCORE_ANOMALY', async () => {
+      const res = await http_().get('/api/v1/alerts?type=SCORE_ANOMALY').set(auth(admin)).expect(200);
+      expect(Array.isArray(res.body.items)).toBe(true);
+    });
+
     it('otra organización no ve ni modifica alertas ni canales', async () => {
       const list = await http_().get('/api/v1/alerts').set(auth(otherOrg)).expect(200);
       expect(list.body.items).toHaveLength(0);

@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { AlertChannelType, FindingSeverity, AlertType } from '@prisma/client';
+import { AlertChannelType, FindingSeverity, AlertType, ScanType } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,6 +33,9 @@ describe('AlertsService - Retry & Backoff', () => {
     let prismaMock: {
       alert: { findMany: jest.Mock; findUnique: jest.Mock; findFirst: jest.Mock; update: jest.Mock; create: jest.Mock };
       alertChannel: { findMany: jest.Mock; findFirst: jest.Mock; updateMany: jest.Mock };
+      asset: { findFirst: jest.Mock };
+      scan: { findUnique: jest.Mock; findFirst: jest.Mock };
+      riskScore: { findMany: jest.Mock };
       $transaction: jest.Mock;
     };
     let configMock: { get: jest.Mock };
@@ -60,6 +63,16 @@ describe('AlertsService - Retry & Backoff', () => {
           findMany: jest.fn(),
           findFirst: jest.fn(),
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        asset: {
+          findFirst: jest.fn(),
+        },
+        scan: {
+          findUnique: jest.fn(),
+          findFirst: jest.fn(),
+        },
+        riskScore: {
+          findMany: jest.fn(),
         },
         $transaction: jest.fn(),
       };
@@ -220,6 +233,43 @@ describe('AlertsService - Retry & Backoff', () => {
         },
       });
       expect(updated).toBeDefined();
+    });
+
+    it('handleScanCompleted detecta caída anómala de score y genera alerta SCORE_ANOMALY', async () => {
+      prismaMock.asset.findFirst.mockResolvedValueOnce({
+        id: 'asset-1',
+        value: 'servidor.local',
+        name: 'Servidor Principal',
+      });
+      prismaMock.scan.findUnique.mockResolvedValueOnce({
+        finishedAt: new Date(),
+        ports: [],
+      });
+      prismaMock.scan.findFirst.mockResolvedValueOnce(null);
+      prismaMock.riskScore.findMany.mockResolvedValueOnce([
+        { score: 65, computedAt: new Date() },
+        { score: 85, computedAt: new Date(Date.now() - 3600000) },
+        { score: 86, computedAt: new Date(Date.now() - 7200000) },
+        { score: 84, computedAt: new Date(Date.now() - 10800000) },
+      ]);
+      prismaMock.alert.create.mockReturnValue({ id: 'alert-anomaly-1' });
+      prismaMock.$transaction.mockResolvedValueOnce([{ id: 'alert-anomaly-1' }]);
+      prismaMock.alert.findUnique.mockResolvedValueOnce(null); // finish delivery without channels
+
+      const count = await service.handleScanCompleted({
+        organizationId: 'org-1',
+        assetId: 'asset-1',
+        scanId: 'scan-1',
+        scanType: ScanType.PORT_SCAN,
+        opened: [],
+      });
+
+      expect(count).toBe(1);
+      expect(prismaMock.$transaction).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.anything(),
+        ]),
+      );
     });
   });
 });
