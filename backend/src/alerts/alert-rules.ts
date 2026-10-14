@@ -1,6 +1,6 @@
 import { AlertType, FindingCategory, FindingSeverity, ScanType } from '@prisma/client';
 import type { OpenedFinding } from '../findings/findings.service';
-import { SEVERITY_ORDER } from '../risk/scoring';
+import { calculateScoreStats, evaluateScoreAnomaly, SEVERITY_ORDER } from '../risk/scoring';
 
 /**
  * Reglas de alertas tempranas (RF-10, sección 10.1). Funciones puras: reciben
@@ -15,6 +15,8 @@ import { SEVERITY_ORDER } from '../risk/scoring';
  * - NEW_SUBDOMAIN: subdominios que aparecen por primera vez en Certificate
  *   Transparency y no están en el inventario. El primer descubrimiento es la
  *   línea base y no alerta.
+ * - SCORE_ANOMALY: caída anómala en el Security Score respecto al histórico
+ *   del activo o descensos abruptos que sugieren exposición simultánea.
  */
 
 /** Subdominios que se enumeran en el texto de la alerta (el resto se resume). */
@@ -47,6 +49,7 @@ export interface ScoreAnomalyInput {
   currentScore: number;
   previousScore: number;
   historyScores?: number[];
+  openedFindings?: Array<{ ruleId: string; severity: FindingSeverity; title: string; location: string }>;
 }
 
 export interface AlertDraft {
@@ -182,7 +185,18 @@ export function detectAlerts(input: AlertDetectionInput): AlertDraft[] {
   }
 
   if (input.scoreChange) {
-    const scoreAlert = detectScoreAnomaly(input.asset, input.scoreChange);
+    const enrichedChange: ScoreAnomalyInput = {
+      ...input.scoreChange,
+      openedFindings:
+        input.scoreChange.openedFindings ??
+        input.opened.map((f) => ({
+          ruleId: f.ruleId,
+          severity: f.severity,
+          title: f.title,
+          location: f.location,
+        })),
+    };
+    const scoreAlert = detectScoreAnomaly(input.asset, enrichedChange);
     if (scoreAlert) {
       alerts.push(scoreAlert);
     }
@@ -191,61 +205,31 @@ export function detectAlerts(input: AlertDetectionInput): AlertDraft[] {
   return alerts;
 }
 
-export function calculateScoreStats(scores: number[]): { mean: number; stdDev: number } {
-  if (scores.length === 0) return { mean: 0, stdDev: 0 };
-  const mean = scores.reduce((sum, s) => sum + s, 0) / scores.length;
-  if (scores.length === 1) return { mean: Math.round(mean * 10) / 10, stdDev: 0 };
-  const variance = scores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / (scores.length - 1);
-  const stdDev = Math.sqrt(variance);
-  return {
-    mean: Math.round(mean * 10) / 10,
-    stdDev: Math.round(stdDev * 10) / 10,
-  };
-}
-
 export function detectScoreAnomaly(
   asset: { value: string; name: string | null },
   input: ScoreAnomalyInput,
 ): AlertDraft | null {
-  const { currentScore, previousScore, historyScores = [] } = input;
-  const drop = previousScore - currentScore;
+  const { currentScore, previousScore, historyScores = [], openedFindings = [] } = input;
+  const evalResult = evaluateScoreAnomaly(currentScore, previousScore, historyScores);
 
-  if (drop < 10) return null;
+  if (!evalResult.isAnomaly || !evalResult.severity) return null;
 
   const label = assetLabel(asset);
-  let isAnomaly = false;
-  let zScore: number | null = null;
-  let mean: number | null = null;
-  let stdDev: number | null = null;
-
-  if (historyScores.length >= 3) {
-    const stats = calculateScoreStats(historyScores);
-    mean = stats.mean;
-    stdDev = stats.stdDev;
-    if (stdDev > 0) {
-      zScore = Math.round(((mean - currentScore) / stdDev) * 100) / 100;
-      if (zScore >= 2.0) {
-        isAnomaly = true;
-      }
-    }
-  }
-
-  if (drop >= 15 || (drop >= 12 && currentScore < 50)) {
-    isAnomaly = true;
-  }
-
-  if (!isAnomaly) return null;
-
-  let severity: FindingSeverity = FindingSeverity.MEDIUM;
-  if (drop >= 25 || (drop >= 15 && currentScore < 40)) {
-    severity = FindingSeverity.CRITICAL;
-  } else if (drop >= 15 || (zScore !== null && zScore >= 2.5)) {
-    severity = FindingSeverity.HIGH;
-  }
+  const { drop, mean, stdDev, zScore, severity } = evalResult;
 
   const statText =
-    mean !== null && stdDev !== null && zScore !== null
+    mean !== undefined && stdDev !== undefined && zScore !== undefined
       ? `, desviándose marcadamente de su promedio histórico (${mean} ± ${stdDev}, z=${zScore})`
+      : '';
+
+  const topDrivers = openedFindings
+    .slice()
+    .sort((a, b) => severityRank(a.severity) - severityRank(b.severity))
+    .slice(0, 3);
+
+  const driversText =
+    topDrivers.length > 0
+      ? ` Coincide con la detección de nuevos hallazgos: ${topDrivers.map((d) => `${d.title} (${d.location})`).join(', ')}.`
       : '';
 
   return {
@@ -254,20 +238,23 @@ export function detectScoreAnomaly(
     title: `Caída anómala de Security Score en ${asset.value}: -${drop} pts (${previousScore} → ${currentScore})`,
     message:
       `El Security Score de ${label} sufrió una degradación atípica de ${drop} puntos ` +
-      `(pasó de ${previousScore} a ${currentScore})${statText}. ` +
+      `(pasó de ${previousScore} a ${currentScore})${statText}.${driversText} ` +
       `Esta caída abrupta suele indicar la exposición de servicios críticos o la detección simultánea de nuevas vulnerabilidades. ` +
       `Revise los hallazgos recientes para mitigar el impacto antes de la próxima auditoría.`,
     data: {
       currentScore,
       previousScore,
       drop,
-      mean,
-      stdDev,
-      zScore,
+      mean: mean ?? null,
+      stdDev: stdDev ?? null,
+      zScore: zScore ?? null,
       sampleSize: historyScores.length,
+      penaltyDrivers: topDrivers,
     },
   };
 }
+
+export { calculateScoreStats, evaluateScoreAnomaly };
 
 /** Puertos abiertos de `current` que no estaban en `previous`. */
 export function diffOpenPorts(previous: PortInfo[], current: PortInfo[]): PortInfo[] {
