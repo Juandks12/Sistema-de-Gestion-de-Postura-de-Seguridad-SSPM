@@ -23,6 +23,9 @@ const STALE_MARGIN_SECONDS = 120;
  * - Permite varias instancias: cada una "reclama" trabajos con
  *   `FOR UPDATE SKIP LOCKED`, de modo que dos workers nunca toman el mismo escaneo.
  * - Respeta un límite global por instancia y un límite por organización.
+ * - Concurrencia adaptativa basada en estabilidad del sistema (sube ante éxito continuado,
+ *   baja ante errores recurrentes).
+ * - Reintento automático de fallos transitorios de red/DNS preservando metadatos en `parameters`.
  * - Delega la ejecución en el `Scanner` registrado para cada `ScanType`.
  *
  * Si en el futuro se necesita más escala, este servicio puede moverse a un
@@ -39,6 +42,10 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
   private shuttingDown = false;
   private readonly inFlight = new Set<Promise<void>>();
 
+  private currentConcurrencyLimit = 2;
+  private consecutiveSuccesses = 0;
+  private consecutiveFailures = 0;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -50,6 +57,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     @Inject(SCANNERS) scanners: Scanner[],
   ) {
     this.scanners = new Map(scanners.map((s) => [s.type, s]));
+    this.currentConcurrencyLimit = this.baseConcurrency;
   }
 
   /** Tipos de escaneo con un escáner registrado. */
@@ -62,12 +70,21 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     return [...this.scanners.values()].filter((s) => scannerApplies(s, assetType)).map((s) => s.type);
   }
 
-  private get enabled(): boolean {
-    return this.config.get<boolean>('SCAN_WORKER_ENABLED') !== false;
+  get baseConcurrency(): number {
+    return this.config.get<number>('SCAN_MAX_CONCURRENCY') ?? 2;
   }
 
-  private get maxConcurrency(): number {
-    return this.config.get<number>('SCAN_MAX_CONCURRENCY') ?? 2;
+  get maxAdaptiveConcurrency(): number {
+    const configured = this.config.get<number>('SCAN_MAX_ADAPTIVE_CONCURRENCY');
+    return configured ? Math.max(configured, this.baseConcurrency) : Math.max(this.baseConcurrency, 4);
+  }
+
+  get effectiveConcurrency(): number {
+    return this.currentConcurrencyLimit;
+  }
+
+  private get enabled(): boolean {
+    return this.config.get<boolean>('SCAN_WORKER_ENABLED') !== false;
   }
 
   private get maxPerOrg(): number {
@@ -87,12 +104,13 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       this.logger.log('Worker de escaneos deshabilitado (SCAN_WORKER_ENABLED=false)');
       return;
     }
+    this.currentConcurrencyLimit = this.baseConcurrency;
     const interval = this.config.get<number>('SCAN_POLL_INTERVAL_MS') ?? 5000;
     this.timer = setInterval(() => this.kick(), interval);
     this.timer.unref();
     this.logger.log(
-      `Worker de escaneos activo (tipos: ${this.supportedTypes.join(', ')}; concurrencia ${this.maxConcurrency}, ` +
-        `${this.maxPerOrg} por organización, timeout ${this.timeoutSeconds}s)`,
+      `Worker de escaneos activo (tipos: ${this.supportedTypes.join(', ')}; concurrencia base ${this.baseConcurrency}, ` +
+        `adaptativa hasta ${this.maxAdaptiveConcurrency}, ${this.maxPerOrg} por organización, timeout ${this.timeoutSeconds}s)`,
     );
     this.kick();
   }
@@ -105,6 +123,38 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       this.logger.warn(`Apagado: ${ids.length} escaneo(s) en curso se devolverán a la cola`);
     }
     await Promise.allSettled([...this.inFlight]);
+  }
+
+  /** Ajusta la concurrencia en base al éxito o fallo recurrente de los escaneos recientes. */
+  adaptConcurrency(success: boolean): void {
+    if (success) {
+      this.consecutiveSuccesses += 1;
+      this.consecutiveFailures = 0;
+      if (this.consecutiveSuccesses >= 3 && this.currentConcurrencyLimit < this.maxAdaptiveConcurrency) {
+        this.currentConcurrencyLimit += 1;
+        this.consecutiveSuccesses = 0;
+        this.logger.log(`Concurrencia adaptativa incrementada a ${this.currentConcurrencyLimit}`);
+      }
+    } else {
+      this.consecutiveFailures += 1;
+      this.consecutiveSuccesses = 0;
+      if (this.consecutiveFailures >= 2 && this.currentConcurrencyLimit > this.baseConcurrency) {
+        this.currentConcurrencyLimit -= 1;
+        this.consecutiveFailures = 0;
+        this.logger.warn(`Concurrencia adaptativa reducida a ${this.currentConcurrencyLimit} por fallos recientes`);
+      }
+    }
+  }
+
+  /** Determina si un error de escaneo se debe a una desconexión o falla de red transitoria. */
+  isTransientScanError(err: unknown): boolean {
+    if (!err) return false;
+    const msg = ((err as Error).message ?? String(err)).toLowerCase();
+    const code = ((err as { code?: string }).code ?? '').toUpperCase();
+    if (['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ECONNREFUSED', 'EPIPE', 'UND_ERR_SOCKET'].includes(code)) {
+      return true;
+    }
+    return /timeout|timed out|econnreset|socket hang up|eai_again|intermit|transient|servfail|econnrefused/i.test(msg);
   }
 
   /** Solicita una revisión inmediata de la cola (p. ej. tras encolar un escaneo). */
@@ -123,7 +173,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       do {
         this.tickRequested = false;
         await this.failStaleScans();
-        while (this.active < this.maxConcurrency && !this.shuttingDown) {
+        while (this.active < this.effectiveConcurrency && !this.shuttingDown) {
           const scanId = await this.claimNext();
           if (!scanId) break;
           this.active += 1;
@@ -262,6 +312,8 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
           `${outcome.findings.length} hallazgo(s) (${findings.created} nuevos, ${findings.resolved} resueltos)`,
       );
 
+      this.adaptConcurrency(true);
+
       // RF-10: alertas tempranas. Fuera de la transacción y sin propagar errores.
       await this.alerts.handleScanCompleted({
         organizationId: scan.organizationId,
@@ -283,6 +335,33 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       } else {
         this.logger.error(`Escaneo ${scanId}: ${(err as Error).stack ?? String(err)}`);
       }
+
+      const params = (scan.parameters && typeof scan.parameters === 'object' ? scan.parameters : {}) as Record<string, unknown>;
+      const retryCount = typeof params.retryCount === 'number' ? params.retryCount : 0;
+      const maxRetries = this.config.get<number>('SCAN_MAX_TRANSIENT_RETRIES') ?? 1;
+
+      if (this.isTransientScanError(err) && retryCount < maxRetries) {
+        const nextRetry = retryCount + 1;
+        this.logger.warn(`Escaneo ${scanId}: fallo transitorio ("${message}"). Reintentando en cola (${nextRetry}/${maxRetries})...`);
+        await this.prisma.scan.updateMany({
+          where: { id: scanId, status: ScanStatus.RUNNING },
+          data: {
+            status: ScanStatus.PENDING,
+            startedAt: null,
+            targetAddress: null,
+            parameters: {
+              ...params,
+              retryCount: nextRetry,
+              lastTransientError: message,
+              lastRetriedAt: new Date().toISOString(),
+            },
+          },
+        });
+        this.adaptConcurrency(false);
+        return;
+      }
+
+      this.adaptConcurrency(false);
       await this.prisma.scan.updateMany({
         where: { id: scanId, status: ScanStatus.RUNNING },
         data: { status: ScanStatus.FAILED, finishedAt: new Date(), errorMessage: message },
