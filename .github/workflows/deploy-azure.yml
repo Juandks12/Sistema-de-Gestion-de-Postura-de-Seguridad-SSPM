@@ -1,0 +1,152 @@
+name: Deploy Azure
+
+# Publica la imagen de la API en GHCR y despliega API (Container Apps) y
+# frontend (Static Web Apps) en Azure. Entra con OIDC: no hay secretos guardados.
+# Sin las variables de Azure del repo solo publica la imagen (ver infra/README.md).
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "frontend/**", ".github/workflows/deploy-azure.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Imagen de la API (GHCR)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nombre de la imagen
+        id: meta
+        # GHCR exige minúsculas y el dueño del repo tiene mayúsculas.
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sspm-api" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: production
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+  api:
+    name: API → Container Apps
+    needs: image
+    if: vars.AZURE_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Desplegar
+        run: |
+          az containerapp update \
+            --name "${{ vars.SSPM_API_APP }}" \
+            --resource-group "${{ vars.SSPM_RESOURCE_GROUP }}" \
+            --image "${{ needs.image.outputs.image }}:${{ github.sha }}" \
+            --output none
+
+      - name: Verificar
+        # La API escala a cero: el primer arranque (migraciones incluidas) tarda.
+        run: |
+          fqdn=$(az containerapp show -n "${{ vars.SSPM_API_APP }}" -g "${{ vars.SSPM_RESOURCE_GROUP }}" --query properties.configuration.ingress.fqdn -o tsv)
+          for _ in $(seq 1 20); do
+            body=$(curl -s --max-time 30 "https://$fqdn/api/v1/health" || true)
+            echo "$body" | grep -q '"database":"up"' && { echo "$body"; exit 0; }
+            sleep 10
+          done
+          echo "::error::La API no respondió sana en https://$fqdn/api/v1/health"
+          exit 1
+
+  web:
+    name: Frontend → Static Web Apps
+    needs: api
+    if: vars.AZURE_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_BASE: ${{ vars.SSPM_API_URL }}/api/v1
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Obtener token de despliegue
+        id: swa
+        run: |
+          token=$(az staticwebapp secrets list \
+            --name "${{ vars.SSPM_SWA_NAME }}" \
+            --resource-group "${{ vars.SSPM_RESOURCE_GROUP }}" \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: frontend/dist
+          skip_app_build: true
+          skip_api_build: true
+
+      - name: Verificar
+        run: |
+          host=$(az staticwebapp show -n "${{ vars.SSPM_SWA_NAME }}" -g "${{ vars.SSPM_RESOURCE_GROUP }}" --query defaultHostname -o tsv)
+          for path in / /login /assets/demo; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$host$path")
+            echo "$path -> $code"
+            [ "$code" = "200" ] || { echo "::error::$path devolvió $code"; exit 1; }
+          done
