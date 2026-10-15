@@ -27,6 +27,8 @@ import { cn } from '@/lib/cn';
 import { FREQUENCY_DESCRIPTION, FREQUENCY_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, formatDateTime, timeAgo } from '@/lib/format';
 import type { AlertChannel, AlertChannelType, MonitoringFrequency, Severity } from '@/lib/types';
 
+import { ApiKeysCard } from '@/components/ApiKeysCard';
+
 const FREQUENCIES: MonitoringFrequency[] = ['OFF', 'DAILY', 'WEEKLY'];
 
 export function SettingsPage() {
@@ -36,9 +38,10 @@ export function SettingsPage() {
   }
   return (
     <>
-      <PageHeader title="Configuración" description="Monitoreo continuo de los activos, canales de alerta y políticas de retención de datos." />
+      <PageHeader title="Configuración" description="Monitoreo continuo de los activos, canales de alerta, integración SIEM/SOAR y políticas de retención de datos." />
       <MonitoringCard />
       <ChannelsCard />
+      <ApiKeysCard />
       <DataRetentionCard />
     </>
   );

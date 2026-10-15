@@ -5,11 +5,14 @@ import type {
   AlertChannelType,
   AlertItem,
   AlertsSummary,
+  ApiKeyItem,
   AuditEntry,
   AlertType,
   Asset,
   AssetCriticality,
   AssetVerification,
+  CreateApiKeyInput,
+  CreatedApiKeyResponse,
   DeliveryResult,
   DiscoveredHosts,
   ExecutiveBusinessSummary,
@@ -65,6 +68,7 @@ export const keys = {
   monitoring: ['monitoring'] as const,
   reports: ['reports'] as const,
   retention: ['system', 'retention'] as const,
+  apiKeys: ['api-keys'] as const,
 };
 
 export function useOverview() {
@@ -631,6 +635,46 @@ export function useCancelPendingEmail() {
       api<{ message: string }>('/auth/me/pending-email', {
         method: 'DELETE',
       }),
+  });
+}
+
+export function useApiKeys() {
+  return useQuery({
+    queryKey: keys.apiKeys,
+    queryFn: () => api<ApiKeyItem[]>('/api-keys'),
+  });
+}
+
+export function useCreateApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateApiKeyInput) =>
+      api<CreatedApiKeyResponse>('/api-keys', { method: 'POST', json: body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.apiKeys });
+    },
+  });
+}
+
+export function useRevokeApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<ApiKeyItem>(`/api-keys/${id}/revoke`, { method: 'PATCH' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.apiKeys });
+    },
+  });
+}
+
+export function useDeleteApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/api-keys/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.apiKeys });
+    },
   });
 }
 
