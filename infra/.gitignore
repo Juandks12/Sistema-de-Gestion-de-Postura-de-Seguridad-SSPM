@@ -1,0 +1,9 @@
+# Terraform: el lock de proveedores sí se versiona.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
