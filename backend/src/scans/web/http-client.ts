@@ -15,6 +15,8 @@ export interface HttpProbeOptions {
   headers?: Record<string, string>;
   /** IP ya resuelta para el host inicial (evita una segunda resolución DNS). */
   pinnedAddress?: string;
+  /** Reintentos ante fallos transitorios de conexión (por defecto: 1) */
+  retries?: number;
 }
 
 export interface HttpHop {
@@ -52,6 +54,20 @@ export const USER_AGENT = 'SSPM-SaaS-Lite/0.2 (+security posture scanner)';
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_MAX_BODY = 256 * 1024;
+const DEFAULT_MAX_RETRIES = 1;
+
+const TRANSIENT_HTTP_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ECONNREFUSED',
+  'EPIPE',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function defaultPort(protocol: string): number {
   return protocol === 'https:' ? 443 : 80;
@@ -100,12 +116,14 @@ async function readBody(body: Dispatcher.ResponseData['body'], max: number): Pro
  * - No valida el certificado TLS (eso lo hace el módulo de certificados) para
  *   poder auditar cabeceras también en sitios con certificados inválidos.
  * - Limita el tamaño del cuerpo descargado.
+ * - Reintenta automáticamente fallos transitorios de socket con backoff.
  */
 export async function httpProbe(url: string, options: HttpProbeOptions): Promise<HttpProbeOutcome> {
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const maxBody = options.maxBodyBytes ?? DEFAULT_MAX_BODY;
+  const maxRetries = options.retries ?? DEFAULT_MAX_RETRIES;
   const hops: HttpHop[] = [];
   let current = url;
   let pinned = options.pinnedAddress;
@@ -152,21 +170,49 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
     });
 
     try {
-      const hostHeader = port === defaultPort(parsed.protocol) ? bracket(hostname) : `${bracket(hostname)}:${port}`;
-      const res = await request(`${parsed.protocol}//${bracket(address)}:${port}${parsed.pathname}${parsed.search}`, {
-        dispatcher: agent,
-        method: options.method ?? 'GET',
-        headers: {
-          host: hostHeader,
-          'user-agent': USER_AGENT,
-          accept: '*/*',
-          'accept-encoding': 'identity',
-          ...options.headers,
-        },
-        signal: options.signal,
-        headersTimeout: timeoutMs,
-        bodyTimeout: timeoutMs,
-      });
+      let res: Dispatcher.ResponseData | undefined;
+      let lastErr: unknown;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (options.signal.aborted) {
+          return { ok: false, requestedUrl: url, error: 'Operación cancelada', hops, durationMs: Date.now() - startedAt };
+        }
+
+        try {
+          const hostHeader = port === defaultPort(parsed.protocol) ? bracket(hostname) : `${bracket(hostname)}:${port}`;
+          res = await request(`${parsed.protocol}//${bracket(address)}:${port}${parsed.pathname}${parsed.search}`, {
+            dispatcher: agent,
+            method: options.method ?? 'GET',
+            headers: {
+              host: hostHeader,
+              'user-agent': USER_AGENT,
+              accept: '*/*',
+              'accept-encoding': 'identity',
+              ...options.headers,
+            },
+            signal: options.signal,
+            headersTimeout: timeoutMs,
+            bodyTimeout: timeoutMs,
+          });
+          break;
+        } catch (err) {
+          lastErr = err;
+          const code = errorCode(err);
+          if (attempt < maxRetries && !options.signal.aborted && code && TRANSIENT_HTTP_CODES.has(code)) {
+            const delay = 50 * Math.pow(2, attempt) + Math.floor(Math.random() * 25);
+            await sleep(delay);
+            continue;
+          }
+          const message = (err as Error).message ?? 'Error de red';
+          return { ok: false, requestedUrl: url, error: message, code, hops, durationMs: Date.now() - startedAt };
+        }
+      }
+
+      if (!res) {
+        const code = errorCode(lastErr);
+        const message = (lastErr as Error)?.message ?? 'Error de red';
+        return { ok: false, requestedUrl: url, error: message, code, hops, durationMs: Date.now() - startedAt };
+      }
 
       const headers: Record<string, string | string[]> = {};
       for (const [k, v] of Object.entries(res.headers)) {
@@ -195,10 +241,6 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
         hops,
         durationMs: Date.now() - startedAt,
       };
-    } catch (err) {
-      const code = errorCode(err);
-      const message = (err as Error).message ?? 'Error de red';
-      return { ok: false, requestedUrl: url, error: message, code, hops, durationMs: Date.now() - startedAt };
     } finally {
       await agent.close().catch(() => undefined);
     }
