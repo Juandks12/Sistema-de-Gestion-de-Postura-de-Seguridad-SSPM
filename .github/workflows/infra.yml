@@ -1,0 +1,25 @@
+name: Infra
+
+# Infraestructura en Azure (infra/terraform) con el pipeline estándar de la
+# plataforma: plan en cada PR, apply en main con aprobación (environment prod).
+# Requiere las variables AZURE_* y TFSTATE_* del repo (ver infra/README.md).
+on:
+  pull_request:
+    paths: ["infra/**", ".checkov.yaml", ".github/workflows/infra.yml"]
+  push:
+    branches: [main]
+    paths: ["infra/**", ".checkov.yaml", ".github/workflows/infra.yml"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  prod:
+    if: vars.AZURE_CLIENT_ID != ''
+    uses: miguelortiz13/terraform-modules-iac/.github/workflows/terraform-azure.yml@v0.3.0
+    with:
+      working-directory: infra/terraform
+      environment: prod

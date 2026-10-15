@@ -1,0 +1,3 @@
+# Copia como prod.tfvars para aplicar localmente (en CI lo entrega la variable
+# AZURE_SUBSCRIPTION_ID del repo).
+subscription_id = "<id de sub-sspm>"
