@@ -194,6 +194,7 @@ model Organization {
   alertChannels   AlertChannel[]
   reports         Report[]
   discoveredHosts DiscoveredHost[]
+  apiKeys         ApiKey[]
 
   @@map("organizations")
 }
@@ -236,6 +237,7 @@ model User {
   generatedReports   Report[]       @relation("ReportGeneratedBy")
   accountTokens      AccountToken[] @relation("AccountTokenUser")
   createdTokens      AccountToken[] @relation("AccountTokenCreatedBy")
+  createdApiKeys     ApiKey[]       @relation("ApiKeyCreatedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -639,4 +641,27 @@ model AuditLog {
   @@index([organizationId, createdAt])
   @@index([organizationId, action, createdAt])
   @@map("audit_log")
+}
+
+/// Llaves de API para integración programática (SIEM/SOAR y scripts).
+/// El secreto completo solo se muestra al crearla; se almacena su hash sha256 y un prefijo para identificarla.
+model ApiKey {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String    @db.VarChar(120)
+  keyPrefix      String    @map("key_prefix") @db.VarChar(24)
+  keyHash        String    @unique @map("key_hash") @db.VarChar(64)
+  scopes         String[]  @default(["findings:read", "alerts:read", "posture:read", "assets:read"])
+  isActive       Boolean   @default(true) @map("is_active")
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdById    String?   @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("ApiKeyCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, isActive])
+  @@map("api_keys")
 }
