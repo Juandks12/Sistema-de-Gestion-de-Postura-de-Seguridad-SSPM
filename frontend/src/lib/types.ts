@@ -664,3 +664,31 @@ export interface FindingTriageAnalysis {
   provider: 'ai' | 'heuristic-expert';
 }
 
+export interface ApiKeyItem {
+  id: string;
+  organizationId: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  isActive: boolean;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+}
+
+export interface CreateApiKeyInput {
+  name: string;
+  scopes?: string[];
+  expiresAt?: string;
+}
+
+export interface CreatedApiKeyResponse extends ApiKeyItem {
+  rawKey: string;
+}
+

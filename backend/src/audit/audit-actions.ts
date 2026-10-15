@@ -34,6 +34,9 @@ export const AUDIT_ACTIONS = {
   'alert.retry': 'Reintento de entrega de alerta',
   'monitoring.update': 'Monitoreo continuo cambiado',
   'organization.update': 'Organización modificada',
+  'api_key.create': 'Llave de API creada',
+  'api_key.revoke': 'Llave de API revocada',
+  'api_key.delete': 'Llave de API eliminada',
   'system.retention_cleanup': 'Purga de retención de datos ejecutada',
 } as const;
 

@@ -91,9 +91,10 @@ Esto es lo que de verdad amplía el mercado más allá del nicho actual:
    bien EASM (superficie externa). Evaluar si conviene ampliar el alcance
    o mantener el posicionamiento actual y ser explícitos en el nombre.
 2. SSO (SAML/OIDC) — requisito de compra típico en empresas medianas.
-3. Exportación de datos (API pública documentada, no solo Swagger interno)
-   para integrarse con el SIEM/herramientas que la empresa ya tenga —
-   coherente con el límite explícito de "no reemplazar un SIEM completo".
+3. ~~**Exportación de datos y API pública (API Keys e integración SIEM/SOAR)**~~ (completado):
+   autenticación con secretos prefijados y hashes SHA-256 en base de datos, scopes granulares,
+   endpoints de sincronización incremental (`since`) y formatos JSON/NDJSON para Splunk, Wazuh,
+   Elastic y Datadog, junto con interfaz de administración de llaves y documentación técnica integrada.
 4. Certificaciones/cumplimiento (SOC 2 tipo I como mínimo) — solo cuando
    haya clientes reales que lo exijan contractualmente; es costoso y no
    debe anticiparse sin demanda confirmada.
