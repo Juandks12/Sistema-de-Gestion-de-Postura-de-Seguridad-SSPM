@@ -192,7 +192,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     }
   }
 
-  /** Toma atómicamente el siguiente escaneo PENDING respetando el límite por organización. */
+  /** Toma atómicamente el siguiente escaneo PENDING respetando el límite por organización y orden en pipeline. */
   private async claimNext(): Promise<string | null> {
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       UPDATE scans
@@ -205,7 +205,18 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
               SELECT count(*) FROM scans r
                WHERE r.organization_id = s.organization_id AND r.status = 'RUNNING'
             ) < ${this.maxPerOrg}
-          ORDER BY s.created_at
+          ORDER BY
+            date_trunc('minute', s.created_at) ASC,
+            CASE s.type
+              WHEN 'PORT_SCAN' THEN 1
+              WHEN 'SUBDOMAIN_DISCOVERY' THEN 2
+              WHEN 'EMAIL_SECURITY' THEN 3
+              WHEN 'SSL_CERT' THEN 4
+              WHEN 'WEB_HEADERS' THEN 5
+              WHEN 'SENSITIVE_PATHS' THEN 6
+              ELSE 7
+            END ASC,
+            s.created_at ASC
           LIMIT 1
           FOR UPDATE SKIP LOCKED
        )

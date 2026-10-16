@@ -261,4 +261,36 @@ describe('ScanWorkerService', () => {
       );
     });
   });
+
+  describe('claimNext', () => {
+    it('ejecuta la consulta con orden de pipeline y retorna el ID reclamado', async () => {
+      (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce([{ id: 'scan-pipeline-1' }]);
+
+      const internal = service as unknown as { claimNext: () => Promise<string | null> };
+      const claimedId = await internal.claimNext();
+
+      expect(claimedId).toBe('scan-pipeline-1');
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+
+      // Verificar que el template string pasado a queryRaw contiene la lógica de priorización de pipeline
+      const rawCall = (prisma.$queryRaw as jest.Mock).mock.calls[0];
+      const queryStrings = rawCall[0] as string[];
+      const fullSql = queryStrings.join(' ');
+      expect(fullSql).toContain("WHEN 'PORT_SCAN' THEN 1");
+      expect(fullSql).toContain("WHEN 'SUBDOMAIN_DISCOVERY' THEN 2");
+      expect(fullSql).toContain("WHEN 'EMAIL_SECURITY' THEN 3");
+      expect(fullSql).toContain("WHEN 'SSL_CERT' THEN 4");
+      expect(fullSql).toContain("WHEN 'WEB_HEADERS' THEN 5");
+      expect(fullSql).toContain("WHEN 'SENSITIVE_PATHS' THEN 6");
+    });
+
+    it('retorna null cuando no hay escaneos pendientes disponibles', async () => {
+      (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce([]);
+
+      const internal = service as unknown as { claimNext: () => Promise<string | null> };
+      const claimedId = await internal.claimNext();
+
+      expect(claimedId).toBeNull();
+    });
+  });
 });

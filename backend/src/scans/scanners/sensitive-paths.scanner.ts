@@ -4,7 +4,7 @@ import { ScanType } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { ScanExecutionError } from '../scan.errors';
 import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome, requireTarget } from '../scanner.interface';
-import { httpProbe, HttpProbeOptions, HttpProbeResult } from '../web/http-client';
+import { createHttpAgent, httpProbe, HttpProbeOptions, HttpProbeResult } from '../web/http-client';
 import { PathResponse, SENSITIVE_PATHS, SensitivePathRule } from '../web/sensitive-paths.catalog';
 import { buildUrl, webTargetsFor } from './web-targets';
 
@@ -56,13 +56,23 @@ export class SensitivePathsScanner implements Scanner {
     const timeoutMs = this.config.get<number>('WEB_REQUEST_TIMEOUT_MS') ?? 10000;
     const concurrency = this.config.get<number>('WEB_PATHS_CONCURRENCY') ?? 4;
     const targets = webTargetsFor(ctx.asset.value, ctx.openPorts, this.config);
-    const probeOptions: Omit<HttpProbeOptions, 'signal'> = {
-      allowPrivate: ctx.allowPrivate,
+    const pool = createHttpAgent({
       timeoutMs,
-      pinnedAddress: requireTarget(ctx).address,
-      maxBodyBytes: MAX_BODY,
-      maxRedirects: 2,
-    };
+      connections: concurrency,
+      hostname: ctx.asset.value,
+      keepAliveTimeout: 15000,
+      keepAliveMaxTimeout: 60000,
+    });
+
+    try {
+      const probeOptions: Omit<HttpProbeOptions, 'signal'> = {
+        allowPrivate: ctx.allowPrivate,
+        timeoutMs,
+        pinnedAddress: requireTarget(ctx).address,
+        maxBodyBytes: MAX_BODY,
+        maxRedirects: 2,
+        dispatcher: pool,
+      };
 
     // Se audita el primer origen que responda (preferencia HTTPS).
     let base: { scheme: 'http' | 'https'; port: number } | undefined;
@@ -129,5 +139,8 @@ export class SensitivePathsScanner implements Scanner {
         findingsCount: findings.length,
       },
     };
+    } finally {
+      await pool.close().catch(() => undefined);
+    }
   }
 }
