@@ -27,5 +27,10 @@ describe('SENSITIVE_PATHS', () => {
     expect(rule('/uploads/').signature(response('<title>Index of /uploads</title>', 200, 'text/html'))).toBe(true);
     expect(rule('/admin/').signature(response('<form><input type="password"></form>', 200, 'text/html'))).toBe(true);
     expect(rule('/admin/').signature(response('{"ok":true}', 200, 'application/json'))).toBe(false);
+    expect(rule('/.kube/config').signature(response('apiVersion: v1\nclusters:\n- cluster:'))).toBe(true);
+    expect(rule('/server.key').signature(response('-----BEGIN RSA PRIVATE KEY-----\nMIIE...'))).toBe(true);
+    expect(rule('/_ignition/health-check').signature(response('{"can_execute_commands":false,"laravel":"10.0"}'))).toBe(true);
+    expect(rule('/redoc').signature(response('<div id="redoc-container"></div>', 200, 'text/html'))).toBe(true);
+    expect(rule('/actuator/prometheus').signature(response('# HELP jvm_memory_used_bytes\n# TYPE jvm_memory_used_bytes gauge'))).toBe(true);
   });
 });
