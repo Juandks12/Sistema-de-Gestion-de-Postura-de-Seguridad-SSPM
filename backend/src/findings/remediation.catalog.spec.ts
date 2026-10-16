@@ -15,6 +15,14 @@ describe('remediation.catalog', () => {
 
     const swagger = getRemediationGuide('API-SWAGGER-EXPOSED');
     expect(swagger.snippets.length).toBeGreaterThan(0);
+
+    const cors = getRemediationGuide('HDR-CORS-WILDCARD');
+    expect(cors.ruleId).toBe('HDR-CORS-WILDCARD');
+    expect(cors.snippets.some((s) => s.platform === 'Nginx')).toBe(true);
+
+    const cookie = getRemediationGuide('HDR-COOKIE-INSECURE');
+    expect(cookie.ruleId).toBe('HDR-COOKIE-INSECURE');
+    expect(cookie.snippets.some((s) => s.platform === 'Spring Boot')).toBe(true);
   });
 
   it('devuelve guía fallback para reglas sin plantilla estática', () => {

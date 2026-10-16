@@ -44,6 +44,9 @@ export const SENSITIVE_PATHS: SensitivePathRule[] = [
   { path: '/config.php.bak', ruleId: 'PATH-SECRETS-EXPOSED', label: 'Copia de config.php', signature: text(/password|passwd|secret/i) },
   { path: '/.npmrc', ruleId: 'PATH-SECRETS-EXPOSED', label: 'Archivo .npmrc con token', signature: text(/_authToken\s*=/) },
   { path: '/.docker/config.json', ruleId: 'PATH-SECRETS-EXPOSED', label: 'Credenciales de Docker', signature: text(/"auths"\s*:/) },
+  { path: '/server.key', ruleId: 'PATH-SECRETS-EXPOSED', label: 'Clave privada TLS expuesta', signature: text(PRIVATE_KEY_RE) },
+  { path: '/.git-credentials', ruleId: 'PATH-SECRETS-EXPOSED', label: 'Credenciales de Git en texto plano', signature: text(/https?:\/\/[^:]+:[^@]+@/) },
+  { path: '/.kube/config', ruleId: 'PATH-K8S-CONFIG-EXPOSED', label: 'Configuración de Kubernetes expuesta', signature: text(/apiVersion:\s*v1|current-context:|clusters:/) },
 
   // Control de versiones
   { path: '/.git/HEAD', ruleId: 'PATH-VCS-EXPOSED', label: 'Directorio .git', signature: text(/^ref:\s*refs\//) },
@@ -86,6 +89,9 @@ export const SENSITIVE_PATHS: SensitivePathRule[] = [
   { path: '/trace.axd', ruleId: 'PATH-DEBUG-INFO', label: 'ASP.NET trace', signature: text(/Application Trace/i) },
   { path: '/debug/pprof/', ruleId: 'PATH-DEBUG-INFO', label: 'Go pprof', signature: text(/Types of profiles available/) },
   { path: '/_profiler/', ruleId: 'PATH-DEBUG-INFO', label: 'Symfony profiler', signature: text(/Symfony Profiler/i) },
+  { path: '/_profiler/phpinfo', ruleId: 'PATH-DEV-CONSOLE-EXPOSED', label: 'Symfony profiler phpinfo', signature: text(/Symfony Profiler|PHP Version/i) },
+  { path: '/_ignition/health-check', ruleId: 'PATH-DEV-CONSOLE-EXPOSED', label: 'Laravel Ignition debugger', signature: text(/ignition|laravel/i) },
+  { path: '/debug/default/view', ruleId: 'PATH-DEV-CONSOLE-EXPOSED', label: 'Yii2 Debug Toolbar', signature: text(/Yii Debugger/i) },
   { path: '/telescope', ruleId: 'PATH-DEBUG-INFO', label: 'Laravel Telescope', signature: text(/Telescope/) },
   { path: '/console', ruleId: 'PATH-DEBUG-INFO', label: 'Consola web (H2/Werkzeug)', signature: text(/H2 Console|Werkzeug Debugger|Interactive Console/i) },
 
@@ -110,10 +116,14 @@ export const SENSITIVE_PATHS: SensitivePathRule[] = [
   { path: '/openapi.json', ruleId: 'API-SWAGGER-EXPOSED', label: 'openapi.json', signature: text(/"openapi"\s*:/) },
   { path: '/v2/api-docs', ruleId: 'API-SWAGGER-EXPOSED', label: 'Springfox api-docs', signature: text(/"(swagger|openapi)"\s*:/) },
   { path: '/v3/api-docs', ruleId: 'API-SWAGGER-EXPOSED', label: 'Springdoc api-docs v3', signature: text(/"openapi"\s*:/) },
+  { path: '/api-docs', ruleId: 'API-SWAGGER-EXPOSED', label: 'Swagger /api-docs', signature: text(/"(swagger|openapi)"\s*:/) },
+  { path: '/api/swagger.json', ruleId: 'API-SWAGGER-EXPOSED', label: 'api/swagger.json', signature: text(/"(swagger|openapi)"\s*:/) },
   { path: '/swagger-ui/', ruleId: 'API-SWAGGER-EXPOSED', label: 'Swagger UI', signature: text(/swagger-ui/i) },
   { path: '/swagger-ui.html', ruleId: 'API-SWAGGER-EXPOSED', label: 'Swagger UI', signature: text(/swagger-ui/i) },
   { path: '/api/docs', ruleId: 'API-SWAGGER-EXPOSED', label: 'Swagger UI', signature: text(/swagger-ui|redoc/i) },
   { path: '/docs', ruleId: 'API-SWAGGER-EXPOSED', label: 'API Docs', signature: (r) => html(r) && /swagger-ui|redoc/i.test(r.text) },
+  { path: '/redoc', ruleId: 'API-SWAGGER-EXPOSED', label: 'ReDoc API Documentation', signature: (r) => html(r) && /redoc/i.test(r.text) },
+  { path: '/actuator/prometheus', ruleId: 'API-METRICS-EXPOSED', label: 'Prometheus metrics', signature: text(/# HELP |# TYPE /) },
   { path: '/graphql', ruleId: 'API-GRAPHQL-INTROSPECTION', label: 'GraphQL', signature: text(/GraphiQL|"errors"\s*:\s*\[|"data"\s*:/i) },
   { path: '/graphiql', ruleId: 'API-GRAPHQL-INTROSPECTION', label: 'GraphiQL IDE', signature: (r) => html(r) && /GraphQL/i.test(r.text) },
 ];

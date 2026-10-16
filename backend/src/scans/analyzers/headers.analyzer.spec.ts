@@ -78,12 +78,55 @@ describe('analyzeHeaders', () => {
     const findings = analyzeHeaders({
       finalUrl: 'https://example.org/',
       status: 200,
-      headers: { ...secure, 'set-cookie': ['sessionid=abc; Path=/', 'theme=dark; Secure', 'PHPSESSID=x; Secure; HttpOnly'] },
+      headers: { ...secure, 'set-cookie': ['sessionid=abc; Path=/', 'theme=dark; Secure', 'PHPSESSID=x; Secure; HttpOnly; SameSite=Lax'] },
     });
     const byRule = findings.map((f) => `${f.ruleId}:${f.location}`);
     expect(byRule).toContain('HDR-COOKIE-INSECURE:https://example.org/#cookie:sessionid');
     expect(byRule).toContain('HDR-COOKIE-NO-HTTPONLY:https://example.org/#cookie:sessionid');
+    expect(byRule).toContain('HDR-COOKIE-NO-SAMESITE:https://example.org/#cookie:sessionid');
     expect(byRule).not.toContain('HDR-COOKIE-INSECURE:https://example.org/#cookie:theme');
     expect(byRule.filter((r) => r.includes('PHPSESSID'))).toEqual([]);
+  });
+
+  it('detecta SameSite=None sin Secure en cookies', () => {
+    const findings = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: { ...secure, 'set-cookie': ['tracking=123; SameSite=None'] },
+    });
+    const ids = findings.map((f) => f.ruleId);
+    expect(ids).toContain('HDR-COOKIE-SAMESITE-NONE-INSECURE');
+  });
+
+  it('detecta configuración permisiva de CORS', () => {
+    const wildcard = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: { ...secure, 'access-control-allow-origin': '*' },
+    });
+    expect(wildcard.map((f) => f.ruleId)).toContain('HDR-CORS-WILDCARD');
+
+    const credsWithWildcard = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: {
+        ...secure,
+        'access-control-allow-origin': '*',
+        'access-control-allow-credentials': 'true',
+      },
+    });
+    expect(credsWithWildcard.map((f) => f.ruleId)).toContain('HDR-CORS-CREDENTIALS-INSECURE');
+    expect(credsWithWildcard.map((f) => f.ruleId)).not.toContain('HDR-CORS-WILDCARD');
+
+    const credsWithNull = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: {
+        ...secure,
+        'access-control-allow-origin': 'null',
+        'access-control-allow-credentials': 'true',
+      },
+    });
+    expect(credsWithNull.map((f) => f.ruleId)).toContain('HDR-CORS-CREDENTIALS-INSECURE');
   });
 });

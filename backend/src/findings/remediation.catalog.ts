@@ -187,6 +187,183 @@ const REMEDIATION_CATALOG: Record<string, Omit<RemediationGuide, 'ruleId'>> = {
       },
     ],
   },
+  'HDR-CORS-WILDCARD': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-942: Permissive Cross-domain Policy with Untrusted Domains',
+    summary:
+      'Restrinja la cabecera Access-Control-Allow-Origin a los orígenes específicos autorizados en lugar de permitir el comodín * en respuestas que manejen datos de la aplicación.',
+    verificationCommand: 'curl -sI -H "Origin: https://evil.com" https://target.com | grep -i "access-control-allow-origin"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Restrinja el origen mediante un mapeo en nginx.conf:',
+        code: 'map $http_origin $cors_origin {\n    default "";\n    "~^https?://(app\\.example\\.com|admin\\.example\\.com)$" $http_origin;\n}\nserver {\n    add_header Access-Control-Allow-Origin $cors_origin always;\n}',
+      },
+      {
+        platform: 'Node.js',
+        description: 'En Express usando el middleware cors con whitelist:',
+        code: "const cors = require('cors');\nconst whitelist = ['https://app.example.com'];\napp.use(cors({\n  origin: (origin, callback) => {\n    if (!origin || whitelist.includes(origin)) callback(null, true);\n    else callback(new Error('Bloqueado por CORS'));\n  }\n}));",
+      },
+      {
+        platform: 'Spring Boot',
+        description: 'En Spring Security o WebMvcConfigurer configure allowedOrigins:',
+        code: '@Override\npublic void addCorsMappings(CorsRegistry registry) {\n    registry.addMapping("/**")\n        .allowedOrigins("https://app.example.com")\n        .allowedMethods("GET", "POST", "PUT", "DELETE");\n}',
+      },
+    ],
+  },
+  'HDR-CORS-CREDENTIALS-INSECURE': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-942: Permissive Cross-domain Policy with Untrusted Domains',
+    summary:
+      'No combine Access-Control-Allow-Credentials: true con comodines ni refleje ciegamente el Origin del cliente. Implemente una validación estricta de dominios de confianza antes de responder.',
+    verificationCommand: 'curl -sI -H "Origin: https://evil.com" https://target.com | grep -iE "access-control-allow-(origin|credentials)"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Verifique el origen contra una lista blanca antes de añadir las cabeceras:',
+        code: 'if ($http_origin ~* "^https?://(app\\.example\\.com)$") {\n    add_header Access-Control-Allow-Origin "$http_origin" always;\n    add_header Access-Control-Allow-Credentials "true" always;\n}',
+      },
+      {
+        platform: 'Node.js',
+        description: 'En Express con cors configure origin explícito con credentials:',
+        code: "app.use(cors({\n  origin: 'https://app.example.com',\n  credentials: true\n}));",
+      },
+      {
+        platform: 'Spring Boot',
+        description: 'Configure allowedOriginPatterns o allowedOrigins estrictos con allowCredentials:',
+        code: 'corsConfiguration.setAllowedOrigins(List.of("https://app.example.com"));\ncorsConfiguration.setAllowCredentials(true);',
+      },
+    ],
+  },
+  'HDR-COOKIE-INSECURE': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-614: Sensitive Cookie in HTTPS Session Without Secure Attribute',
+    summary:
+      'Configure el atributo Secure en todas las cookies emitidas sobre conexiones HTTPS para evitar que el navegador las envíe en peticiones no cifradas.',
+    verificationCommand: 'curl -sI https://target.com | grep -i "set-cookie"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Añada la directiva proxy_cookie_flags en Nginx:',
+        code: 'proxy_cookie_flags ~ secure;',
+      },
+      {
+        platform: 'Node.js',
+        description: 'En express-session configure cookie.secure:',
+        code: "app.use(session({\n  secret: process.env.SESSION_SECRET,\n  cookie: { secure: true, httpOnly: true, sameSite: 'lax' }\n}));",
+      },
+      {
+        platform: 'Spring Boot',
+        description: 'En application.properties configure cookies seguras:',
+        code: 'server.servlet.session.cookie.secure=true\nserver.servlet.session.cookie.http-only=true',
+      },
+    ],
+  },
+  'HDR-COOKIE-NO-HTTPONLY': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-1004: Sensitive Cookie Without HttpOnly Flag',
+    summary:
+      'Active el atributo HttpOnly en todas las cookies de sesión y autenticación para evitar que sean leídas por scripts en el navegador mediante document.cookie en caso de XSS.',
+    verificationCommand: 'curl -sI https://target.com | grep -i "set-cookie"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Fuerce el flag HttpOnly en cookies proxy:',
+        code: 'proxy_cookie_flags ~ httponly;',
+      },
+      {
+        platform: 'General',
+        description: 'En PHP (php.ini):',
+        code: 'session.cookie_httponly = 1\nsession.cookie_secure = 1',
+      },
+      {
+        platform: 'Node.js',
+        description: 'En express-session:',
+        code: 'cookie: { httpOnly: true, secure: true, sameSite: "lax" }',
+      },
+    ],
+  },
+  'HDR-COOKIE-NO-SAMESITE': {
+    owasp: 'A01:2021 – Broken Access Control',
+    cwe: 'CWE-1275: Sensitive Cookie with Improper SameSite Attribute',
+    summary:
+      'Configure explícitamente el atributo SameSite (Lax o Strict) en las cookies de sesión para mitigar ataques de Cross-Site Request Forgery (CSRF).',
+    verificationCommand: 'curl -sI https://target.com | grep -i "set-cookie"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Añada el flag samesite en Nginx:',
+        code: 'proxy_cookie_flags ~ samesite=lax;',
+      },
+      {
+        platform: 'General',
+        description: 'En PHP (php.ini):',
+        code: 'session.cookie_samesite = "Lax"',
+      },
+      {
+        platform: 'Spring Boot',
+        description: 'En application.properties:',
+        code: 'server.servlet.session.cookie.same-site=lax',
+      },
+    ],
+  },
+  'HDR-COOKIE-SAMESITE-NONE-INSECURE': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-1275: Sensitive Cookie with Improper SameSite Attribute',
+    summary:
+      'Las cookies configuradas con SameSite=None deben incluir obligatoriamente el atributo Secure para ser aceptadas por navegadores modernos y protegerse en tránsito.',
+    verificationCommand: 'curl -sI https://target.com | grep -i "set-cookie"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Configure proxy_cookie_flags para añadir secure junto a samesite:',
+        code: 'proxy_cookie_flags ~ samesite=none secure;',
+      },
+      {
+        platform: 'Node.js',
+        description: 'En Express / cookie-parser:',
+        code: "res.cookie('token', value, { sameSite: 'none', secure: true, httpOnly: true });",
+      },
+    ],
+  },
+  'PATH-DEV-CONSOLE-EXPOSED': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-200: Exposure of Sensitive Information',
+    summary:
+      'Deshabilite las consolas interactivas de depuración y profiling en entornos de producción para evitar la ejecución arbitraria de código o exposición de secretos.',
+    verificationCommand: 'curl -sI https://target.com/_ignition/health-check',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'En Laravel (.env):',
+        code: 'APP_DEBUG=false\nAPP_ENV=production',
+      },
+      {
+        platform: 'Nginx',
+        description: 'Bloquee el acceso exterior a rutas de profiling y depuración:',
+        code: 'location ~* ^/(_profiler|_ignition|telescope|debug) {\n    deny all;\n    return 404;\n}',
+      },
+    ],
+  },
+  'PATH-K8S-CONFIG-EXPOSED': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-552: Files or Directories Accessible to External Parties',
+    summary:
+      'Elimine de inmediato los archivos de credenciales de Kubernetes (.kube/config) del directorio web raíz y revoque los certificados o tokens comprometidos en el clúster.',
+    verificationCommand: 'curl -sI https://target.com/.kube/config',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Bloquee el acceso a directorios y archivos ocultos (.kube, .git, .env):',
+        code: 'location ~ /\\.(kube|git|env|aws|ssh) {\n    deny all;\n    return 404;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Bloquee el acceso a archivos de configuración en .htaccess:',
+        code: '<FilesMatch "^\\.(kube|env|git)">\n    Require all denied\n</FilesMatch>',
+      },
+    ],
+  },
 
   // --------------------------------------------------- Tecnologías y EOL
   'HDR-EOL-TECH': {

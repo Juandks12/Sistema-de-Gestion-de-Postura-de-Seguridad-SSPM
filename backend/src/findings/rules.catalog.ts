@@ -264,6 +264,50 @@ const rules: FindingRule[] = [
     recommendation:
       'Planifique y ejecute de forma prioritaria la migración hacia una versión con soporte de seguridad activo.',
   },
+  {
+    id: 'HDR-CORS-WILDCARD',
+    category: C.HTTP_HEADERS,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'CORS con comodín permisivo (Access-Control-Allow-Origin: *)',
+    description:
+      'El servidor devuelve la cabecera Access-Control-Allow-Origin: *, permitiendo que cualquier dominio web de terceros lea las respuestas HTTP mediante peticiones asíncronas fetch/XHR.',
+    recommendation:
+      'Restrinja Access-Control-Allow-Origin a los dominios de confianza explícitos que requieran consumir el recurso, evitando el uso de comodines en endpoints con datos sensibles.',
+  },
+  {
+    id: 'HDR-CORS-CREDENTIALS-INSECURE',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Configuración insegura de CORS con credenciales permitidas',
+    description:
+      'Se detectó Access-Control-Allow-Credentials: true combinado con Access-Control-Allow-Origin: * o reflejo arbitrario de la cabecera Origin. Esto permite a sitios web maliciosos de terceros extraer datos autenticados o ejecutar acciones en nombre de usuarios legítimos.',
+    recommendation:
+      'Deshabilite Access-Control-Allow-Credentials o configure una lista blanca estricta (whitelist) de orígenes en el backend sin reflejar dinámicamente cualquier origen proporcionado por el cliente.',
+  },
+  {
+    id: 'HDR-COOKIE-NO-SAMESITE',
+    category: C.HTTP_HEADERS,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Cookie sin atributo de protección SameSite',
+    description:
+      'La cookie se emite sin el atributo SameSite (Lax, Strict o None). Sin este atributo, las peticiones cross-site pueden transmitir la cookie automáticamente, aumentando el riesgo de ataques Cross-Site Request Forgery (CSRF).',
+    recommendation:
+      'Configure el atributo SameSite=Lax (recomendado para la mayoría de cookies) o SameSite=Strict para cookies críticas de autenticación.',
+  },
+  {
+    id: 'HDR-COOKIE-SAMESITE-NONE-INSECURE',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Cookie con SameSite=None sin atributo Secure',
+    description:
+      'La cookie especifica SameSite=None pero carece del atributo Secure. La especificación moderna de navegadores exige que SameSite=None se acompañe obligatoriamente de Secure para evitar transmisión en texto claro.',
+    recommendation:
+      'Añada el atributo Secure a cualquier cookie configurada con SameSite=None.',
+  },
 
   // ------------------------------------------------------------------- TLS
   {
@@ -473,6 +517,28 @@ const rules: FindingRule[] = [
       'El endpoint /metrics o /actuator/prometheus es accesible públicamente sin autenticación, revelando telemetría interna, tasas de error y detalles de la infraestructura.',
     recommendation:
       'Restrinja el acceso al endpoint de métricas únicamente a la red interna o servicio de monitorización mediante mTLS o autenticación básica.',
+  },
+  {
+    id: 'PATH-DEV-CONSOLE-EXPOSED',
+    category: C.SENSITIVE_PATH,
+    severity: S.HIGH,
+    cvss: 8.6,
+    title: 'Consola interactiva de depuración o debugger expuesto en producción',
+    description:
+      'Se detectó una consola interactiva de depuración web (Laravel Ignition, Symfony Profiler, Werkzeug o H2 Console) accesible sin autenticación, lo que puede permitir ejecución remota de código (RCE) o fuga masiva de configuración interna.',
+    recommendation:
+      'Deshabilite los paquetes y rutas de depuración de desarrollo en entornos de producción (p. ej. APP_DEBUG=false en Laravel).',
+  },
+  {
+    id: 'PATH-K8S-CONFIG-EXPOSED',
+    category: C.SENSITIVE_PATH,
+    severity: S.CRITICAL,
+    cvss: 9.8,
+    title: 'Configuración o credenciales de Kubernetes o Cloud expuestas',
+    description:
+      'Se detectó acceso público a archivos de configuración o credenciales de nube (como .kube/config o certificados de servicio) expuestos directamente en el servidor web.',
+    recommendation:
+      'Elimine inmediatamente los archivos de configuración de despliegue de los directorios públicos del servidor web y restrinja el acceso.',
   },
   // ------------------------------------------------------- vulnerabilidades (CVE)
   {
