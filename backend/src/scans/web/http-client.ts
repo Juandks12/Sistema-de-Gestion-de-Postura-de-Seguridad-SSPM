@@ -17,6 +17,34 @@ export interface HttpProbeOptions {
   pinnedAddress?: string;
   /** Reintentos ante fallos transitorios de conexión (por defecto: 1) */
   retries?: number;
+  /** Dispatcher o Agent con connection pooling persistente (reutiliza sockets y Keep-Alive). */
+  dispatcher?: Dispatcher;
+}
+
+export interface CreateHttpAgentOptions {
+  timeoutMs?: number;
+  connections?: number;
+  keepAliveTimeout?: number;
+  keepAliveMaxTimeout?: number;
+  hostname?: string;
+}
+
+/**
+ * Crea un agente HTTP/HTTPS con connection pooling y Keep-Alive persistente.
+ */
+export function createHttpAgent(options?: CreateHttpAgentOptions): Agent {
+  const hostIsIp = options?.hostname ? isIP(options.hostname) !== 0 : false;
+  return new Agent({
+    keepAliveTimeout: options?.keepAliveTimeout ?? 10000,
+    keepAliveMaxTimeout: options?.keepAliveMaxTimeout ?? 30000,
+    connections: options?.connections ?? 4,
+    pipelining: 0,
+    connect: {
+      rejectUnauthorized: false,
+      servername: options?.hostname && !hostIsIp ? options.hostname : undefined,
+      timeout: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    },
+  });
 }
 
 export interface HttpHop {
@@ -159,7 +187,7 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
       }
     }
 
-    const agent = new Agent({
+    const agent = options.dispatcher ?? new Agent({
       connect: {
         rejectUnauthorized: false,
         servername: hostIsIp ? undefined : hostname,
@@ -168,6 +196,7 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
       connections: 1,
       pipelining: 0,
     });
+    const ownAgent = !options.dispatcher;
 
     try {
       let res: Dispatcher.ResponseData | undefined;
@@ -242,7 +271,9 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
         durationMs: Date.now() - startedAt,
       };
     } finally {
-      await agent.close().catch(() => undefined);
+      if (ownAgent && 'close' in agent && typeof (agent as { close?: () => Promise<void> }).close === 'function') {
+        await (agent as { close: () => Promise<void> }).close().catch(() => undefined);
+      }
     }
   }
 }
