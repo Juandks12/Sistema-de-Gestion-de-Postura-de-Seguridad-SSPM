@@ -1,12 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { FindingCategory, FindingSeverity, FindingStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+
+export const SLA_STATUSES = ['OVERDUE', 'APPROACHING', 'ON_TRACK', 'NO_SLA'] as const;
+export type SlaStatusQuery = (typeof SLA_STATUSES)[number];
 
 export class ListFindingsQuery {
   @ApiPropertyOptional({ description: 'Filtrar por activo' })
   @IsOptional()
-  @IsUUID()
+  @IsString()
   assetId?: string;
 
   @ApiPropertyOptional({ enum: FindingSeverity })
@@ -24,10 +27,15 @@ export class ListFindingsQuery {
   @IsEnum(FindingCategory)
   category?: FindingCategory;
 
-  @ApiPropertyOptional({ description: 'Filtrar por usuario asignado' })
+  @ApiPropertyOptional({ description: 'Filtrar por usuario asignado (UUID o "unassigned" para no asignados)' })
   @IsOptional()
-  @IsUUID()
+  @IsString()
   assignedToId?: string;
+
+  @ApiPropertyOptional({ enum: SLA_STATUSES, description: 'Filtrar por cumplimiento de SLA' })
+  @IsOptional()
+  @IsIn(SLA_STATUSES)
+  slaStatus?: SlaStatusQuery;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

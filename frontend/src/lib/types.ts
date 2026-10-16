@@ -120,6 +120,42 @@ export interface Finding {
   asset: { id: string; type: AssetType; value: string; name: string | null };
   reviewedBy: { id: string; fullName: string; email: string } | null;
   remediationGuide?: RemediationGuide;
+  sla?: FindingSla;
+}
+
+export type SlaStatus = 'OVERDUE' | 'APPROACHING' | 'ON_TRACK' | 'RESOLVED' | 'NO_SLA';
+
+export interface FindingSla {
+  status: SlaStatus;
+  hoursRemaining: number | null;
+  isOverdue: boolean;
+  isApproaching: boolean;
+  dueDate: string | null;
+  label: string;
+}
+
+export interface UserAssignee {
+  id: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+}
+
+export interface FindingsSlaSummary {
+  overdue: number;
+  approaching: number;
+  onTrack: number;
+  noSla: number;
+  unassigned: number;
+  assigned: number;
+}
+
+export interface FindingsSummary {
+  total: number;
+  bySeverity: SeverityCounts;
+  byCategory: Record<string, number>;
+  severityOrder: Severity[];
+  sla?: FindingsSlaSummary;
 }
 
 export interface RemediationSnippet {

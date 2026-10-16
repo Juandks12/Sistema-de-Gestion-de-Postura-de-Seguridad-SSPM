@@ -44,6 +44,19 @@ export class UsersService {
     });
   }
 
+  findAssignees(organizationId: string) {
+    return this.prisma.user.findMany({
+      where: { organizationId, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+      },
+      orderBy: { fullName: 'asc' },
+    });
+  }
+
   async findOne(organizationId: string, id: string) {
     // El filtro por organizationId garantiza el aislamiento entre tenants.
     const user = await this.prisma.user.findFirst({

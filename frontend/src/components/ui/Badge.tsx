@@ -1,8 +1,8 @@
-import { CheckCircle2, ShieldAlert } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CheckCheck, Clock, ShieldAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { GRADE_LABEL, SCAN_STATUS_LABEL, SEVERITY_LABEL, STATUS_LABEL } from '@/lib/format';
-import type { AssetCriticality, FindingStatus, Grade, ScanStatus, Severity } from '@/lib/types';
+import type { AssetCriticality, FindingSla, FindingStatus, Grade, ScanStatus, Severity } from '@/lib/types';
 import { GRADE_STYLE, SEVERITY_STYLE } from './styles';
 
 export function SeverityBadge({ severity, compact = false }: { severity: Severity; compact?: boolean }) {
@@ -130,4 +130,58 @@ export function EpssBadge({ epss, percentile }: { epss?: number | null; percenti
     </span>
   );
 }
+
+export function SlaBadge({ sla, className }: { sla?: FindingSla | null; className?: string }) {
+  if (!sla || sla.status === 'NO_SLA') {
+    return (
+      <span className={cn('inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted border border-border', className)}>
+        Sin SLA
+      </span>
+    );
+  }
+
+  if (sla.status === 'RESOLVED') {
+    return (
+      <span className={cn('inline-flex items-center gap-1 rounded-md bg-good/10 px-1.5 py-0.5 text-[11px] font-medium text-good-text border border-good/20', className)}>
+        <CheckCheck className="size-3 text-good" aria-hidden />
+        SLA Cerrado
+      </span>
+    );
+  }
+
+  if (sla.status === 'OVERDUE') {
+    return (
+      <span
+        className={cn('inline-flex items-center gap-1 rounded-md bg-critical/15 px-1.5 py-0.5 text-[11px] font-bold text-critical border border-critical/30', className)}
+        title={sla.dueDate ? `Venció el ${new Date(sla.dueDate).toLocaleDateString()}` : undefined}
+      >
+        <AlertCircle className="size-3 text-critical" aria-hidden />
+        {sla.label}
+      </span>
+    );
+  }
+
+  if (sla.status === 'APPROACHING') {
+    return (
+      <span
+        className={cn('inline-flex items-center gap-1 rounded-md bg-warning/15 px-1.5 py-0.5 text-[11px] font-semibold text-[#8a5b00] dark:text-warning border border-warning/30', className)}
+        title={sla.dueDate ? `Fecha límite: ${new Date(sla.dueDate).toLocaleDateString()}` : undefined}
+      >
+        <Clock className="size-3 text-warning" aria-hidden />
+        {sla.label}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn('inline-flex items-center gap-1 rounded-md bg-good/10 px-1.5 py-0.5 text-[11px] font-medium text-good-text border border-good/25', className)}
+      title={sla.dueDate ? `Fecha límite: ${new Date(sla.dueDate).toLocaleDateString()}` : undefined}
+    >
+      <Clock className="size-3 text-good" aria-hidden />
+      {sla.label}
+    </span>
+  );
+}
+
 
