@@ -118,11 +118,56 @@ export function analyzeHeaders(input: HeadersAnalysisInput): FindingDraft[] {
     findings.push({ ruleId: 'HDR-POWERED-BY', location, evidence: { ...base, header: poweredBy } });
   }
 
+  const acao = first(headers['access-control-allow-origin'])?.trim();
+  const acac = first(headers['access-control-allow-credentials'])?.trim().toLowerCase();
+  if (acao !== undefined) {
+    const allowsCredentials = acac === 'true';
+    if (acao === '*' && allowsCredentials) {
+      findings.push({
+        ruleId: 'HDR-CORS-CREDENTIALS-INSECURE',
+        location,
+        evidence: {
+          ...base,
+          accessControlAllowOrigin: acao,
+          accessControlAllowCredentials: acac,
+          reason: 'Access-Control-Allow-Origin: * combinado con Access-Control-Allow-Credentials: true',
+        },
+      });
+    } else if (allowsCredentials && acao.toLowerCase() === 'null') {
+      findings.push({
+        ruleId: 'HDR-CORS-CREDENTIALS-INSECURE',
+        location,
+        evidence: {
+          ...base,
+          accessControlAllowOrigin: acao,
+          accessControlAllowCredentials: acac,
+          reason: 'Access-Control-Allow-Credentials: true con origen "null"',
+        },
+      });
+    } else if (acao === '*') {
+      findings.push({
+        ruleId: 'HDR-CORS-WILDCARD',
+        location,
+        evidence: {
+          ...base,
+          accessControlAllowOrigin: acao,
+          accessControlAllowCredentials: acac ?? null,
+        },
+      });
+    }
+  }
+
   for (const cookie of all(headers['set-cookie'])) {
     const name = cookie.split('=')[0]?.trim() ?? 'cookie';
     const attrs = cookie.toLowerCase();
     const cookieLocation = `${location}#cookie:${name}`;
-    if (isHttps && !/;\s*secure(\s*;|\s*$)/.test(attrs)) {
+    const isSession = SESSION_COOKIE_RE.test(name);
+    const hasSecure = /;\s*secure(\s*;|\s*$)/.test(attrs);
+    const hasHttpOnly = /;\s*httponly(\s*;|\s*$)/.test(attrs);
+    const sameSiteMatch = /;\s*samesite=([a-z]+)/.exec(attrs);
+    const sameSite = sameSiteMatch ? sameSiteMatch[1] : null;
+
+    if (isHttps && !hasSecure) {
       findings.push({
         ruleId: 'HDR-COOKIE-INSECURE',
         location: cookieLocation,
@@ -130,11 +175,26 @@ export function analyzeHeaders(input: HeadersAnalysisInput): FindingDraft[] {
         evidence: { ...base, cookie: name },
       });
     }
-    if (SESSION_COOKIE_RE.test(name) && !/;\s*httponly(\s*;|\s*$)/.test(attrs)) {
+    if (isSession && !hasHttpOnly) {
       findings.push({
         ruleId: 'HDR-COOKIE-NO-HTTPONLY',
         location: cookieLocation,
-        title: `La cookie "${name}" no tiene el atributo HttpOnly`,
+        title: `La cookie de sesión "${name}" no tiene el atributo HttpOnly`,
+        evidence: { ...base, cookie: name },
+      });
+    }
+    if (sameSite === 'none' && !hasSecure) {
+      findings.push({
+        ruleId: 'HDR-COOKIE-SAMESITE-NONE-INSECURE',
+        location: cookieLocation,
+        title: `La cookie "${name}" especifica SameSite=None sin el atributo Secure`,
+        evidence: { ...base, cookie: name, sameSite: 'none' },
+      });
+    } else if (isSession && !sameSite) {
+      findings.push({
+        ruleId: 'HDR-COOKIE-NO-SAMESITE',
+        location: cookieLocation,
+        title: `La cookie de sesión "${name}" no especifica el atributo SameSite`,
         evidence: { ...base, cookie: name },
       });
     }
