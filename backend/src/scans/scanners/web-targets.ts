@@ -8,6 +8,9 @@ export interface WebTarget {
   url: string;
 }
 
+export const COMMON_HTTPS_PORTS = new Set([443, 8443, 9443, 4443]);
+export const COMMON_HTTP_PORTS = new Set([80, 8080, 8000, 8008, 8888, 3000, 5000, 9000, 9090]);
+
 const HTTPS_SERVICES = new Set(['https', 'https-alt', 'ssl/http', 'ssl/http-alt']);
 const HTTP_SERVICES = new Set(['http', 'http-alt', 'http-proxy', 'www', 'http-mgmt', 'webcache']);
 
@@ -39,9 +42,9 @@ export function webTargetsFor(hostname: string, openPorts: OpenPortHint[], confi
   for (const p of openPorts) {
     if (p.protocol !== 'tcp') continue;
     const name = p.serviceName?.toLowerCase() ?? '';
-    if (p.tunnel === 'ssl' || HTTPS_SERVICES.has(name) || p.port === 8443) {
+    if (p.tunnel === 'ssl' || HTTPS_SERVICES.has(name) || COMMON_HTTPS_PORTS.has(p.port)) {
       https.add(p.port);
-    } else if (HTTP_SERVICES.has(name) || p.port === 8080 || p.port === 8000) {
+    } else if (HTTP_SERVICES.has(name) || COMMON_HTTP_PORTS.has(p.port)) {
       http.add(p.port);
     }
   }

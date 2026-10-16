@@ -121,4 +121,39 @@ describe('httpProbe', () => {
     }
     expect(mockedRequest).toHaveBeenCalledTimes(2);
   });
+
+  it('respeta un dispatcher persistente y no lo destruye internamente', async () => {
+    async function* makeBody(content: string) {
+      yield Buffer.from(content);
+    }
+    const createMockBody = (content: string) => {
+      const iter = makeBody(content);
+      return Object.assign(iter, { dump: jest.fn().mockResolvedValue(undefined) });
+    };
+
+    mockedRequest.mockResolvedValueOnce({
+      statusCode: 200,
+      headers: { 'content-type': 'text/plain' },
+      body: createMockBody('Pooled response'),
+    });
+
+    const mockDispatcher = {
+      dispatch: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
+    } as unknown as import('undici').Dispatcher;
+
+    const outcome = await httpProbe('http://93.184.216.34/pooled', {
+      allowPrivate: false,
+      signal: new AbortController().signal,
+      dispatcher: mockDispatcher,
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(mockedRequest).toHaveBeenCalledWith(
+      expect.stringContaining('/pooled'),
+      expect.objectContaining({ dispatcher: mockDispatcher }),
+    );
+    // El cliente no debe cerrar el dispatcher del llamador
+    expect(mockDispatcher.close).not.toHaveBeenCalled();
+  });
 });
