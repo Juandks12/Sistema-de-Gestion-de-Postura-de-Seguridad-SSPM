@@ -108,6 +108,78 @@ export function fingerprintOf(ruleId: string, location: string): string {
   return createHash('sha256').update(`${ruleId}|${location}`).digest('hex');
 }
 
+export type SlaStatus = 'OVERDUE' | 'APPROACHING' | 'ON_TRACK' | 'RESOLVED' | 'NO_SLA';
+
+export interface FindingSla {
+  status: SlaStatus;
+  hoursRemaining: number | null;
+  isOverdue: boolean;
+  isApproaching: boolean;
+  dueDate: string | null;
+  label: string;
+}
+
+export function computeSla(dueDate: Date | null, status: FindingStatus): FindingSla {
+  if (status === FindingStatus.RESOLVED || status === FindingStatus.ACCEPTED || status === FindingStatus.FALSE_POSITIVE) {
+    return {
+      status: 'RESOLVED',
+      hoursRemaining: null,
+      isOverdue: false,
+      isApproaching: false,
+      dueDate: dueDate ? dueDate.toISOString() : null,
+      label: 'Cerrado',
+    };
+  }
+
+  if (!dueDate) {
+    return {
+      status: 'NO_SLA',
+      hoursRemaining: null,
+      isOverdue: false,
+      isApproaching: false,
+      dueDate: null,
+      label: 'Sin SLA',
+    };
+  }
+
+  const now = Date.now();
+  const dueTime = dueDate.getTime();
+  const diffHours = Math.round((dueTime - now) / (1000 * 60 * 60));
+
+  if (diffHours < 0) {
+    const overdueDays = Math.max(1, Math.ceil(Math.abs(diffHours) / 24));
+    return {
+      status: 'OVERDUE',
+      hoursRemaining: diffHours,
+      isOverdue: true,
+      isApproaching: false,
+      dueDate: dueDate.toISOString(),
+      label: overdueDays === 1 ? 'Vencido hace 1 día' : `Vencido hace ${overdueDays} días`,
+    };
+  }
+
+  if (diffHours <= 48) {
+    return {
+      status: 'APPROACHING',
+      hoursRemaining: diffHours,
+      isOverdue: false,
+      isApproaching: true,
+      dueDate: dueDate.toISOString(),
+      label: diffHours <= 1 ? 'Vence en <1 hora' : `Vence en ${diffHours} horas`,
+    };
+  }
+
+  const daysRemaining = Math.max(1, Math.ceil(diffHours / 24));
+  return {
+    status: 'ON_TRACK',
+    hoursRemaining: diffHours,
+    isOverdue: false,
+    isApproaching: false,
+    dueDate: dueDate.toISOString(),
+    label: `${daysRemaining} días restantes`,
+  };
+}
+
 const SEVERITY_ORDER: FindingSeverity[] = [
   FindingSeverity.CRITICAL,
   FindingSeverity.HIGH,
@@ -231,8 +303,40 @@ export class FindingsService {
       severity: query.severity,
       status: query.status,
       category: query.category,
-      ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
     };
+
+    if (query.assignedToId) {
+      if (query.assignedToId === 'unassigned') {
+        where.assignedToId = null;
+      } else {
+        where.assignedToId = query.assignedToId;
+      }
+    }
+
+    if (query.slaStatus) {
+      const now = new Date();
+      const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+      const openStatuses: FindingStatus[] = [
+        FindingStatus.OPEN,
+        FindingStatus.IN_PROGRESS,
+        FindingStatus.VERIFYING,
+      ];
+
+      if (query.slaStatus === 'OVERDUE') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = { lt: now };
+      } else if (query.slaStatus === 'APPROACHING') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = { gte: now, lte: in48h };
+      } else if (query.slaStatus === 'ON_TRACK') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = { gt: in48h };
+      } else if (query.slaStatus === 'NO_SLA') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = null;
+      }
+    }
+
     const [items, total] = await this.prisma.$transaction([
       this.prisma.finding.findMany({
         where,
@@ -245,6 +349,7 @@ export class FindingsService {
     ]);
     const enrichedItems = items.map((f) => ({
       ...f,
+      sla: computeSla(f.dueDate, f.status),
       remediationGuide: getRemediationGuide(f.ruleId, f.recommendation),
     }));
     return {
@@ -260,6 +365,7 @@ export class FindingsService {
     }
     return {
       ...finding,
+      sla: computeSla(finding.dueDate, finding.status),
       remediationGuide: getRemediationGuide(finding.ruleId, finding.recommendation),
     };
   }
@@ -342,7 +448,11 @@ export class FindingsService {
       },
     });
 
-    return reviewed;
+    return {
+      ...reviewed,
+      sla: computeSla(reviewed.dueDate, reviewed.status),
+      remediationGuide: getRemediationGuide(reviewed.ruleId, reviewed.recommendation),
+    };
   }
 
   /**
@@ -644,16 +754,48 @@ export class FindingsService {
       assetId,
       status: { in: [FindingStatus.OPEN, FindingStatus.IN_PROGRESS, FindingStatus.VERIFYING] },
     };
-    const [bySeverityRows, byCategoryRows, total] = await Promise.all([
+    const now = new Date();
+    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+    const [
+      bySeverityRows,
+      byCategoryRows,
+      total,
+      overdueCount,
+      approachingCount,
+      onTrackCount,
+      noSlaCount,
+      unassignedCount,
+      assignedCount,
+    ] = await Promise.all([
       this.prisma.finding.groupBy({ by: ['severity'], where, _count: { id: true } }),
       this.prisma.finding.groupBy({ by: ['category'], where, _count: { id: true } }),
       this.prisma.finding.count({ where }),
+      this.prisma.finding.count({ where: { ...where, dueDate: { lt: now } } }),
+      this.prisma.finding.count({ where: { ...where, dueDate: { gte: now, lte: in48h } } }),
+      this.prisma.finding.count({ where: { ...where, dueDate: { gt: in48h } } }),
+      this.prisma.finding.count({ where: { ...where, dueDate: null } }),
+      this.prisma.finding.count({ where: { ...where, assignedToId: null } }),
+      this.prisma.finding.count({ where: { ...where, assignedToId: { not: null } } }),
     ]);
     const bySeverity = emptyCounts();
     for (const row of bySeverityRows) bySeverity[row.severity] = row._count.id;
     const byCategory: Record<string, number> = {};
     for (const row of byCategoryRows) byCategory[row.category] = row._count.id;
-    return { total, bySeverity, byCategory, severityOrder: SEVERITY_ORDER };
+    return {
+      total,
+      bySeverity,
+      byCategory,
+      severityOrder: SEVERITY_ORDER,
+      sla: {
+        overdue: overdueCount,
+        approaching: approachingCount,
+        onTrack: onTrackCount,
+        noSla: noSlaCount,
+        unassigned: unassignedCount,
+        assigned: assignedCount,
+      },
+    };
   }
 
   /**
@@ -670,7 +812,6 @@ export class FindingsService {
       severity: query.severity,
       status: query.status,
       category: query.category,
-      ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
       ...(from || to
         ? {
             firstSeenAt: {
@@ -680,6 +821,38 @@ export class FindingsService {
           }
         : {}),
     };
+
+    if (query.assignedToId) {
+      if (query.assignedToId === 'unassigned') {
+        where.assignedToId = null;
+      } else {
+        where.assignedToId = query.assignedToId;
+      }
+    }
+
+    if (query.slaStatus) {
+      const now = new Date();
+      const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+      const openStatuses: FindingStatus[] = [
+        FindingStatus.OPEN,
+        FindingStatus.IN_PROGRESS,
+        FindingStatus.VERIFYING,
+      ];
+
+      if (query.slaStatus === 'OVERDUE') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = { lt: now };
+      } else if (query.slaStatus === 'APPROACHING') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = { gte: now, lte: in48h };
+      } else if (query.slaStatus === 'ON_TRACK') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = { gt: in48h };
+      } else if (query.slaStatus === 'NO_SLA') {
+        where.status = query.status ?? { in: openStatuses };
+        where.dueDate = null;
+      }
+    }
 
     const prisma = this.prisma;
     const batchSize = 500;
@@ -705,6 +878,7 @@ export class FindingsService {
         'resolved_at',
         'assigned_to',
         'due_date',
+        'sla_status',
         'remediation_note',
         'reviewed_by',
         'review_note',
@@ -743,6 +917,7 @@ export class FindingsService {
         if (batch.length === 0) break;
 
         for (const finding of batch) {
+          const sla = computeSla(finding.dueDate, finding.status);
           yield formatCsvRow([
             finding.id,
             finding.ruleId,
@@ -762,6 +937,7 @@ export class FindingsService {
             finding.resolvedAt ?? '',
             finding.assignedTo ? `${finding.assignedTo.fullName} (${finding.assignedTo.email})` : '',
             finding.dueDate ? finding.dueDate.toISOString() : '',
+            sla.status,
             finding.remediationNote ?? '',
             finding.reviewedBy?.email ?? '',
             finding.reviewNote ?? '',

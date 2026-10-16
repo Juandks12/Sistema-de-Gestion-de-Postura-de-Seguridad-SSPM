@@ -31,6 +31,7 @@ import type {
   Finding,
   FindingTriageAnalysis,
   RetestFindingResult,
+  FindingsSummary,
   FindingCategory,
   FindingStatus,
   OrgHistory,
@@ -42,6 +43,8 @@ import type {
   ScanStatus,
   ScanType,
   Severity,
+  SlaStatus,
+  UserAssignee,
   UserRole,
 } from '@/lib/types';
 
@@ -54,9 +57,11 @@ export const keys = {
   discovered: (id: string) => ['assets', id, 'discovered-hosts'] as const,
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
+  findingsSummary: (assetId?: string) => ['findings', 'summary', assetId ?? 'all'] as const,
   findingTriage: (id: string) => ['findings', id, 'triage'] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
   users: ['users'] as const,
+  assignees: ['users', 'assignees'] as const,
   invitations: ['users', 'invitations'] as const,
   mfa: ['auth', 'mfa'] as const,
   audit: (f: AuditFilter) => ['audit', f] as const,
@@ -96,12 +101,30 @@ export interface FindingsFilter {
   severity?: Severity | '';
   status?: FindingStatus | '';
   category?: FindingCategory | '';
+  assignedToId?: string | '';
+  slaStatus?: SlaStatus | '';
   page?: number;
   pageSize?: number;
 }
 
 export function useFindings(filter: FindingsFilter) {
   return useQuery({ queryKey: keys.findings(filter), queryFn: () => api<Paginated<Finding>>(`/findings${qs({ ...filter, pageSize: filter.pageSize ?? 25 })}`), placeholderData: (prev) => prev });
+}
+
+export function useFindingsSummary(assetId?: string) {
+  return useQuery({
+    queryKey: keys.findingsSummary(assetId),
+    queryFn: () => api<FindingsSummary>(`/findings/summary${qs({ assetId })}`),
+    refetchInterval: 15000,
+  });
+}
+
+export function useAssignees() {
+  return useQuery({
+    queryKey: keys.assignees,
+    queryFn: () => api<UserAssignee[]>('/users/assignees'),
+    staleTime: 60000,
+  });
 }
 
 export interface ScansFilter {
@@ -206,10 +229,20 @@ export function useCancelScan() {
   return useMutation({ mutationFn: (id: string) => api<Scan>(`/scans/${id}/cancel`, { method: 'POST' }), onSuccess: invalidate });
 }
 
+export interface ReviewFindingInput {
+  id: string;
+  status?: FindingStatus;
+  note?: string;
+  assignedToId?: string | null;
+  dueDate?: string | null;
+  remediationNote?: string | null;
+}
+
 export function useReviewFinding() {
   const invalidate = useInvalidateAll();
   return useMutation({
-    mutationFn: ({ id, status, note }: { id: string; status: 'OPEN' | 'ACCEPTED' | 'FALSE_POSITIVE'; note?: string }) => api<Finding>(`/findings/${id}`, { method: 'PATCH', json: { status, note } }),
+    mutationFn: ({ id, ...payload }: ReviewFindingInput) =>
+      api<Finding>(`/findings/${id}`, { method: 'PATCH', json: payload }),
     onSuccess: invalidate,
   });
 }

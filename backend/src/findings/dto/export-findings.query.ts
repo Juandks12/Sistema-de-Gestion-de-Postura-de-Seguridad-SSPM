@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { FindingCategory, FindingSeverity, FindingStatus } from '@prisma/client';
-import { IsDateString, IsEnum, IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import { SLA_STATUSES, SlaStatusQuery } from './list-findings.query';
 
 export class ExportFindingsQuery {
   @ApiPropertyOptional({ enum: ['csv'], default: 'csv', description: 'Formato de exportación' })
@@ -10,7 +11,7 @@ export class ExportFindingsQuery {
 
   @ApiPropertyOptional({ description: 'Filtrar por activo' })
   @IsOptional()
-  @IsUUID()
+  @IsString()
   assetId?: string;
 
   @ApiPropertyOptional({ enum: FindingSeverity })
@@ -28,10 +29,15 @@ export class ExportFindingsQuery {
   @IsEnum(FindingCategory)
   category?: FindingCategory;
 
-  @ApiPropertyOptional({ description: 'Filtrar por usuario asignado' })
+  @ApiPropertyOptional({ description: 'Filtrar por usuario asignado (UUID o "unassigned" para no asignados)' })
   @IsOptional()
-  @IsUUID()
+  @IsString()
   assignedToId?: string;
+
+  @ApiPropertyOptional({ enum: SLA_STATUSES, description: 'Filtrar por cumplimiento de SLA' })
+  @IsOptional()
+  @IsIn(SLA_STATUSES)
+  slaStatus?: SlaStatusQuery;
 
   @ApiPropertyOptional({ description: 'Filtrar por fecha de detección inicial (ISO 8601)' })
   @IsOptional()

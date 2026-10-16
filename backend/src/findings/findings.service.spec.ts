@@ -4,7 +4,7 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { UTF8_BOM } from '../common/utils/csv';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
-import { FindingsService } from './findings.service';
+import { computeSla, FindingsService } from './findings.service';
 
 describe('FindingsService - exportStream', () => {
   let service: FindingsService;
@@ -41,7 +41,7 @@ describe('FindingsService - exportStream', () => {
     const lines = csv.slice(UTF8_BOM.length).trim().split('\r\n');
     expect(lines).toHaveLength(1);
     expect(lines[0]).toBe(
-      'id,rule_id,severity,cvss_score,category,status,title,description,recommendation,asset_name,asset_value,asset_type,location,first_seen_at,last_seen_at,resolved_at,assigned_to,due_date,remediation_note,reviewed_by,review_note',
+      'id,rule_id,severity,cvss_score,category,status,title,description,recommendation,asset_name,asset_value,asset_type,location,first_seen_at,last_seen_at,resolved_at,assigned_to,due_date,sla_status,remediation_note,reviewed_by,review_note',
     );
   });
 
@@ -429,5 +429,136 @@ describe('FindingsService - retest', () => {
       }),
     );
     expect(riskScoresMock.snapshot).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FindingsService - computeSla', () => {
+  it('returns RESOLVED status when finding is resolved, accepted or false positive', () => {
+    const dueDate = new Date(Date.now() - 100000);
+    const resolvedSla = computeSla(dueDate, FindingStatus.RESOLVED);
+    expect(resolvedSla.status).toBe('RESOLVED');
+    expect(resolvedSla.isOverdue).toBe(false);
+
+    const acceptedSla = computeSla(dueDate, FindingStatus.ACCEPTED);
+    expect(acceptedSla.status).toBe('RESOLVED');
+
+    const fpSla = computeSla(dueDate, FindingStatus.FALSE_POSITIVE);
+    expect(fpSla.status).toBe('RESOLVED');
+  });
+
+  it('returns NO_SLA when dueDate is null', () => {
+    const sla = computeSla(null, FindingStatus.OPEN);
+    expect(sla.status).toBe('NO_SLA');
+    expect(sla.hoursRemaining).toBeNull();
+  });
+
+  it('returns OVERDUE when dueDate is in the past for open findings', () => {
+    const pastDate = new Date(Date.now() - 25 * 60 * 60 * 1000); // 25 horas atrás
+    const sla = computeSla(pastDate, FindingStatus.OPEN);
+    expect(sla.status).toBe('OVERDUE');
+    expect(sla.isOverdue).toBe(true);
+    expect(sla.hoursRemaining).toBeLessThan(0);
+    expect(sla.label).toMatch(/Vencido/);
+  });
+
+  it('returns APPROACHING when dueDate is within 48 hours', () => {
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas en el futuro
+    const sla = computeSla(soon, FindingStatus.IN_PROGRESS);
+    expect(sla.status).toBe('APPROACHING');
+    expect(sla.isApproaching).toBe(true);
+    expect(sla.isOverdue).toBe(false);
+    expect(sla.label).toMatch(/Vence en/);
+  });
+
+  it('returns ON_TRACK when dueDate is more than 48 hours in the future', () => {
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 días
+    const sla = computeSla(future, FindingStatus.OPEN);
+    expect(sla.status).toBe('ON_TRACK');
+    expect(sla.isApproaching).toBe(false);
+    expect(sla.isOverdue).toBe(false);
+    expect(sla.label).toMatch(/días restantes/);
+  });
+});
+
+describe('FindingsService - findAll and summary with SLAs', () => {
+  let service: FindingsService;
+  let prismaMock: {
+    finding: { findMany: jest.Mock; count: jest.Mock; groupBy: jest.Mock };
+    $transaction: jest.Mock;
+  };
+
+  beforeEach(() => {
+    prismaMock = {
+      finding: {
+        findMany: jest.fn(),
+        count: jest.fn(),
+        groupBy: jest.fn(),
+      },
+      $transaction: jest.fn((promises) => Promise.all(promises)),
+    };
+    service = new FindingsService(
+      prismaMock as unknown as PrismaService,
+      {} as unknown as RiskScoresService,
+      {} as unknown as AuditService,
+    );
+  });
+
+  it('filters by assignedToId = "unassigned"', async () => {
+    prismaMock.finding.findMany.mockResolvedValueOnce([]);
+    prismaMock.finding.count.mockResolvedValueOnce(0);
+
+    await service.findAll('org-1', { assignedToId: 'unassigned', page: 1, pageSize: 20 });
+
+    expect(prismaMock.finding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          assignedToId: null,
+        }),
+      }),
+    );
+  });
+
+  it('filters by slaStatus = "OVERDUE"', async () => {
+    prismaMock.finding.findMany.mockResolvedValueOnce([]);
+    prismaMock.finding.count.mockResolvedValueOnce(0);
+
+    await service.findAll('org-1', { slaStatus: 'OVERDUE', page: 1, pageSize: 20 });
+
+    expect(prismaMock.finding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          dueDate: expect.objectContaining({ lt: expect.any(Date) }),
+        }),
+      }),
+    );
+  });
+
+  it('computes SLA summary metrics', async () => {
+    prismaMock.finding.groupBy
+      .mockResolvedValueOnce([{ severity: FindingSeverity.HIGH, _count: { id: 3 } }])
+      .mockResolvedValueOnce([{ category: FindingCategory.HTTP_HEADERS, _count: { id: 3 } }]);
+
+    prismaMock.finding.count
+      .mockResolvedValueOnce(3) // total
+      .mockResolvedValueOnce(1) // overdue
+      .mockResolvedValueOnce(1) // approaching
+      .mockResolvedValueOnce(1) // onTrack
+      .mockResolvedValueOnce(0) // noSla
+      .mockResolvedValueOnce(2) // unassigned
+      .mockResolvedValueOnce(1); // assigned
+
+    const res = await service.summary('org-1');
+
+    expect(res.total).toBe(3);
+    expect(res.sla).toEqual({
+      overdue: 1,
+      approaching: 1,
+      onTrack: 1,
+      noSla: 0,
+      unassigned: 2,
+      assigned: 1,
+    });
   });
 });

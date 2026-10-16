@@ -53,6 +53,13 @@ export class UsersController {
     return this.invitations.cancelInvitation(user, id);
   }
 
+  @Get('assignees')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @ApiOperation({ summary: 'Listar miembros activos de la organización para asignación de tareas' })
+  findAssignees(@CurrentUser() user: AuthUser) {
+    return this.users.findAssignees(user.organizationId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Listar usuarios de mi organización (solo ADMIN)' })
   findAll(@CurrentUser() user: AuthUser) {
