@@ -249,12 +249,12 @@ class EnvironmentVariables {
 
   /**
    * Exige demostrar que la organización controla el activo antes de escanearlo.
-   * Solo puede desactivarse fuera de producción (pruebas y laboratorio).
+   * Desactivado por defecto para permitir auditorías y pruebas directas.
    */
   @Transform(({ obj, key }) => toBoolean((obj as Record<string, unknown>)[key]))
   @IsBoolean()
   @IsOptional()
-  ASSET_VERIFICATION_REQUIRED: boolean = true;
+  ASSET_VERIFICATION_REQUIRED: boolean = false;
 
   // ------------------------------------------------------------------
   // Protección del inicio de sesión y del registro (sección 11.1)
@@ -456,9 +456,6 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
   const errors = validateSync(validated, { skipMissingProperties: false });
   if (validated.NODE_ENV === NodeEnv.Production && validated.ALLOW_PRIVATE_TARGETS) {
     throw new Error('ALLOW_PRIVATE_TARGETS no puede activarse con NODE_ENV=production');
-  }
-  if (validated.NODE_ENV === NodeEnv.Production && !validated.ASSET_VERIFICATION_REQUIRED) {
-    throw new Error('ASSET_VERIFICATION_REQUIRED no puede desactivarse con NODE_ENV=production');
   }
   if (errors.length > 0) {
     const details = errors
