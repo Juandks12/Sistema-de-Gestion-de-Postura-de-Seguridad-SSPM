@@ -53,8 +53,20 @@ module "kv" {
   soft_delete_retention_days = 7
 
   role_assignments = {
-    api      = { principal_id = module.api_identity.principal_id, role_definition_name = "Key Vault Secrets User" }
-    deployer = { principal_id = data.azurerm_client_config.current.object_id, role_definition_name = "Key Vault Secrets Officer" }
+    api = {
+      principal_id         = module.api_identity.principal_id
+      role_definition_name = "Key Vault Secrets User"
+    }
+    deployer = {
+      principal_id         = "43316e3c-2e2f-43f1-8c4d-fcd4a1e154f7"
+      role_definition_name = "Key Vault Secrets Officer"
+      principal_type       = "ServicePrincipal"
+    }
+    owner = {
+      principal_id         = "d00f7e88-2392-436e-9ae1-4d7c80253dea"
+      role_definition_name = "Key Vault Secrets Officer"
+      principal_type       = "User"
+    }
   }
 }
 
