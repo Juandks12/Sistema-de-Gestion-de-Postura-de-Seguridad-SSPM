@@ -51,12 +51,12 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...base, SCHEDULER_INTERVAL_MS: '10' })).toThrow();
   });
 
-  it('exige la verificación de propiedad de activos en producción', () => {
-    expect(validateEnv({ ...base }).ASSET_VERIFICATION_REQUIRED).toBe(true);
-    expect(validateEnv({ ...base, ASSET_VERIFICATION_REQUIRED: 'false' }).ASSET_VERIFICATION_REQUIRED).toBe(false);
-    expect(() => validateEnv({ ...base, NODE_ENV: 'production', ASSET_VERIFICATION_REQUIRED: 'false' })).toThrow(
-      /ASSET_VERIFICATION_REQUIRED/,
-    );
+  it('gestiona la verificación de propiedad de activos', () => {
+    expect(validateEnv({ ...base }).ASSET_VERIFICATION_REQUIRED).toBe(false);
+    expect(validateEnv({ ...base, ASSET_VERIFICATION_REQUIRED: 'true' }).ASSET_VERIFICATION_REQUIRED).toBe(true);
+    expect(
+      validateEnv({ ...base, NODE_ENV: 'production', ASSET_VERIFICATION_REQUIRED: 'false' }).ASSET_VERIFICATION_REQUIRED,
+    ).toBe(false);
   });
 
   it('valida TRUST_PROXY y los límites del inicio de sesión', () => {

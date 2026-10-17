@@ -100,7 +100,7 @@ export function AssetDetailPage() {
                   onClick={() => run()}
                   loading={requestScan.isPending}
                   disabled={!canScan}
-                  title={asset.verifiedAt ? undefined : 'Verifica la propiedad del activo para poder escanearlo'}
+                  title={canScan ? undefined : 'Verifica la propiedad del activo para poder escanearlo'}
                 >
                   Auditoría completa
                 </Button>

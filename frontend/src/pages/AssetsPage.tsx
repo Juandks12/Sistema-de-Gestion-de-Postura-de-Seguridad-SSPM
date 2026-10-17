@@ -29,7 +29,7 @@ export function AssetsPage() {
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const requestScan = useRequestScan();
   const navigate = useNavigate();
-  const verificationRequired = assets.data?.verificationRequired ?? true;
+  const verificationRequired = assets.data?.verificationRequired ?? false;
 
   const handleExport = async () => {
     setDownloading(true);
@@ -107,7 +107,7 @@ export function AssetsPage() {
                         {!a.isActive ? ' · inactivo' : ''}
                       </span>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {!a.verified ? (
+                        {!a.verified && verificationRequired ? (
                           <span className="inline-flex items-center gap-1 rounded-md bg-warning/18 px-1.5 py-0.5 text-xs font-medium text-[#8a5b00] dark:text-warning">
                             <ShieldQuestion className="size-3" aria-hidden /> Sin verificar
                           </span>
@@ -168,8 +168,8 @@ export function AssetsPage() {
         open={open}
         onClose={() => setOpen(false)}
         onCreated={(asset) =>
-          asset.verifiedAt
-            ? setNotice({ kind: 'success', text: `Activo ${asset.name ?? asset.value} registrado y ya verificado por su dominio superior. Lanza una auditoría para evaluarlo.` })
+          asset.verifiedAt || !verificationRequired
+            ? setNotice({ kind: 'success', text: `Activo ${asset.name ?? asset.value} registrado. Puedes lanzar una auditoría para evaluarlo.` })
             : navigate(`/assets/${asset.id}`)
         }
       />
