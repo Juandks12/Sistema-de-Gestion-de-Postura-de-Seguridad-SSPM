@@ -165,6 +165,7 @@ module "api" {
     TRUST_PROXY = "1"
     # Con escala a cero el worker solo corre mientras la API está despierta:
     # un escaneo encolado se procesa en la siguiente petición.
-    SCAN_MAX_CONCURRENCY = "1"
+    SCAN_MAX_CONCURRENCY        = "1"
+    ASSET_VERIFICATION_REQUIRED = "false"
   }
 }

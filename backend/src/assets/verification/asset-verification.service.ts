@@ -62,7 +62,7 @@ export class AssetVerificationService {
   ) {}
 
   get required(): boolean {
-    return this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false;
+    return this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') === true;
   }
 
   private get allowPrivate(): boolean {

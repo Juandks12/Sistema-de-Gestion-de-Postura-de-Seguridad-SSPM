@@ -218,7 +218,7 @@ export class DashboardService {
     return {
       items,
       total: items.length,
-      verificationRequired: this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false,
+      verificationRequired: this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') === true,
     };
   }
 

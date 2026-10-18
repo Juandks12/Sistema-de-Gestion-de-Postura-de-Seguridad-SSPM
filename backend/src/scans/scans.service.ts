@@ -52,7 +52,7 @@ export class ScansService {
   ) {}
 
   private get verificationRequired(): boolean {
-    return this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false;
+    return this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') === true;
   }
 
   /** Encola un escaneo (puertos, cabeceras, TLS o rutas sensibles) solicitado por un usuario. */
