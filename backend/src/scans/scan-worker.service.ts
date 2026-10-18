@@ -275,7 +275,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       if (!asset.isActive || !asset.authorizationConfirmed) {
         throw new ScanExecutionError('El activo está inactivo o no tiene autorización confirmada');
       }
-      if (this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false && !asset.verifiedAt) {
+      if (this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') === true && !asset.verifiedAt) {
         throw new ScanExecutionError('La propiedad del activo no está verificada');
       }
 

@@ -43,7 +43,7 @@ export class MonitoringService {
     ]);
     const frequency = org.monitoringFrequency;
     const now = new Date();
-    const verificationRequired = this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') !== false;
+    const verificationRequired = this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') === true;
     return {
       frequency,
       periodHours: frequency === MonitoringFrequency.OFF ? null : FREQUENCY_PERIOD_MS[frequency] / 3600000,

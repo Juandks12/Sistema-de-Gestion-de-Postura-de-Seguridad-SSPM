@@ -124,6 +124,10 @@ export function AssetVerificationCard({ assetId, canEdit }: { assetId: string; c
     );
   }
 
+  if (!v.required && !v.verified) {
+    return null;
+  }
+
   return (
     <Card className="mb-4 border-warning/60">
       <CardHeader
