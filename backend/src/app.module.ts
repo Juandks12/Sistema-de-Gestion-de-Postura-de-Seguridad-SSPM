@@ -24,6 +24,7 @@ import { ReportsModule } from './reports/reports.module';
 import { RetentionModule } from './retention/retention.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PublicApiModule } from './public-api/public-api.module';
+import { ComplianceModule } from './compliance/compliance.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { PublicApiModule } from './public-api/public-api.module';
     RetentionModule,
     ApiKeysModule,
     PublicApiModule,
+    ComplianceModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).
