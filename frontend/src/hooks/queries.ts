@@ -11,6 +11,8 @@ import type {
   Asset,
   AssetCriticality,
   AssetVerification,
+  ComplianceFramework,
+  ComplianceOverview,
   CreateApiKeyInput,
   CreatedApiKeyResponse,
   DeliveryResult,
@@ -34,6 +36,7 @@ import type {
   FindingsSummary,
   FindingCategory,
   FindingStatus,
+  FrameworkDetailsResponse,
   OrgHistory,
   OrgUser,
   Organization,
@@ -74,6 +77,8 @@ export const keys = {
   reports: ['reports'] as const,
   retention: ['system', 'retention'] as const,
   apiKeys: ['api-keys'] as const,
+  complianceOverview: ['compliance', 'overview'] as const,
+  complianceFramework: (fw: ComplianceFramework) => ['compliance', 'framework', fw] as const,
 };
 
 export function useOverview() {
@@ -708,6 +713,21 @@ export function useDeleteApiKey() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.apiKeys });
     },
+  });
+}
+
+export function useComplianceOverview() {
+  return useQuery({
+    queryKey: keys.complianceOverview,
+    queryFn: () => api<ComplianceOverview>('/compliance'),
+  });
+}
+
+export function useComplianceFramework(framework: ComplianceFramework) {
+  return useQuery({
+    queryKey: keys.complianceFramework(framework),
+    queryFn: () => api<FrameworkDetailsResponse>(`/compliance/frameworks/${framework}`),
+    enabled: Boolean(framework),
   });
 }
 

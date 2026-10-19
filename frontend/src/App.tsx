@@ -16,6 +16,7 @@ import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ScansPage } from './pages/ScansPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { CompliancePage } from './pages/CompliancePage';
 import { UsersPage } from './pages/UsersPage';
 
 export function App() {
@@ -32,6 +33,7 @@ export function App() {
           <Route path="assets" element={<AssetsPage />} />
           <Route path="assets/:id" element={<AssetDetailPage />} />
           <Route path="findings" element={<FindingsPage />} />
+          <Route path="compliance" element={<CompliancePage />} />
           <Route path="scans" element={<ScansPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="reports" element={<ReportsPage />} />
