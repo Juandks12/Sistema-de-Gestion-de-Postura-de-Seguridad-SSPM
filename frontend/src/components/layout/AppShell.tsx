@@ -1,4 +1,4 @@
-import { Activity, BellRing, FileText, LayoutDashboard, LogOut, Menu, Radar, ScrollText, Server, Settings, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
+import { Activity, BellRing, ClipboardCheck, FileText, LayoutDashboard, LogOut, Menu, Radar, ScrollText, Server, Settings, ShieldAlert, ShieldCheck, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
@@ -9,6 +9,7 @@ const nav = [
   { to: '/', label: 'Vista general', icon: LayoutDashboard, end: true, adminOnly: false },
   { to: '/assets', label: 'Activos', icon: Server, adminOnly: false },
   { to: '/findings', label: 'Hallazgos', icon: ShieldAlert, adminOnly: false },
+  { to: '/compliance', label: 'Cumplimiento', icon: ClipboardCheck, adminOnly: false },
   { to: '/scans', label: 'Escaneos', icon: Radar, adminOnly: false },
   { to: '/alerts', label: 'Alertas', icon: BellRing, adminOnly: false, badge: 'alerts' as const },
   { to: '/reports', label: 'Reportes', icon: FileText, adminOnly: false },

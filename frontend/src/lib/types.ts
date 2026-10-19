@@ -728,3 +728,80 @@ export interface CreatedApiKeyResponse extends ApiKeyItem {
   rawKey: string;
 }
 
+// Compliance Framework Mapping
+export type ComplianceFramework = 'ISO_27001' | 'PCI_DSS' | 'SOC_2' | 'NIST_CSF' | 'CIS_CONTROLS';
+
+export interface FrameworkMetadata {
+  id: ComplianceFramework;
+  name: string;
+  version: string;
+  description: string;
+  authority: string;
+  iconName: string;
+}
+
+export interface ControlFindingSummary {
+  id: string;
+  ruleId: string;
+  title: string;
+  severity: Severity;
+  cvssScore: number | null;
+  location: string;
+  assetId: string;
+  assetValue: string;
+  assetName: string | null;
+}
+
+export interface ComplianceControlDefinition {
+  id: string;
+  framework: ComplianceFramework;
+  code: string;
+  title: string;
+  domain: string;
+  description: string;
+  ruleIds: string[];
+}
+
+export interface ControlEvaluationResult {
+  control: ComplianceControlDefinition;
+  status: 'COMPLIANT' | 'NON_COMPLIANT';
+  affectedAssetsCount: number;
+  failingFindingsCount: number;
+  worstSeverity: Severity | null;
+  failingFindings: ControlFindingSummary[];
+}
+
+export interface FrameworkSummary {
+  metadata: FrameworkMetadata;
+  totalControls: number;
+  passedControls: number;
+  failedControls: number;
+  compliancePercentage: number;
+  failingFindingsCount: number;
+  worstSeverity: Severity | null;
+}
+
+export interface TopFailingControl {
+  framework: ComplianceFramework;
+  code: string;
+  title: string;
+  domain: string;
+  worstSeverity: Severity;
+  failingFindingsCount: number;
+  affectedAssetsCount: number;
+}
+
+export interface ComplianceOverview {
+  globalCompliancePercentage: number;
+  totalFrameworks: number;
+  totalEvaluatedControls: number;
+  frameworks: FrameworkSummary[];
+  topFailingControls: TopFailingControl[];
+}
+
+export interface FrameworkDetailsResponse {
+  metadata: FrameworkMetadata;
+  summary: FrameworkSummary;
+  controls: ControlEvaluationResult[];
+}
+
