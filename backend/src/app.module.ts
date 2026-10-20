@@ -25,6 +25,7 @@ import { RetentionModule } from './retention/retention.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { ComplianceModule } from './compliance/compliance.module';
+import { CryptoVaultModule } from './common/crypto/crypto-vault.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { ComplianceModule } from './compliance/compliance.module';
     ApiKeysModule,
     PublicApiModule,
     ComplianceModule,
+    CryptoVaultModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).
