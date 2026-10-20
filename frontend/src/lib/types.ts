@@ -1,7 +1,7 @@
 /** Tipos de las respuestas de la API (backend/src). */
 
 export type UserRole = 'ADMIN' | 'ANALYST' | 'VIEWER';
-export type AssetType = 'DOMAIN' | 'IP';
+export type AssetType = 'DOMAIN' | 'IP' | 'CLOUD_ACCOUNT';
 export type AssetCriticality = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type ScanType = 'PORT_SCAN' | 'WEB_HEADERS' | 'SSL_CERT' | 'SENSITIVE_PATHS' | 'EMAIL_SECURITY' | 'SUBDOMAIN_DISCOVERY';
 export type ScanStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
@@ -19,7 +19,13 @@ export type FindingCategory =
   | 'HTTP_HEADERS'
   | 'TLS_CERTIFICATE'
   | 'SENSITIVE_PATH'
-  | 'EMAIL_SECURITY';
+  | 'EMAIL_SECURITY'
+  | 'CLOUD_IAM'
+  | 'CLOUD_STORAGE'
+  | 'CLOUD_NETWORK'
+  | 'CLOUD_COMPUTE'
+  | 'CLOUD_DATABASE'
+  | 'CLOUD_LOGGING';
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
 export type ScanSource = 'MANUAL' | 'SCHEDULED';
 export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING' | 'NEW_SUBDOMAIN' | 'SCORE_ANOMALY';
@@ -803,5 +809,65 @@ export interface FrameworkDetailsResponse {
   metadata: FrameworkMetadata;
   summary: FrameworkSummary;
   controls: ControlEvaluationResult[];
+}
+
+// Cloud Security Posture Management (CSPM)
+export type CloudProvider = 'AWS' | 'AZURE';
+export type CloudAuthType = 'ROLE_ARN' | 'ACCESS_KEYS' | 'SERVICE_PRINCIPAL';
+export type CloudAccountStatus = 'PENDING' | 'CONNECTED' | 'ERROR' | 'DISCONNECTED';
+
+export type CloudResourceType =
+  | 'AWS_S3_BUCKET'
+  | 'AWS_IAM_USER'
+  | 'AWS_IAM_ROLE'
+  | 'AWS_SECURITY_GROUP'
+  | 'AWS_EC2_INSTANCE'
+  | 'AWS_RDS_INSTANCE'
+  | 'AWS_CLOUDTRAIL'
+  | 'AWS_VPC'
+  | 'AZURE_STORAGE_ACCOUNT'
+  | 'AZURE_BLOB_CONTAINER'
+  | 'AZURE_NSG'
+  | 'AZURE_VM'
+  | 'AZURE_SQL_DATABASE'
+  | 'AZURE_ACTIVITY_LOG'
+  | 'AZURE_VNET'
+  | 'OTHER';
+
+export interface CloudAccountItem {
+  id: string;
+  organizationId: string;
+  provider: CloudProvider;
+  name: string;
+  authType: CloudAuthType;
+  status: CloudAccountStatus;
+  accountOrSubscriptionId: string;
+  azureTenantId?: string | null;
+  awsRoleArn?: string | null;
+  awsExternalId?: string | null;
+  monitoredRegions: string[];
+  assetId?: string | null;
+  lastAuditedAt?: string | null;
+  lastAuditError?: string | null;
+  resourceCount: number;
+  failingFindingCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CloudResourceItem {
+  id: string;
+  organizationId: string;
+  cloudAccountId: string;
+  provider: CloudProvider;
+  resourceType: CloudResourceType;
+  nativeId: string;
+  name: string;
+  region?: string | null;
+  configuration?: Record<string, unknown> | null;
+  tags?: Record<string, string> | null;
+  hasActiveFindings: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 

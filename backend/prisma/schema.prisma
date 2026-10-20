@@ -23,10 +23,11 @@ enum UserRole {
   VIEWER
 }
 
-/// Tipo de activo externo registrado (RF-01).
+/// Tipo de activo externo registrado (RF-01) o cuenta de nube conectada.
 enum AssetType {
   DOMAIN
   IP
+  CLOUD_ACCOUNT
 }
 
 /// Nivel de criticidad del activo para el negocio (impacta el cálculo de riesgo).
@@ -69,6 +70,54 @@ enum FindingCategory {
   VULNERABLE_SOFTWARE
   /// SPF, DMARC y DKIM del dominio.
   EMAIL_SECURITY
+  /// Categorías de postura de seguridad Cloud (CSPM)
+  CLOUD_IAM
+  CLOUD_STORAGE
+  CLOUD_NETWORK
+  CLOUD_COMPUTE
+  CLOUD_DATABASE
+  CLOUD_LOGGING
+}
+
+/// Proveedor de nube soportado para auditoría CSPM.
+enum CloudProvider {
+  AWS
+  AZURE
+}
+
+/// Mecanismo de autenticación utilizado para conectar la cuenta de nube.
+enum CloudAuthType {
+  ROLE_ARN
+  ACCESS_KEYS
+  SERVICE_PRINCIPAL
+}
+
+/// Estado del conector de la cuenta de nube.
+enum CloudAccountStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+/// Tipo de recurso cloud auditado en el inventario.
+enum CloudResourceType {
+  AWS_S3_BUCKET
+  AWS_IAM_USER
+  AWS_IAM_ROLE
+  AWS_SECURITY_GROUP
+  AWS_EC2_INSTANCE
+  AWS_RDS_INSTANCE
+  AWS_CLOUDTRAIL
+  AWS_VPC
+  AZURE_STORAGE_ACCOUNT
+  AZURE_BLOB_CONTAINER
+  AZURE_NSG
+  AZURE_VM
+  AZURE_SQL_DATABASE
+  AZURE_ACTIVITY_LOG
+  AZURE_VNET
+  OTHER
 }
 
 /// Estado de gestión de un hallazgo.
@@ -195,6 +244,8 @@ model Organization {
   reports         Report[]
   discoveredHosts DiscoveredHost[]
   apiKeys         ApiKey[]
+  cloudAccounts   CloudAccount[]
+  cloudResources  CloudResource[]
 
   @@map("organizations")
 }
@@ -281,6 +332,7 @@ model Asset {
   alerts          Alert[]
   reports         Report[]
   discoveredHosts DiscoveredHost[]
+  cloudAccount    CloudAccount?
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -391,19 +443,26 @@ model Finding {
   remediationNote String?         @map("remediation_note")
   reviewedById    String?         @map("reviewed_by_id") @db.Uuid
   reviewNote      String?         @map("review_note")
+  /// Enlace a cuenta y recurso cloud si el hallazgo se originó en auditoría CSPM
+  cloudAccountId  String?         @map("cloud_account_id") @db.Uuid
+  cloudResourceId String?         @map("cloud_resource_id") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  lastScan     Scan?        @relation(fields: [lastScanId], references: [id], onDelete: SetNull)
-  reviewedBy   User?        @relation("FindingReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  assignedTo   User?        @relation("FindingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset         Asset          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  lastScan      Scan?          @relation(fields: [lastScanId], references: [id], onDelete: SetNull)
+  reviewedBy    User?          @relation("FindingReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  assignedTo    User?          @relation("FindingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  cloudAccount  CloudAccount?  @relation(fields: [cloudAccountId], references: [id], onDelete: SetNull)
+  cloudResource CloudResource? @relation(fields: [cloudResourceId], references: [id], onDelete: SetNull)
 
   @@unique([assetId, fingerprint])
   @@index([organizationId, status, severity])
   @@index([organizationId, assetId, category])
   @@index([organizationId, assignedToId])
+  @@index([organizationId, cloudAccountId])
+  @@index([organizationId, cloudResourceId])
   @@map("findings")
 }
 
@@ -664,4 +723,84 @@ model ApiKey {
 
   @@index([organizationId, isActive])
   @@map("api_keys")
+}
+
+/// Cuenta de proveedor Cloud (AWS o Azure) conectada para evaluación CSPM.
+model CloudAccount {
+  id                      String             @id @default(uuid()) @db.Uuid
+  organizationId          String             @map("organization_id") @db.Uuid
+  provider                CloudProvider
+  name                    String             @db.VarChar(150)
+  authType                CloudAuthType      @map("auth_type")
+  status                  CloudAccountStatus @default(PENDING)
+
+  /// AWS Account ID (12 dígitos) o Azure Subscription ID (UUID)
+  accountOrSubscriptionId String             @map("account_or_subscription_id") @db.VarChar(100)
+
+  /// Azure Tenant ID (UUID de Microsoft Entra ID)
+  azureTenantId           String?            @map("azure_tenant_id") @db.VarChar(100)
+
+  /// AWS IAM Role ARN asumible por el conector de auditoría
+  awsRoleArn              String?            @map("aws_role_arn") @db.VarChar(255)
+
+  /// External ID exigido por la relación de confianza para prevenir Confused Deputy
+  awsExternalId           String?            @map("aws_external_id") @db.VarChar(100)
+
+  /// Credenciales sensibles cifradas con AES-256-GCM (clientSecret, accessKeySecret, etc.)
+  encryptedCredentials    String?            @map("encrypted_credentials") @db.Text
+
+  /// Regiones seleccionadas para auditoría (p. ej. ["us-east-1", "westus2"])
+  monitoredRegions        String[]           @default([]) @map("monitored_regions")
+
+  /// Activo padre asociado en la tabla assets (para integración con reportes y postura global)
+  assetId                 String?            @unique @map("asset_id") @db.Uuid
+
+  lastAuditedAt           DateTime?          @map("last_audited_at") @db.Timestamptz(6)
+  lastAuditError          String?            @map("last_audit_error") @db.VarChar(500)
+
+  resourceCount           Int                @default(0) @map("resource_count")
+  failingFindingCount     Int                @default(0) @map("failing_finding_count")
+
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization            Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset                   Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  resources               CloudResource[]
+  findings                Finding[]
+
+  @@unique([organizationId, provider, accountOrSubscriptionId])
+  @@index([organizationId, status])
+  @@map("cloud_accounts")
+}
+
+/// Recurso de infraestructura o servicio inventariado en la nube (S3, VM, NSG, RDS...).
+model CloudResource {
+  id                String            @id @default(uuid()) @db.Uuid
+  organizationId    String            @map("organization_id") @db.Uuid
+  cloudAccountId    String            @map("cloud_account_id") @db.Uuid
+  provider          CloudProvider
+  resourceType      CloudResourceType @map("resource_type")
+
+  /// Identificador canónico del recurso: ARN en AWS o Resource ID en Azure
+  nativeId          String            @map("native_id") @db.VarChar(500)
+  name              String            @db.VarChar(255)
+  region            String?           @db.VarChar(50)
+
+  /// Metadatos crudos del recurso (configuraciones, cifrado, accesibilidad pública, etc.)
+  configuration     Json?
+  tags              Json?
+
+  hasActiveFindings Boolean           @default(false) @map("has_active_findings")
+
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cloudAccount      CloudAccount      @relation(fields: [cloudAccountId], references: [id], onDelete: Cascade)
+  findings          Finding[]
+
+  @@unique([cloudAccountId, nativeId])
+  @@index([organizationId, provider, resourceType])
+  @@map("cloud_resources")
 }
