@@ -69,6 +69,12 @@ export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   TLS_CERTIFICATE: 'Certificado TLS',
   SENSITIVE_PATH: 'Ruta sensible',
   EMAIL_SECURITY: 'Seguridad del correo',
+  CLOUD_IAM: 'Identidad y Acceso Cloud (IAM)',
+  CLOUD_STORAGE: 'Almacenamiento Cloud',
+  CLOUD_NETWORK: 'Redes y Perímetro Cloud',
+  CLOUD_COMPUTE: 'Cómputo e Infraestructura Cloud',
+  CLOUD_DATABASE: 'Bases de Datos Cloud',
+  CLOUD_LOGGING: 'Auditoría y Logging Cloud',
 };
 
 export const SCAN_TYPE_LABEL: Record<ScanType, string> = {
