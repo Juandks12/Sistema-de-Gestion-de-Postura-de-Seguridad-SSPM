@@ -65,6 +65,24 @@ export interface OpenedFinding {
   reopened: boolean;
 }
 
+export const CLOUD_FINDING_CATEGORIES: FindingCategory[] = [
+  FindingCategory.CLOUD_IAM,
+  FindingCategory.CLOUD_STORAGE,
+  FindingCategory.CLOUD_NETWORK,
+  FindingCategory.CLOUD_COMPUTE,
+  FindingCategory.CLOUD_DATABASE,
+  FindingCategory.CLOUD_LOGGING,
+];
+
+export const PERIMETER_FINDING_CATEGORIES: FindingCategory[] = [
+  FindingCategory.EXPOSED_SERVICE,
+  FindingCategory.HTTP_HEADERS,
+  FindingCategory.TLS_CERTIFICATE,
+  FindingCategory.SENSITIVE_PATH,
+  FindingCategory.VULNERABLE_SOFTWARE,
+  FindingCategory.EMAIL_SECURITY,
+];
+
 const findingSelect = {
   id: true,
   organizationId: true,
@@ -87,11 +105,15 @@ const findingSelect = {
   dueDate: true,
   remediationNote: true,
   reviewNote: true,
+  cloudAccountId: true,
+  cloudResourceId: true,
   createdAt: true,
   updatedAt: true,
   asset: { select: { id: true, type: true, value: true, name: true } },
   reviewedBy: { select: { id: true, fullName: true, email: true } },
   assignedTo: { select: { id: true, fullName: true, email: true } },
+  cloudAccount: { select: { id: true, provider: true, name: true, accountOrSubscriptionId: true } },
+  cloudResource: { select: { id: true, provider: true, resourceType: true, nativeId: true, name: true, region: true } },
 } satisfies Prisma.FindingSelect;
 
 export type FindingRow = Prisma.FindingGetPayload<{ select: typeof findingSelect }>;
@@ -300,10 +322,20 @@ export class FindingsService {
     const where: Prisma.FindingWhereInput = {
       organizationId,
       assetId: query.assetId,
+      cloudAccountId: query.cloudAccountId,
       severity: query.severity,
       status: query.status,
       category: query.category,
     };
+
+    if (!query.category && query.domain) {
+      where.category = {
+        in:
+          query.domain === 'cloud'
+            ? CLOUD_FINDING_CATEGORIES
+            : PERIMETER_FINDING_CATEGORIES,
+      };
+    }
 
     if (query.assignedToId) {
       if (query.assignedToId === 'unassigned') {
@@ -809,6 +841,7 @@ export class FindingsService {
     const where: Prisma.FindingWhereInput = {
       organizationId,
       assetId: query.assetId,
+      cloudAccountId: query.cloudAccountId,
       severity: query.severity,
       status: query.status,
       category: query.category,
@@ -821,6 +854,15 @@ export class FindingsService {
           }
         : {}),
     };
+
+    if (!query.category && query.domain) {
+      where.category = {
+        in:
+          query.domain === 'cloud'
+            ? CLOUD_FINDING_CATEGORIES
+            : PERIMETER_FINDING_CATEGORIES,
+      };
+    }
 
     if (query.assignedToId) {
       if (query.assignedToId === 'unassigned') {

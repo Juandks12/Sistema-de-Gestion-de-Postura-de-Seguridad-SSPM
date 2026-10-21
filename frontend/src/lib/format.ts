@@ -1,4 +1,4 @@
-import type { AlertType, FindingCategory, FindingStatus, Grade, MonitoringFrequency, ScanStatus, ScanType, Severity, UserRole } from './types';
+import type { AlertType, CloudResourceType, FindingCategory, FindingStatus, Grade, MonitoringFrequency, ScanStatus, ScanType, Severity, UserRole } from './types';
 
 const dateTime = new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeStyle: 'short' });
 const dateOnly = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
@@ -75,6 +75,25 @@ export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   CLOUD_COMPUTE: 'Cómputo e Infraestructura Cloud',
   CLOUD_DATABASE: 'Bases de Datos Cloud',
   CLOUD_LOGGING: 'Auditoría y Logging Cloud',
+};
+
+export const CLOUD_RESOURCE_TYPE_LABEL: Record<CloudResourceType, string> = {
+  AWS_IAM_USER: 'IAM User',
+  AWS_IAM_ROLE: 'IAM Role',
+  AWS_S3_BUCKET: 'S3 Bucket',
+  AWS_EC2_INSTANCE: 'EC2 Instance',
+  AWS_SECURITY_GROUP: 'Security Group',
+  AWS_RDS_INSTANCE: 'RDS Database',
+  AWS_CLOUDTRAIL: 'CloudTrail',
+  AWS_VPC: 'VPC Network',
+  AZURE_STORAGE_ACCOUNT: 'Storage Account',
+  AZURE_BLOB_CONTAINER: 'Blob Container',
+  AZURE_VM: 'Virtual Machine',
+  AZURE_NSG: 'Network Security Group',
+  AZURE_SQL_DATABASE: 'Azure SQL Database',
+  AZURE_ACTIVITY_LOG: 'Activity Log / Monitor',
+  AZURE_VNET: 'Virtual Network',
+  OTHER: 'Otro recurso Cloud',
 };
 
 export const SCAN_TYPE_LABEL: Record<ScanType, string> = {
