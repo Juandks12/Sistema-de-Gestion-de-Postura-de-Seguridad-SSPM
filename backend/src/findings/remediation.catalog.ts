@@ -1,5 +1,18 @@
+import { CloudProvider } from '@prisma/client';
+import { CSPM_RULES_MAP } from '../cloud/cspm.catalog';
+
 export interface RemediationSnippet {
-  platform: 'Nginx' | 'Apache' | 'Cloudflare' | 'Docker' | 'Spring Boot' | 'Node.js' | 'General';
+  platform:
+    | 'Nginx'
+    | 'Apache'
+    | 'Cloudflare'
+    | 'Docker'
+    | 'Spring Boot'
+    | 'Node.js'
+    | 'AWS CLI'
+    | 'Azure CLI'
+    | 'Terraform'
+    | 'General';
   code: string;
   description: string;
 }
@@ -619,6 +632,30 @@ export function getRemediationGuide(ruleId: string, fallbackRecommendation?: str
   const guide = REMEDIATION_CATALOG[ruleId];
   if (guide) {
     return { ruleId, ...guide };
+  }
+
+  const cspmRule = CSPM_RULES_MAP.get(ruleId);
+  if (cspmRule) {
+    const cliPlatform = cspmRule.provider === CloudProvider.AWS ? 'AWS CLI' : 'Azure CLI';
+    return {
+      ruleId,
+      owasp: 'A05:2021 – Security Misconfiguration (Cloud Posture)',
+      cwe: cspmRule.complianceControlIds.join(', '),
+      summary: cspmRule.recommendation,
+      verificationCommand: cspmRule.remediationCli,
+      snippets: [
+        {
+          platform: cliPlatform,
+          description: `Comando de remediación directa en ${cliPlatform}:`,
+          code: cspmRule.remediationCli,
+        },
+        {
+          platform: 'Terraform',
+          description: 'Configuración declarativa segura en Infraestructura como Código (Terraform):',
+          code: cspmRule.remediationIac,
+        },
+      ],
+    };
   }
 
   return {

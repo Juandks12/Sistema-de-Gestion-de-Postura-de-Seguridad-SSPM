@@ -20,8 +20,11 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { CloudAccountsService } from './cloud-accounts.service';
+import { CloudScanService } from './cloud-scan.service';
 import {
   CreateCloudAccountDto,
+  ListCloudResourcesQueryDto,
+  RunCloudAuditDto,
   TestCloudConnectionDto,
   UpdateCloudAccountDto,
 } from './dto/cloud-account.dto';
@@ -30,7 +33,10 @@ import {
 @ApiBearerAuth()
 @Controller('cloud')
 export class CloudAccountsController {
-  constructor(private readonly cloudAccounts: CloudAccountsService) {}
+  constructor(
+    private readonly cloudAccounts: CloudAccountsService,
+    private readonly cloudScan: CloudScanService,
+  ) {}
 
   @Get('onboarding-template')
   @ApiOperation({
@@ -47,6 +53,25 @@ export class CloudAccountsController {
   @ApiQuery({ name: 'provider', enum: CloudProvider, required: false })
   listRules(@Query('provider') provider?: CloudProvider) {
     return this.cloudAccounts.listCspmRules(provider);
+  }
+
+  @Get('summary')
+  @ApiOperation({
+    summary: 'Obtener resumen consolidado de postura CSPM (cuentas, inventario de recursos y hallazgos cloud)',
+  })
+  getCloudSummary(@CurrentUser() user: AuthUser) {
+    return this.cloudScan.getCloudPostureSummary(user.organizationId);
+  }
+
+  @Get('resources')
+  @ApiOperation({
+    summary: 'Listar el inventario de recursos cloud descubiertos en AWS y Azure con estado de hallazgos',
+  })
+  listResources(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListCloudResourcesQueryDto,
+  ) {
+    return this.cloudScan.listResources(user.organizationId, query);
   }
 
   @Get('accounts')
@@ -100,6 +125,22 @@ export class CloudAccountsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.cloudAccounts.verifyExistingAccount(user.organizationId, id);
+  }
+
+  @Post('accounts/:id/scan')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @ApiOperation({
+    summary: 'Ejecutar auditoría completa de postura CSPM (descubrimiento de recursos, evaluación de reglas y deduplicación de hallazgos)',
+  })
+  scanAccount(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto?: RunCloudAuditDto,
+  ) {
+    return this.cloudScan.runAccountAudit(user.organizationId, id, {
+      simulate: dto?.simulate,
+      actorId: user.id,
+    });
   }
 
   @Patch('accounts/:id')

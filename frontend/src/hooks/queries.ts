@@ -12,8 +12,12 @@ import type {
   AssetCriticality,
   AssetVerification,
   CloudAccountItem,
+  CloudAuditResponse,
   CloudOnboardingTemplate,
+  CloudPostureSummary,
   CloudProvider,
+  CloudResourceItem,
+  CloudResourceType,
   CloudVerificationResult,
   ComplianceFramework,
   ComplianceOverview,
@@ -87,9 +91,19 @@ export const keys = {
   complianceOverview: ['compliance', 'overview'] as const,
   complianceFramework: (fw: ComplianceFramework) => ['compliance', 'framework', fw] as const,
   cloudAccounts: ['cloud', 'accounts'] as const,
+  cloudSummary: ['cloud', 'summary'] as const,
+  cloudResources: (f?: CloudResourcesFilter) => ['cloud', 'resources', f ?? {}] as const,
   cloudOnboarding: ['cloud', 'onboarding'] as const,
   cspmRules: (provider?: CloudProvider) => ['cloud', 'rules', provider ?? 'all'] as const,
 };
+
+export interface CloudResourcesFilter {
+  provider?: CloudProvider;
+  cloudAccountId?: string;
+  resourceType?: CloudResourceType;
+  hasActiveFindings?: boolean;
+  search?: string;
+}
 
 export function useOverview() {
   return useQuery({ queryKey: keys.overview, queryFn: () => api<Overview>('/dashboard/overview'), refetchInterval: 15000 });
@@ -809,8 +823,45 @@ export function useDeleteCloudAccount() {
       api<{ deleted: true }>(`/cloud/accounts/${accountId}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.cloudAccounts });
+      qc.invalidateQueries({ queryKey: keys.cloudSummary });
       qc.invalidateQueries({ queryKey: keys.assets });
       qc.invalidateQueries({ queryKey: keys.dashboardAssets });
+    },
+  });
+}
+
+export function useCloudSummary() {
+  return useQuery({
+    queryKey: keys.cloudSummary,
+    queryFn: () => api<CloudPostureSummary>('/cloud/summary'),
+  });
+}
+
+export function useCloudResources(filter?: CloudResourcesFilter) {
+  return useQuery({
+    queryKey: keys.cloudResources(filter),
+    queryFn: () =>
+      api<CloudResourceItem[]>(
+        `/cloud/resources${qs(filter as Record<string, string | number | boolean | undefined>)}`,
+      ),
+  });
+}
+
+export function useScanCloudAccount() {
+  const invalidateAll = useInvalidateAll();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, simulate }: { accountId: string; simulate?: boolean }) =>
+      api<CloudAuditResponse>(`/cloud/accounts/${accountId}/scan`, {
+        method: 'POST',
+        json: simulate !== undefined ? { simulate } : {},
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cloudAccounts });
+      qc.invalidateQueries({ queryKey: keys.cloudSummary });
+      qc.invalidateQueries({ queryKey: ['cloud', 'resources'] });
+      qc.invalidateQueries({ queryKey: keys.complianceOverview });
+      invalidateAll();
     },
   });
 }

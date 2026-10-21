@@ -165,7 +165,17 @@ export interface FindingsSummary {
 }
 
 export interface RemediationSnippet {
-  platform: 'Nginx' | 'Apache' | 'Cloudflare' | 'Docker' | 'Spring Boot' | 'Node.js' | 'General';
+  platform:
+    | 'Nginx'
+    | 'Apache'
+    | 'Cloudflare'
+    | 'Docker'
+    | 'Spring Boot'
+    | 'Node.js'
+    | 'AWS CLI'
+    | 'Azure CLI'
+    | 'Terraform'
+    | 'General';
   code: string;
   description: string;
 }
@@ -936,5 +946,64 @@ export interface CloudResourceItem {
   hasActiveFindings: boolean;
   createdAt: string;
   updatedAt: string;
+  cloudAccount?: {
+    id: string;
+    name: string;
+    provider: CloudProvider;
+    accountOrSubscriptionId: string;
+  };
+  findings?: Array<{
+    id: string;
+    ruleId: string;
+    title: string;
+    severity: Severity;
+    category: FindingCategory;
+    status: FindingStatus;
+  }>;
+}
+
+export interface CloudAuditStats {
+  resourcesDiscovered: number;
+  findingsCreated: number;
+  findingsUpdated: number;
+  findingsReopened: number;
+  findingsResolved: number;
+  activeFindings: number;
+  bySeverity: SeverityCounts;
+  byCategory: Partial<Record<FindingCategory, number>>;
+  score: number | null;
+  grade: string | null;
+}
+
+export interface CloudAuditResponse {
+  account: CloudAccountItem;
+  simulated: boolean;
+  evaluatedRulesCount: number;
+  evaluatedAt: string;
+  durationMs: number;
+  warnings: string[];
+  stats: CloudAuditStats;
+}
+
+export interface CloudPostureSummary {
+  accounts: {
+    total: number;
+    connected: number;
+    error: number;
+    pending: number;
+    byProvider: { AWS: number; AZURE: number };
+  };
+  resources: {
+    total: number;
+    withFindings: number;
+    clean: number;
+    byProvider: { AWS: number; AZURE: number };
+    byType: Record<string, number>;
+  };
+  findings: {
+    totalOpen: number;
+    bySeverity: SeverityCounts;
+    byCategory: Record<string, number>;
+  };
 }
 

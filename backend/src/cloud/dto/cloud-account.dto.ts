@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CloudAuthType, CloudProvider } from '@prisma/client';
+import {
+  CloudAuthType,
+  CloudProvider,
+  CloudResourceType,
+} from '@prisma/client';
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -7,6 +12,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
 } from 'class-validator';
 
@@ -207,4 +213,48 @@ export class TestCloudConnectionDto {
   @IsOptional()
   @IsString()
   awsSessionToken?: string;
+}
+
+export class RunCloudAuditDto {
+  @ApiPropertyOptional({
+    description:
+      'Si es true, ejecuta la auditoría con un inventario de referencia simulado sin consumir llamadas de proveedor cloud',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  simulate?: boolean;
+}
+
+export class ListCloudResourcesQueryDto {
+  @ApiPropertyOptional({ enum: CloudProvider })
+  @IsOptional()
+  @IsEnum(CloudProvider)
+  provider?: CloudProvider;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  cloudAccountId?: string;
+
+  @ApiPropertyOptional({ enum: CloudResourceType })
+  @IsOptional()
+  @IsEnum(CloudResourceType)
+  resourceType?: CloudResourceType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
+  })
+  @IsBoolean()
+  hasActiveFindings?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  search?: string;
 }

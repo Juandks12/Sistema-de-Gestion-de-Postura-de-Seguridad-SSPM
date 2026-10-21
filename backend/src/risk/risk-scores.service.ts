@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { AssetCriticality, FindingSeverity, FindingStatus, Prisma, RiskScore, RiskScoreScope, RiskScoreTrigger, ScanStatus } from '@prisma/client';
+import { AssetCriticality, AssetType, FindingSeverity, FindingStatus, Prisma, RiskScore, RiskScoreScope, RiskScoreTrigger, ScanStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HistoryQuery } from './dto/history.query';
 import { aggregateScores, computeScore, emptyCounts, evaluateScoreAnomaly, gradeFor, ScoreResult, SeverityCounts } from './scoring';
@@ -101,11 +101,17 @@ export class RiskScoresService {
   }
 
   async computeAsset(db: Db, organizationId: string, assetId: string): Promise<AssetScoreState> {
-    const [scored, counts, asset] = await Promise.all([
+    const [scanScored, counts, asset] = await Promise.all([
       this.isScored(db, assetId),
       this.openCounts(db, organizationId, assetId),
-      db.asset.findUnique({ where: { id: assetId }, select: { criticality: true } }),
+      db.asset.findUnique({
+        where: { id: assetId },
+        select: { criticality: true, type: true, lastScannedAt: true },
+      }),
     ]);
+    const scored =
+      scanScored ||
+      (asset?.type === AssetType.CLOUD_ACCOUNT && Boolean(asset?.lastScannedAt));
     return {
       assetId,
       scored,
@@ -119,6 +125,8 @@ export class RiskScoresService {
       where: { organizationId, isActive: true },
       select: {
         id: true,
+        type: true,
+        lastScannedAt: true,
         criticality: true,
         scans: { where: { status: ScanStatus.COMPLETED }, select: { id: true }, take: 1 },
         findings: {
@@ -130,7 +138,10 @@ export class RiskScoresService {
     return assets.map((a) => {
       const counts = emptyCounts();
       for (const f of a.findings) counts[f.severity] += 1;
-      return { assetId: a.id, scored: a.scans.length > 0, result: computeScore(counts, a.criticality) };
+      const scored =
+        a.scans.length > 0 ||
+        (a.type === AssetType.CLOUD_ACCOUNT && Boolean(a.lastScannedAt));
+      return { assetId: a.id, scored, result: computeScore(counts, a.criticality) };
     });
   }
 
