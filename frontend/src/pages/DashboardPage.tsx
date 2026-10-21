@@ -1,4 +1,4 @@
-import { Activity, Radar, Server, ShieldAlert } from 'lucide-react';
+import { Activity, Cloud, Radar, Server, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
@@ -41,9 +41,53 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Security Score" subtitle="Postura de seguridad de la organización" />
+          <CardHeader
+            title="Security Score Unificado (Híbrido)"
+            subtitle="Postura ponderada entre perímetro externo e infraestructura Cloud (AWS & Azure)"
+            action={
+              <Link to="/cloud" className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">
+                <Cloud className="size-3.5" /> Gestionar Cloud CSPM
+              </Link>
+            }
+          />
           <CardBody>
             <ScoreHero score={s.score} grade={s.grade} label={s.label} description={s.description} delta={s.trend.sinceLastWeek} deltaLabel="frente a hace 7 días" />
+            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-4 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-surface-2/40 px-3.5 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <Server className="size-4 text-accent" />
+                  <div>
+                    <p className="text-xs font-semibold text-ink">Postura Perimetral Externa</p>
+                    <p className="text-[11px] text-muted">{s.scoredPerimeterAssets ?? s.scoredAssets} activos evaluados</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="tabular text-base font-bold text-ink">{s.perimeterScore ?? s.score ?? '—'}</span>
+                  <GradeBadge grade={s.perimeterGrade ?? s.grade} size="sm" />
+                </div>
+              </div>
+
+              <Link
+                to="/cloud"
+                className="flex items-center justify-between rounded-lg border border-border bg-surface-2/40 px-3.5 py-2.5 transition hover:border-accent/50 hover:bg-surface-2"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Cloud className="size-4 text-accent" />
+                  <div>
+                    <p className="text-xs font-semibold text-ink">Postura Cloud (CSPM)</p>
+                    <p className="text-[11px] text-muted">
+                      {(s.scoredCloudAssets ?? 0) > 0
+                        ? `${s.scoredCloudAssets} cuentas AWS/Azure auditadas`
+                        : 'Conectar cuentas AWS o Azure'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="tabular text-base font-bold text-ink">{s.cloudScore ?? '—'}</span>
+                  <GradeBadge grade={s.cloudGrade ?? null} size="sm" />
+                </div>
+              </Link>
+            </div>
           </CardBody>
         </Card>
 

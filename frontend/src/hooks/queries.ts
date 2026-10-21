@@ -127,6 +127,8 @@ export function useDashboardAsset(id: string) {
 
 export interface FindingsFilter {
   assetId?: string;
+  domain?: 'perimeter' | 'cloud' | '';
+  cloudAccountId?: string;
   severity?: Severity | '';
   status?: FindingStatus | '';
   category?: FindingCategory | '';

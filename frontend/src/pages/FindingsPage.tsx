@@ -5,8 +5,10 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Cloud,
   Download,
   RefreshCw,
+  Server,
   ShieldAlert,
   Sparkles,
   UserX,
@@ -31,7 +33,7 @@ import { Table, Td, Th } from '@/components/ui/Table';
 import { useAssignees, useFindings, useFindingsSummary, useRetestFinding, useReviewFinding } from '@/hooks/queries';
 import { ApiError, downloadFile } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { CATEGORY_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, STATUS_LABEL, cvss, formatDateTime, timeAgo } from '@/lib/format';
+import { CATEGORY_LABEL, CLOUD_RESOURCE_TYPE_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, STATUS_LABEL, cvss, formatDateTime, timeAgo } from '@/lib/format';
 import type { Finding, FindingCategory, FindingStatus, Severity, SlaStatus } from '@/lib/types';
 
 type ReviewAction = 'OPEN' | 'ACCEPTED' | 'FALSE_POSITIVE';
@@ -41,6 +43,8 @@ export function FindingsPage() {
   const [params, setParams] = useSearchParams();
   const filter = {
     assetId: params.get('assetId') ?? undefined,
+    cloudAccountId: params.get('cloudAccountId') ?? undefined,
+    domain: (params.get('domain') ?? '') as 'perimeter' | 'cloud' | '',
     severity: (params.get('severity') ?? '') as Severity | '',
     status: (params.get('status') ?? 'OPEN') as FindingStatus | '',
     category: (params.get('category') ?? '') as FindingCategory | '',
@@ -64,6 +68,8 @@ export function FindingsPage() {
       const sp = new URLSearchParams();
       sp.set('format', 'csv');
       if (filter.assetId) sp.set('assetId', filter.assetId);
+      if (filter.cloudAccountId) sp.set('cloudAccountId', filter.cloudAccountId);
+      if (filter.domain) sp.set('domain', filter.domain);
       if (filter.severity) sp.set('severity', filter.severity);
       if (filter.status) sp.set('status', filter.status);
       if (filter.category) sp.set('category', filter.category);
@@ -98,6 +104,8 @@ export function FindingsPage() {
 
   const hasNonDefaultFilters = Boolean(
     filter.status !== 'OPEN' ||
+    filter.domain ||
+    filter.cloudAccountId ||
     filter.severity ||
     filter.category ||
     filter.assignedToId ||
@@ -108,7 +116,7 @@ export function FindingsPage() {
     <>
       <PageHeader
         title="Hallazgos"
-        description="Problemas detectados en tus activos con trazabilidad de ciclo de vida, asignación de responsables y control de SLAs de remediación."
+        description="Problemas detectados en tu perímetro externo e infraestructura Cloud (AWS & Azure) con trazabilidad de ciclo de vida, responsables y SLAs de remediación."
         actions={
           <Button
             variant="secondary"
@@ -120,6 +128,48 @@ export function FindingsPage() {
           </Button>
         }
       />
+
+      {/* Domain selector tabs */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setFilter('domain', '')}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+            !filter.domain
+              ? 'border-accent bg-accent/10 text-accent'
+              : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+          )}
+        >
+          Todos los dominios
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilter('domain', filter.domain === 'perimeter' ? '' : 'perimeter')}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+            filter.domain === 'perimeter'
+              ? 'border-accent bg-accent/10 text-accent'
+              : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+          )}
+        >
+          <Server className="size-3.5" />
+          Perímetro Externo
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilter('domain', filter.domain === 'cloud' ? '' : 'cloud')}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+            filter.domain === 'cloud'
+              ? 'border-accent bg-accent/10 text-accent'
+              : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+          )}
+        >
+          <Cloud className="size-3.5" />
+          Seguridad Cloud (CSPM)
+        </button>
+      </div>
 
       {/* SLA Metrics & Quick Filter Banner */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -341,7 +391,26 @@ export function FindingsPage() {
                         <span className="hidden sm:inline"><SeverityBadge severity={f.severity} /></span>
                       </Td>
                       <Td>
-                        <p className="font-medium text-ink">{f.title}</p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {f.cloudAccount ? (
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                                f.cloudAccount.provider === 'AWS'
+                                  ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                                  : 'bg-sky-500/15 text-sky-400 border border-sky-500/30',
+                              )}
+                            >
+                              {f.cloudAccount.provider}
+                            </span>
+                          ) : null}
+                          {f.cloudResource ? (
+                            <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-2">
+                              {CLOUD_RESOURCE_TYPE_LABEL[f.cloudResource.resourceType] ?? f.cloudResource.resourceType}
+                            </span>
+                          ) : null}
+                          <p className="font-medium text-ink">{f.title}</p>
+                        </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 md:hidden">
                           <FindingStatusBadge status={f.status} />
                           <SlaBadge sla={f.sla} />
@@ -349,7 +418,20 @@ export function FindingsPage() {
                         <p className="truncate text-xs text-muted lg:hidden mt-0.5">{f.asset.name ?? f.asset.value}</p>
                       </Td>
                       <Td className="hidden lg:table-cell">
-                        <Link to={`/assets/${f.asset.id}`} className="text-ink-2 hover:underline" onClick={(e) => e.stopPropagation()}>{f.asset.name ?? f.asset.value}</Link>
+                        {f.cloudAccount ? (
+                          <div>
+                            <Link to={`/cloud?accountId=${f.cloudAccount.id}&tab=resources`} className="font-medium text-ink hover:underline" onClick={(e) => e.stopPropagation()}>
+                              {f.cloudAccount.name}
+                            </Link>
+                            {f.cloudResource ? (
+                              <p className="truncate text-[11px] font-mono text-muted max-w-[180px]" title={f.cloudResource.nativeId}>
+                                {f.cloudResource.name} ({f.cloudResource.region})
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <Link to={`/assets/${f.asset.id}`} className="text-ink-2 hover:underline" onClick={(e) => e.stopPropagation()}>{f.asset.name ?? f.asset.value}</Link>
+                        )}
                       </Td>
                       <Td className="tabular hidden text-ink-2 xl:table-cell">{cvss(f.cvssScore)}</Td>
                       <Td className="hidden md:table-cell"><SlaBadge sla={f.sla} /></Td>

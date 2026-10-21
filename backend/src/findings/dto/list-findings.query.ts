@@ -6,11 +6,24 @@ import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-valid
 export const SLA_STATUSES = ['OVERDUE', 'APPROACHING', 'ON_TRACK', 'NO_SLA'] as const;
 export type SlaStatusQuery = (typeof SLA_STATUSES)[number];
 
+export const FINDING_DOMAINS = ['perimeter', 'cloud'] as const;
+export type FindingDomainQuery = (typeof FINDING_DOMAINS)[number];
+
 export class ListFindingsQuery {
   @ApiPropertyOptional({ description: 'Filtrar por activo' })
   @IsOptional()
   @IsString()
   assetId?: string;
+
+  @ApiPropertyOptional({ enum: FINDING_DOMAINS, description: 'Filtrar por ámbito: perímetro externo o seguridad cloud (CSPM)' })
+  @IsOptional()
+  @IsIn(FINDING_DOMAINS)
+  domain?: FindingDomainQuery;
+
+  @ApiPropertyOptional({ description: 'Filtrar por cuenta cloud conectada (UUID)' })
+  @IsOptional()
+  @IsString()
+  cloudAccountId?: string;
 
   @ApiPropertyOptional({ enum: FindingSeverity })
   @IsOptional()
