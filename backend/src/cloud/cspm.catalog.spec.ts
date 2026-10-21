@@ -1,4 +1,4 @@
-import { CloudProvider, FindingCategory, FindingSeverity } from '@prisma/client';
+import { CloudProvider, FindingCategory } from '@prisma/client';
 import { CSPM_RULES, CSPM_RULES_MAP } from './cspm.catalog';
 
 describe('CSPM Catalog', () => {

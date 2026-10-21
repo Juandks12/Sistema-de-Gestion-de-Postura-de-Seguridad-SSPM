@@ -12,7 +12,7 @@ describe('CryptoVaultService', () => {
         return null;
       }),
     };
-    service = new CryptoVaultService(configMock as any);
+    service = new CryptoVaultService(configMock as unknown as ConfigService);
   });
 
   it('cifra y descifra correctamente un texto plano con AES-256-GCM', () => {
