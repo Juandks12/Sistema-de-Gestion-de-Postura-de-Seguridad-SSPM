@@ -15,6 +15,11 @@ describe('CloudAccountsController', () => {
     updateAccount: jest.Mock;
     deleteAccount: jest.Mock;
   };
+  let scanServiceMock: {
+    getCloudPostureSummary: jest.Mock;
+    listResources: jest.Mock;
+    runAccountAudit: jest.Mock;
+  };
 
   const mockUser: AuthUser = {
     id: 'user-1',
@@ -36,7 +41,15 @@ describe('CloudAccountsController', () => {
       updateAccount: jest.fn(),
       deleteAccount: jest.fn(),
     };
-    controller = new CloudAccountsController(serviceMock as any);
+    scanServiceMock = {
+      getCloudPostureSummary: jest.fn(),
+      listResources: jest.fn(),
+      runAccountAudit: jest.fn(),
+    };
+    controller = new CloudAccountsController(
+      serviceMock as any,
+      scanServiceMock as any,
+    );
   });
 
   it('delega getOnboardingTemplate con organizationId del usuario autenticado', () => {
@@ -50,6 +63,22 @@ describe('CloudAccountsController', () => {
     serviceMock.listCspmRules.mockReturnValueOnce([]);
     controller.listRules(CloudProvider.AWS);
     expect(serviceMock.listCspmRules).toHaveBeenCalledWith(CloudProvider.AWS);
+  });
+
+  it('delega getCloudSummary al servicio de escaneo CSPM', async () => {
+    scanServiceMock.getCloudPostureSummary.mockResolvedValueOnce({ accounts: { total: 2 } });
+    const res = await controller.getCloudSummary(mockUser);
+    expect(scanServiceMock.getCloudPostureSummary).toHaveBeenCalledWith('org-1');
+    expect(res).toEqual({ accounts: { total: 2 } });
+  });
+
+  it('delega listResources con los filtros indicados', async () => {
+    scanServiceMock.listResources.mockResolvedValueOnce([]);
+    const res = await controller.listResources(mockUser, { provider: CloudProvider.AWS });
+    expect(scanServiceMock.listResources).toHaveBeenCalledWith('org-1', {
+      provider: CloudProvider.AWS,
+    });
+    expect(res).toEqual([]);
   });
 
   it('delega createAccount pasando organizationId y userId', async () => {
@@ -72,6 +101,16 @@ describe('CloudAccountsController', () => {
     const res = await controller.verifyAccount(mockUser, 'ca-uuid-1');
     expect(serviceMock.verifyExistingAccount).toHaveBeenCalledWith('org-1', 'ca-uuid-1');
     expect(res).toEqual({ verification: { valid: true } });
+  });
+
+  it('delega scanAccount ejecutando runAccountAudit con simulate y actorId', async () => {
+    scanServiceMock.runAccountAudit.mockResolvedValueOnce({ simulated: true });
+    const res = await controller.scanAccount(mockUser, 'ca-uuid-1', { simulate: true });
+    expect(scanServiceMock.runAccountAudit).toHaveBeenCalledWith('org-1', 'ca-uuid-1', {
+      simulate: true,
+      actorId: 'user-1',
+    });
+    expect(res).toEqual({ simulated: true });
   });
 
   it('delega deleteAccount pasando organizationId e id', async () => {
