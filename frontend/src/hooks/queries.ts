@@ -11,10 +11,16 @@ import type {
   Asset,
   AssetCriticality,
   AssetVerification,
+  CloudAccountItem,
+  CloudOnboardingTemplate,
+  CloudProvider,
+  CloudVerificationResult,
   ComplianceFramework,
   ComplianceOverview,
   CreateApiKeyInput,
+  CreateCloudAccountInput,
   CreatedApiKeyResponse,
+  CspmRuleDefinition,
   DeliveryResult,
   DiscoveredHosts,
   ExecutiveBusinessSummary,
@@ -47,6 +53,7 @@ import type {
   ScanType,
   Severity,
   SlaStatus,
+  TestCloudConnectionInput,
   UserAssignee,
   UserRole,
 } from '@/lib/types';
@@ -79,6 +86,9 @@ export const keys = {
   apiKeys: ['api-keys'] as const,
   complianceOverview: ['compliance', 'overview'] as const,
   complianceFramework: (fw: ComplianceFramework) => ['compliance', 'framework', fw] as const,
+  cloudAccounts: ['cloud', 'accounts'] as const,
+  cloudOnboarding: ['cloud', 'onboarding'] as const,
+  cspmRules: (provider?: CloudProvider) => ['cloud', 'rules', provider ?? 'all'] as const,
 };
 
 export function useOverview() {
@@ -728,6 +738,80 @@ export function useComplianceFramework(framework: ComplianceFramework) {
     queryKey: keys.complianceFramework(framework),
     queryFn: () => api<FrameworkDetailsResponse>(`/compliance/frameworks/${framework}`),
     enabled: Boolean(framework),
+  });
+}
+
+export function useCloudOnboardingTemplate() {
+  return useQuery({
+    queryKey: keys.cloudOnboarding,
+    queryFn: () => api<CloudOnboardingTemplate>('/cloud/onboarding-template'),
+  });
+}
+
+export function useCspmRules(provider?: CloudProvider) {
+  return useQuery({
+    queryKey: keys.cspmRules(provider),
+    queryFn: () => api<CspmRuleDefinition[]>(`/cloud/rules${qs({ provider })}`),
+  });
+}
+
+export function useCloudAccounts() {
+  return useQuery({
+    queryKey: keys.cloudAccounts,
+    queryFn: () => api<CloudAccountItem[]>('/cloud/accounts'),
+  });
+}
+
+export function useTestCloudConnection() {
+  return useMutation({
+    mutationFn: (body: TestCloudConnectionInput) =>
+      api<CloudVerificationResult>('/cloud/accounts/test-connection', {
+        method: 'POST',
+        json: body,
+      }),
+  });
+}
+
+export function useCreateCloudAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateCloudAccountInput) =>
+      api<{ account: CloudAccountItem; verification: CloudVerificationResult | null }>(
+        '/cloud/accounts',
+        { method: 'POST', json: body },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cloudAccounts });
+      qc.invalidateQueries({ queryKey: keys.assets });
+      qc.invalidateQueries({ queryKey: keys.dashboardAssets });
+    },
+  });
+}
+
+export function useVerifyCloudAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api<{ account: CloudAccountItem; verification: CloudVerificationResult }>(
+        `/cloud/accounts/${accountId}/verify`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cloudAccounts });
+    },
+  });
+}
+
+export function useDeleteCloudAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api<{ deleted: true }>(`/cloud/accounts/${accountId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cloudAccounts });
+      qc.invalidateQueries({ queryKey: keys.assets });
+      qc.invalidateQueries({ queryKey: keys.dashboardAssets });
+    },
   });
 }
 
