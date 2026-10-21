@@ -120,6 +120,12 @@ export class DashboardService {
         description: current.description,
         scoredAssets: current.scoredAssets,
         totalAssets: current.totalAssets,
+        perimeterScore: current.perimeterScore ?? null,
+        perimeterGrade: current.perimeterGrade ?? null,
+        scoredPerimeterAssets: current.scoredPerimeterAssets ?? 0,
+        cloudScore: current.cloudScore ?? null,
+        cloudGrade: current.cloudGrade ?? null,
+        scoredCloudAssets: current.scoredCloudAssets ?? 0,
         lastSnapshotAt: latest?.computedAt ?? null,
         trend: {
           sincePrevious: trend(previous?.score),

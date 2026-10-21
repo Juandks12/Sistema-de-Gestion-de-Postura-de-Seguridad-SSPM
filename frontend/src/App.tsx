@@ -17,6 +17,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ScansPage } from './pages/ScansPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CompliancePage } from './pages/CompliancePage';
+import { CloudSecurityPage } from './pages/CloudSecurityPage';
 import { UsersPage } from './pages/UsersPage';
 
 export function App() {
@@ -32,6 +33,7 @@ export function App() {
           <Route index element={<DashboardPage />} />
           <Route path="assets" element={<AssetsPage />} />
           <Route path="assets/:id" element={<AssetDetailPage />} />
+          <Route path="cloud" element={<CloudSecurityPage />} />
           <Route path="findings" element={<FindingsPage />} />
           <Route path="compliance" element={<CompliancePage />} />
           <Route path="scans" element={<ScansPage />} />

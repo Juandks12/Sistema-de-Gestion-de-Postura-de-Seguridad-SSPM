@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { FindingCategory, FindingSeverity, FindingStatus } from '@prisma/client';
 import { IsDateString, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
-import { SLA_STATUSES, SlaStatusQuery } from './list-findings.query';
+import { FINDING_DOMAINS, FindingDomainQuery, SLA_STATUSES, SlaStatusQuery } from './list-findings.query';
 
 export class ExportFindingsQuery {
   @ApiPropertyOptional({ enum: ['csv'], default: 'csv', description: 'Formato de exportación' })
@@ -13,6 +13,16 @@ export class ExportFindingsQuery {
   @IsOptional()
   @IsString()
   assetId?: string;
+
+  @ApiPropertyOptional({ enum: FINDING_DOMAINS })
+  @IsOptional()
+  @IsIn(FINDING_DOMAINS)
+  domain?: FindingDomainQuery;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  cloudAccountId?: string;
 
   @ApiPropertyOptional({ enum: FindingSeverity })
   @IsOptional()

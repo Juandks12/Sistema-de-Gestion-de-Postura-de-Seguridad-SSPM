@@ -8,6 +8,7 @@ type Db = Prisma.TransactionClient | PrismaService;
 
 export interface AssetScoreState {
   assetId: string;
+  assetType?: AssetType;
   scored: boolean;
   result: ScoreResult;
 }
@@ -114,6 +115,7 @@ export class RiskScoresService {
       (asset?.type === AssetType.CLOUD_ACCOUNT && Boolean(asset?.lastScannedAt));
     return {
       assetId,
+      assetType: asset?.type,
       scored,
       result: computeScore(counts, asset?.criticality ?? AssetCriticality.MEDIUM),
     };
@@ -141,8 +143,45 @@ export class RiskScoresService {
       const scored =
         a.scans.length > 0 ||
         (a.type === AssetType.CLOUD_ACCOUNT && Boolean(a.lastScannedAt));
-      return { assetId: a.id, scored, result: computeScore(counts, a.criticality) };
+      return {
+        assetId: a.id,
+        assetType: a.type,
+        scored,
+        result: computeScore(counts, a.criticality),
+      };
     });
+  }
+
+  private computeHybridOrganizationScore(states: AssetScoreState[]) {
+    const scored = states.filter((s) => s.scored);
+    const perimeterScored = scored.filter((s) => s.assetType !== AssetType.CLOUD_ACCOUNT);
+    const cloudScored = scored.filter((s) => s.assetType === AssetType.CLOUD_ACCOUNT);
+
+    const perimeterScore = aggregateScores(perimeterScored.map((s) => s.result.score));
+    const cloudScore = aggregateScores(cloudScored.map((s) => s.result.score));
+
+    let score: number | null = null;
+    let method = 'mean-of-asset-scores';
+    if (perimeterScore !== null && cloudScore !== null) {
+      score = Math.round(perimeterScore * 0.5 + cloudScore * 0.5);
+      method = 'hybrid-perimeter-50-cloud-50';
+    } else if (perimeterScore !== null) {
+      score = perimeterScore;
+    } else if (cloudScore !== null) {
+      score = cloudScore;
+    }
+
+    return {
+      scored,
+      score,
+      method,
+      perimeterScore,
+      perimeterGrade: perimeterScore === null ? null : gradeFor(perimeterScore).grade,
+      scoredPerimeterAssets: perimeterScored.length,
+      cloudScore,
+      cloudGrade: cloudScore === null ? null : gradeFor(cloudScore).grade,
+      scoredCloudAssets: cloudScored.length,
+    };
   }
 
   /**
@@ -166,24 +205,27 @@ export class RiskScoresService {
     scanId?: string,
   ): Promise<Snapshot> {
     const states = await this.computeAllAssets(db, organizationId);
-    const scored = states.filter((s) => s.scored);
-    const score = aggregateScores(scored.map((s) => s.result.score));
+    const hybrid = this.computeHybridOrganizationScore(states);
     const counts = emptyCounts();
-    for (const s of scored) {
+    for (const s of hybrid.scored) {
       for (const sev of Object.keys(counts) as Array<keyof SeverityCounts>) counts[sev] += s.result.counts[sev];
     }
     return db.riskScore.create({
       data: {
         organizationId,
         scope: RiskScoreScope.ORGANIZATION,
-        score,
-        grade: score === null ? null : gradeFor(score).grade,
+        score: hybrid.score,
+        grade: hybrid.score === null ? null : gradeFor(hybrid.score).grade,
         ...countsToColumns(counts),
-        scoredAssets: scored.length,
+        scoredAssets: hybrid.scored.length,
         breakdown: {
           modelVersion: computeScore({}).modelVersion,
-          method: 'mean-of-asset-scores',
-          assets: scored.map((s) => ({ assetId: s.assetId, score: s.result.score, grade: s.result.grade })),
+          method: hybrid.method,
+          perimeterScore: hybrid.perimeterScore,
+          perimeterGrade: hybrid.perimeterGrade,
+          cloudScore: hybrid.cloudScore,
+          cloudGrade: hybrid.cloudGrade,
+          assets: hybrid.scored.map((s) => ({ assetId: s.assetId, score: s.result.score, grade: s.result.grade })),
         } as Prisma.InputJsonValue,
         trigger,
         scanId,
@@ -260,22 +302,27 @@ export class RiskScoresService {
     }
 
     const states = await this.computeAllAssets(this.prisma, organizationId);
-    const scored = states.filter((s) => s.scored);
-    const score = aggregateScores(scored.map((s) => s.result.score));
+    const hybrid = this.computeHybridOrganizationScore(states);
     const counts = emptyCounts();
-    for (const s of scored) {
+    for (const s of hybrid.scored) {
       for (const sev of Object.keys(counts) as Array<keyof SeverityCounts>) counts[sev] += s.result.counts[sev];
     }
-    const band = score === null ? null : gradeFor(score);
+    const band = hybrid.score === null ? null : gradeFor(hybrid.score);
     return {
       scope: RiskScoreScope.ORGANIZATION,
-      score,
+      score: hybrid.score,
       grade: band?.grade ?? null,
       label: band?.label ?? 'Sin evaluar',
       description: band?.description ?? 'Ningún activo tiene todavía un escaneo completado.',
       counts,
-      scoredAssets: scored.length,
+      scoredAssets: hybrid.scored.length,
       totalAssets: states.length,
+      perimeterScore: hybrid.perimeterScore,
+      perimeterGrade: hybrid.perimeterGrade,
+      scoredPerimeterAssets: hybrid.scoredPerimeterAssets,
+      cloudScore: hybrid.cloudScore,
+      cloudGrade: hybrid.cloudGrade,
+      scoredCloudAssets: hybrid.scoredCloudAssets,
       modelVersion: computeScore({}).modelVersion,
     };
   }

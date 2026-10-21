@@ -123,8 +123,24 @@ export interface Finding {
   dueDate?: string | null;
   remediationNote?: string | null;
   reviewNote: string | null;
+  cloudAccountId?: string | null;
+  cloudResourceId?: string | null;
   asset: { id: string; type: AssetType; value: string; name: string | null };
   reviewedBy: { id: string; fullName: string; email: string } | null;
+  cloudAccount?: {
+    id: string;
+    provider: CloudProvider;
+    name: string;
+    accountOrSubscriptionId: string;
+  } | null;
+  cloudResource?: {
+    id: string;
+    provider: CloudProvider;
+    resourceType: CloudResourceType;
+    nativeId: string;
+    name: string;
+    region?: string | null;
+  } | null;
   remediationGuide?: RemediationGuide;
   sla?: FindingSla;
 }
@@ -277,6 +293,12 @@ export interface Overview {
     description: string;
     scoredAssets: number;
     totalAssets: number;
+    perimeterScore?: number | null;
+    perimeterGrade?: Grade | null;
+    scoredPerimeterAssets?: number;
+    cloudScore?: number | null;
+    cloudGrade?: Grade | null;
+    scoredCloudAssets?: number;
     lastSnapshotAt: string | null;
     trend: {
       sincePrevious: number | null;
