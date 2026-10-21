@@ -851,8 +851,75 @@ export interface CloudAccountItem {
   lastAuditError?: string | null;
   resourceCount: number;
   failingFindingCount: number;
+  hasCredentialsStored?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CloudOnboardingTemplate {
+  awsExternalId: string;
+  awsCloudFormationYaml: string;
+  awsCliSnippet: string;
+  azureCliSnippet: string;
+}
+
+export interface CloudVerificationResult {
+  valid: boolean;
+  accountId?: string;
+  arn?: string;
+  userId?: string;
+  assumedRole?: boolean;
+  subscriptionId?: string;
+  displayName?: string;
+  state?: string;
+  tenantId?: string;
+  latencyMs: number;
+  error?: string;
+}
+
+export interface CreateCloudAccountInput {
+  provider: CloudProvider;
+  name: string;
+  authType: CloudAuthType;
+  accountOrSubscriptionId: string;
+  azureTenantId?: string;
+  azureClientId?: string;
+  azureClientSecret?: string;
+  awsRoleArn?: string;
+  awsExternalId?: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  awsSessionToken?: string;
+  monitoredRegions?: string[];
+  verifyOnCreate?: boolean;
+}
+
+export interface TestCloudConnectionInput {
+  provider: CloudProvider;
+  authType: CloudAuthType;
+  accountOrSubscriptionId: string;
+  azureTenantId?: string;
+  azureClientId?: string;
+  azureClientSecret?: string;
+  awsRoleArn?: string;
+  awsExternalId?: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  awsSessionToken?: string;
+}
+
+export interface CspmRuleDefinition {
+  ruleId: string;
+  provider: CloudProvider;
+  category: FindingCategory;
+  severity: Severity;
+  cvssScore: number;
+  title: string;
+  description: string;
+  recommendation: string;
+  remediationCli: string;
+  remediationIac: string;
+  complianceControlIds: string[];
 }
 
 export interface CloudResourceItem {
