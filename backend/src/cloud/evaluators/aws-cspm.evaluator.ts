@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
-  CloudAuthType,
   CloudProvider,
   CloudResourceType,
 } from '@prisma/client';
