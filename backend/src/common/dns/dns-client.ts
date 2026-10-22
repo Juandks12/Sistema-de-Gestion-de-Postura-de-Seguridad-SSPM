@@ -33,6 +33,8 @@ export interface DnsClient {
   addresses(name: string): Promise<string[]>;
   /** Registros CAA (RFC 8659). */
   caa(name: string): Promise<CaaRecord[]>;
+  /** Registros CNAME para detección de alias y Subdomain Takeover. */
+  cname(name: string): Promise<string[]>;
 }
 
 export const DNS_CLIENT = Symbol('DNS_CLIENT');
@@ -73,5 +75,6 @@ export function createDnsClient(timeoutMs = 4000): DnsClient {
       return [...v4, ...v6];
     },
     caa: (name) => orEmpty(name, () => resolver.resolveCaa(name)),
+    cname: (name) => orEmpty(name, () => resolver.resolveCname(name)),
   };
 }

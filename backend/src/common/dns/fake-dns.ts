@@ -6,6 +6,7 @@ export interface FakeZone {
   mx?: Record<string, MxRecord[] | 'SERVFAIL'>;
   addresses?: Record<string, string[]>;
   caa?: Record<string, CaaRecord[] | 'SERVFAIL'>;
+  cname?: Record<string, string[] | 'SERVFAIL'>;
 }
 
 export function fakeDns(zone: FakeZone): DnsClient & { queries: string[] } {
@@ -22,5 +23,6 @@ export function fakeDns(zone: FakeZone): DnsClient & { queries: string[] } {
     mx: async (name) => get(zone.mx, name),
     addresses: async (name) => get(zone.addresses, name),
     caa: async (name) => get(zone.caa, name),
+    cname: async (name) => get(zone.cname, name),
   };
 }

@@ -309,6 +309,140 @@ const rules: FindingRule[] = [
       'Añada el atributo Secure a cualquier cookie configurada con SameSite=None.',
   },
 
+  // ------------------------- inspección profunda web, e-commerce y secretos
+  {
+    id: 'HDR-CORS-ORIGIN-REFLECTION',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 8.1,
+    title: 'CORS con reflexión arbitraria de origen y credenciales permitidas',
+    description:
+      'El servidor refleja cualquier valor de la cabecera Origin en Access-Control-Allow-Origin y habilita Access-Control-Allow-Credentials: true. Un sitio web malicioso de terceros puede ejecutar peticiones autenticadas y extraer información confidencial de clientes autenticados en el comercio.',
+    recommendation:
+      'Configure una lista blanca estricta de dominios de confianza permitidos para CORS y nunca refleje arbitrariamente la cabecera Origin cuando Allow-Credentials esté habilitado.',
+  },
+  {
+    id: 'WEB-WAF-ABSENT',
+    category: C.HTTP_HEADERS,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Ausencia de Web Application Firewall (WAF) o CDN protectora',
+    description:
+      'No se detectaron firmas ni cabeceras de protección de un WAF o red de entrega de contenido (Cloudflare, AWS WAF, Akamai, Imperva, Fastly). El comercio o aplicación web se encuentra directamente expuesto a ataques de capa 7, scraping y DDoS.',
+    recommendation:
+      'Despliegue un Web Application Firewall perimetral para inspeccionar tráfico malicioso, bloquear bots dañinos y proteger formularios críticos contra abusos automatizados.',
+  },
+  {
+    id: 'WEB-HTTP-METHODS-DANGEROUS',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Métodos HTTP peligrosos habilitados públicamente (TRACE, TRACK, PUT, DELETE)',
+    description:
+      'El servidor responde o declara soporte para métodos HTTP potencialmente peligrosos. El método TRACE/TRACK facilita ataques Cross-Site Tracing (XST) para robar cookies HttpOnly, mientras que PUT o DELETE sin autenticación pueden permitir manipulación no autorizada de recursos.',
+    recommendation:
+      'Deshabilite los métodos TRACE, TRACK, PUT y DELETE en la configuración global del servidor web o proxy inverso para peticiones públicas no autenticadas.',
+  },
+  {
+    id: 'WEB-SRI-MISSING-EXTERNAL-SCRIPT',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Script externo de terceros cargado sin Subresource Integrity (SRI) / Riesgo Magecart',
+    description:
+      'Se cargan bibliotecas o scripts JavaScript desde orígenes externos (CDNs o terceros) sin el atributo integrity (SRI). Si el proveedor externo es comprometido, un atacante puede inyectar código malicioso (Magecart / E-Skimming) para interceptar números de tarjetas de crédito o contraseñas (PCI-DSS v4.0 Req. 6.4.3 y 11.6.1).',
+    recommendation:
+      'Agregue el atributo integrity con un hash criptográfico (sha256, sha384 o sha512) y crossorigin="anonymous" a todos los elementos <script> externos, o albergue los scripts localmente.',
+  },
+  {
+    id: 'WEB-MIXED-CONTENT',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 7.4,
+    title: 'Contenido mixto activo (HTTP dentro de HTTPS) detectado',
+    description:
+      'La aplicación se sirve por HTTPS pero carga scripts o iframes a través de HTTP sin cifrado. Un atacante intermediario (Man-In-The-Middle) puede modificar estos recursos no cifrados y tomar control de la sesión del usuario o de la tienda.',
+    recommendation:
+      'Actualice todas las referencias de recursos externos e internos para utilizar https:// o URLs relativas a protocolo, y configure la cabecera Content-Security-Policy: upgrade-insecure-requests.',
+  },
+  {
+    id: 'WEB-INSECURE-FORM-ACTION',
+    category: C.HTTP_HEADERS,
+    severity: S.CRITICAL,
+    cvss: 9.1,
+    title: 'Formulario sensible envía credenciales o datos de pago vía HTTP sin cifrar',
+    description:
+      'Un formulario con campos de contraseña o información de pago apunta su atributo action a un endpoint HTTP sin cifrado TLS. La información confidencial del usuario viajará en texto plano a través de la red.',
+    recommendation:
+      'Asegúrese de que el atributo action del formulario apunte estrictamente a un endpoint HTTPS válido o a una ruta relativa en un host HTTPS.',
+  },
+  {
+    id: 'WEB-JS-SECRET-LEAK',
+    category: C.HTTP_HEADERS,
+    severity: S.CRITICAL,
+    cvss: 9.3,
+    title: 'Fuga de secretos o llaves privadas de pago en bundles JavaScript de frontend',
+    description:
+      'Se identificaron llaves privadas o tokens de producción (Stripe Secret Key, MercadoPago Access Token, Wompi Private Key, credenciales AWS IAM o claves privadas criptográficas) dentro de archivos JavaScript descargables por cualquier visitante.',
+    recommendation:
+      'Revoque y rote de inmediato todas las credenciales detectadas. Mueva la lógica de pago que requiera secretos privados exclusivamente al backend y asegúrese de no incluir variables de entorno sensibles en los empaquetadores de frontend.',
+  },
+  {
+    id: 'PATH-SOURCEMAP-EXPOSED',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Archivo Source Map (.js.map) expuesto en producción',
+    description:
+      'Se detectaron archivos de mapeo de código fuente (.js.map) accesibles públicamente en producción. Esto permite a cualquier usuario o atacante reconstruir el código fuente original TypeScript/React/Vue, comentarios internos, nombres de variables y lógica de negocio privada.',
+    recommendation:
+      'Deshabilite la generación de source maps en el build de producción o configure el servidor web/CDN para denegar el acceso a archivos con extensión .map.',
+  },
+  {
+    id: 'PATH-ROBOTS-SENSITIVE-EXPOSED',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Archivo robots.txt expone rutas sensibles o administrativas',
+    description:
+      'El archivo /robots.txt contiene directivas Disallow que revelan directorios de administración, pasarelas de pago, paneles de gestión o endpoints privados accesibles desde Internet.',
+    recommendation:
+      'Elimine del archivo robots.txt las rutas que no deban ser descubiertas y aplique controles de autenticación y autorización en el servidor web o WAF.',
+  },
+  {
+    id: 'CMS-WP-USER-ENUMERATION',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Enumeración de usuarios administradores expuesta en WordPress / WooCommerce',
+    description:
+      'El endpoint REST /wp-json/wp/v2/users devuelve los nombres de usuario y slugs de los administradores y editores de la tienda. Esta información facilita ataques directos de fuerza bruta y credential stuffing.',
+    recommendation:
+      'Restrinja el acceso público a /wp-json/wp/v2/users mediante plugins de seguridad o directivas del servidor web para requerir autenticación.',
+  },
+  {
+    id: 'CMS-WP-XMLRPC-ENABLED',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Interfaz XML-RPC activa en WordPress / WooCommerce (/xmlrpc.php)',
+    description:
+      'El archivo /xmlrpc.php está activo y accesible. Este protocolo legado permite el método system.multicall para probar miles de combinaciones de contraseñas en una sola petición HTTP y puede ser usado en ataques de amplificación DDoS (pingback).',
+    recommendation:
+      'Deshabilite XML-RPC bloqueando el acceso al archivo xmlrpc.php en Nginx, Apache o Cloudflare si no utiliza la app móvil oficial de WordPress o integraciones externas legadas.',
+  },
+  {
+    id: 'CMS-WP-DEBUG-LOG-EXPOSED',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Archivo debug.log de WordPress expuesto públicamente',
+    description:
+      'El archivo /wp-content/debug.log es accesible vía HTTP y contiene trazas de error de PHP, consultas SQL, nombres de tablas, rutas completas del sistema de archivos y potencialmente credenciales de conexión.',
+    recommendation:
+      'Elimine el archivo debug.log, deshabilite WP_DEBUG_LOG en wp-config.php en producción y configure el servidor para prohibir el acceso a archivos .log.',
+  },
+
   // ------------------------------------------------------------------- TLS
   {
     id: 'TLS-EXPIRED',
@@ -704,6 +838,17 @@ const rules: FindingRule[] = [
   },
 
   // ------------------------------------------------------------- DNS y DNSSEC
+  {
+    id: 'DNS-SUBDOMAIN-TAKEOVER',
+    category: C.EXPOSED_SERVICE,
+    severity: S.CRITICAL,
+    cvss: 9.3,
+    title: 'Riesgo Crítico de Subdomain Takeover (Secuestro de Subdominio por CNAME huérfano)',
+    description:
+      'El subdominio apunta mediante registro CNAME a un recurso de un proveedor cloud (AWS S3, Azure App Service, GitHub Pages, Shopify, Heroku, Vercel) que ya no existe o no ha sido reclamado. Un atacante puede registrar dicho recurso y tomar control total del subdominio.',
+    recommendation:
+      'Elimine inmediatamente el registro CNAME huérfano de la zona DNS o vuelva a reclamar y configurar el recurso correspondiente en el proveedor cloud.',
+  },
   {
     id: 'DNS-NO-CAA',
     category: C.EMAIL_SECURITY,
