@@ -11,7 +11,8 @@ export interface HttpProbeOptions {
   timeoutMs?: number;
   maxRedirects?: number;
   maxBodyBytes?: number;
-  method?: 'GET' | 'HEAD';
+  method?: 'GET' | 'HEAD' | 'OPTIONS' | 'POST';
+  body?: string | Buffer;
   headers?: Record<string, string>;
   /** IP ya resuelta para el host inicial (evita una segunda resolución DNS). */
   pinnedAddress?: string;
@@ -212,6 +213,7 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
           res = await request(`${parsed.protocol}//${bracket(address)}:${port}${parsed.pathname}${parsed.search}`, {
             dispatcher: agent,
             method: options.method ?? 'GET',
+            body: options.body,
             headers: {
               host: hostHeader,
               'user-agent': USER_AGENT,

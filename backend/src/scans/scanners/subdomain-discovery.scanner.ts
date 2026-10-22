@@ -4,6 +4,7 @@ import { AssetType, ScanType } from '@prisma/client';
 import { DNS_CLIENT, DnsClient } from '../../common/dns/dns-client';
 import { CT_SOURCE, CtSource, CtSourceError } from '../../discovery/ct-log.client';
 import { subdomainsFromCt } from '../../discovery/hostnames';
+import { analyzeSubdomainTakeover, SubdomainCnameInfo } from '../dns/subdomain-takeover.analyzer';
 import { ScanExecutionError } from '../scan.errors';
 import { abortReason, DiscoveredHostDraft, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
 
@@ -40,6 +41,7 @@ export class SubdomainDiscoveryScanner implements Scanner {
 
     const { hosts, truncated } = subdomainsFromCt(result.names, domain, max);
     const discovered: DiscoveredHostDraft[] = new Array(hosts.length);
+    const candidateCnames: SubdomainCnameInfo[] = [];
     let next = 0;
     const worker = async () => {
       while (next < hosts.length) {
@@ -47,21 +49,35 @@ export class SubdomainDiscoveryScanner implements Scanner {
         const i = next++;
         const host = hosts[i];
         // Un fallo de DNS en un nombre no invalida el descubrimiento: se registra como "no resuelve".
-        const addresses = await this.dns.addresses(host.hostname).catch(() => [] as string[]);
+        const [addresses, cnames] = await Promise.all([
+          this.dns.addresses(host.hostname).catch(() => [] as string[]),
+          this.dns.cname(host.hostname).catch(() => [] as string[]),
+        ]);
         discovered[i] = { ...host, resolves: addresses.length > 0, addresses: addresses.slice(0, 10) };
+        if (cnames.length > 0) {
+          candidateCnames.push({ subdomain: host.hostname, cname: cnames[0] });
+        }
       }
     };
     await Promise.all(Array.from({ length: Math.min(RESOLVE_CONCURRENCY, hosts.length) }, worker));
 
+    // Evaluar riesgos de Subdomain Takeover sobre los CNAMEs recolectados
+    const takeoverFindings = await analyzeSubdomainTakeover(candidateCnames.slice(0, 50), {
+      allowPrivate: ctx.allowPrivate,
+      signal: ctx.signal,
+      timeoutMs: 6000,
+    });
+
     return {
       parameters: { source: result.source, maxHosts: max },
-      rawResult: { source: result.source, certificateNames: result.names.length },
-      findings: [],
+      rawResult: { source: result.source, certificateNames: result.names.length, candidateCnamesCount: candidateCnames.length },
+      findings: takeoverFindings,
       discoveredHosts: discovered,
       summary: {
         source: result.source,
         subdomains: discovered.length,
         resolving: discovered.filter((h) => h.resolves).length,
+        takeoverFindingsCount: takeoverFindings.length,
         truncated,
       },
     };

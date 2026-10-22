@@ -339,6 +339,283 @@ const REMEDIATION_CATALOG: Record<string, Omit<RemediationGuide, 'ruleId'>> = {
       },
     ],
   },
+  'HDR-CORS-ORIGIN-REFLECTION': {
+    owasp: 'A01:2021 – Broken Access Control',
+    cwe: 'CWE-942: Permissive Cross-domain Policy with Untrusted Domains',
+    summary:
+      'Restrinja Access-Control-Allow-Origin a una lista blanca explícita de dominios confiables y nunca refleje arbitrariamente la cabecera Origin cuando Access-Control-Allow-Credentials sea true.',
+    verificationCommand: 'curl -sI -H "Origin: https://malicious.com" https://target.com | grep -i "access-control"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Configure una lista blanca estricta con directiva map en Nginx:',
+        code: 'map $http_origin $cors_origin {\n  default "";\n  "~^https://(www\\.)?midominio\\.com$" $http_origin;\n}\n\nadd_header Access-Control-Allow-Origin $cors_origin always;\nadd_header Access-Control-Allow-Credentials "true" always;',
+      },
+      {
+        platform: 'Node.js',
+        description: 'En middleware cors de Express declare la lista de dominios autorizados:',
+        code: 'import cors from "cors";\nconst whitelist = ["https://comercio.com", "https://app.comercio.com"];\napp.use(cors({\n  origin: (origin, callback) => {\n    if (!origin || whitelist.includes(origin)) callback(null, true);\n    else callback(new Error("Bloqueado por política CORS"));\n  },\n  credentials: true\n}));',
+      },
+    ],
+  },
+  'WEB-WAF-ABSENT': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-693: Protection Mechanism Failure',
+    summary:
+      'Implemente un Web Application Firewall (WAF) perimetral para mitigar ataques DDoS, bots automatizados, scraping y explotación de vulnerabilidades en capa de aplicación.',
+    verificationCommand: 'curl -sI https://target.com | grep -Ei "cf-ray|x-amz-cf-id|x-sucuri|x-akamai"',
+    snippets: [
+      {
+        platform: 'Cloudflare',
+        description: 'Active el proxy WAF administrado de Cloudflare (nube naranja):',
+        code: '1. En DNS active el proxy (nube naranja) para los registros A/CNAME web.\n2. En Security > WAF habilite el Cloudflare Managed Ruleset en modo Block.\n3. Configure Rate Limiting para proteger endpoints de checkout y autenticación.',
+      },
+      {
+        platform: 'AWS CLI',
+        description: 'Asocie una Web ACL de AWS WAFv2 a la distribución de CloudFront o Application Load Balancer:',
+        code: 'aws wafv2 associate-web-acl --web-acl-arn <ARN_DE_TU_WAF> --resource-arn <ARN_DEL_ALB_O_APIGW>',
+      },
+    ],
+  },
+  'WEB-HTTP-METHODS-DANGEROUS': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-650: Trusting HTTP Permission Methods on the Server Side',
+    summary:
+      'Deshabilite métodos HTTP no seguros (TRACE, TRACK, PUT, DELETE) en peticiones públicas para prevenir ataques Cross-Site Tracing (XST) y manipulación no autorizada.',
+    verificationCommand: 'curl -sI -X OPTIONS https://target.com | grep -i "allow"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Restrinja los métodos HTTP permitidos en el bloque server o location:',
+        code: 'if ($request_method !~ ^(GET|HEAD|POST|OPTIONS)$) {\n  return 405;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Deniegue métodos no permitidos y deshabilite TRACE en httpd.conf / .htaccess:',
+        code: '<LimitExcept GET POST HEAD OPTIONS>\n  Deny from all\n</LimitExcept>\nTraceEnable Off',
+      },
+    ],
+  },
+  'WEB-SRI-MISSING-EXTERNAL-SCRIPT': {
+    owasp: 'A08:2021 – Software and Data Integrity Failures',
+    cwe: 'CWE-353: Missing Support for Integrity Check',
+    summary:
+      'Incorpore Subresource Integrity (SRI) en todas las etiquetas <script> que consuman recursos externos de CDNs para evitar ataques Magecart / E-Skimming (PCI-DSS v4.0 Req. 6.4.3).',
+    verificationCommand: 'curl -s https://target.com | grep -i "<script.*src.*integrity"',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Genere el hash criptográfico sha384 del script e incorpórelo con crossorigin="anonymous":',
+        code: '<!-- Obtener hash: cat script.js | openssl dgst -sha384 -binary | openssl base64 -A -->\n<script src="https://cdn.example.com/lib.js"\n  integrity="sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC"\n  crossorigin="anonymous"></script>',
+      },
+      {
+        platform: 'Node.js',
+        description: 'Automatice la inyección de SRI en bundles frontend con webpack-subresource-integrity:',
+        code: 'import { SubresourceIntegrityPlugin } from "webpack-subresource-integrity";\nexport default {\n  output: { crossOriginLoading: "anonymous" },\n  plugins: [new SubresourceIntegrityPlugin({ hashFuncNames: ["sha384"] })]\n};',
+      },
+    ],
+  },
+  'WEB-MIXED-CONTENT': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-311: Missing Encryption of Sensitive Data',
+    summary:
+      'Asegure que todos los scripts, imágenes, estilos e iframes se carguen exclusivamente mediante https:// o active la directiva CSP upgrade-insecure-requests.',
+    verificationCommand: 'curl -sI https://target.com | grep -i "content-security-policy.*upgrade-insecure-requests"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Fuerce la actualización automática de recursos HTTP a HTTPS mediante Content-Security-Policy:',
+        code: "add_header Content-Security-Policy \"upgrade-insecure-requests; default-src https: data: 'unsafe-inline' 'unsafe-eval';\" always;",
+      },
+      {
+        platform: 'Apache',
+        description: 'Configure en .htaccess la cabecera CSP de actualización segura:',
+        code: 'Header always set Content-Security-Policy "upgrade-insecure-requests"',
+      },
+      {
+        platform: 'Cloudflare',
+        description: 'Active la reescritura automática en el panel de Cloudflare:',
+        code: 'Navegue a SSL/TLS > Edge Certificates y active "Automatic HTTPS Rewrites".',
+      },
+    ],
+  },
+  'WEB-INSECURE-FORM-ACTION': {
+    owasp: 'A02:2021 – Cryptographic Failures',
+    cwe: 'CWE-319: Cleartext Transmission of Sensitive Information',
+    summary:
+      'Actualice el atributo action de los formularios de autenticación y pago para que envíen sus datos exclusivamente a endpoints HTTPS con cifrado TLS.',
+    verificationCommand: 'curl -s https://target.com | grep -i "<form.*action=.*http:"',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Asegúrese de usar URLs absolutas HTTPS o rutas relativas en formularios sensibles:',
+        code: '<!-- Seguro: action relativo o con protocolo HTTPS explícito -->\n<form method="POST" action="https://comercio.com/checkout/pay">\n  <input type="password" name="password" />\n  <button type="submit">Pagar</button>\n</form>',
+      },
+      {
+        platform: 'Nginx',
+        description: 'Redirija incondicionalmente cualquier petición HTTP a HTTPS con código 301:',
+        code: 'server {\n  listen 80 default_server;\n  return 301 https://$host$request_uri;\n}',
+      },
+    ],
+  },
+  'WEB-JS-SECRET-LEAK': {
+    owasp: 'A07:2021 – Identification and Authentication Failures',
+    cwe: 'CWE-798: Use of Hard-coded Credentials',
+    summary:
+      'Revoque inmediatamente las credenciales expuestas y mueva las llaves privadas de Stripe, MercadoPago, Wompi o AWS exclusivamente al entorno de ejecución backend.',
+    verificationCommand: 'git log -S "sk_live_" --oneline',
+    snippets: [
+      {
+        platform: 'Node.js',
+        description: 'Mantenga las llaves privadas exclusivamente en variables de entorno del servidor backend:',
+        code: '// Backend (Node.js/NestJS/Express):\nimport Stripe from "stripe";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // sk_live_... nunca en frontend',
+      },
+      {
+        platform: 'General',
+        description: 'Pasos urgentes de rotación y revocación en pasarelas de pago:',
+        code: '# 1. Stripe Dashboard > Developers > API keys > Revoke key\n# 2. MercadoPago Developers > Credenciales de producción > Renovar Secret\n# 3. AWS IAM Console > Security credentials > Deactivate & Delete Access Key',
+      },
+    ],
+  },
+  'PATH-SOURCEMAP-EXPOSED': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-540: Inclusion of Sensitive Information in Source Code',
+    summary:
+      'Deshabilite la generación o subida de archivos Source Map (.js.map) a entornos de producción para evitar la exposición del código fuente original de la aplicación.',
+    verificationCommand: 'curl -sI https://target.com/static/js/main.js.map',
+    snippets: [
+      {
+        platform: 'Node.js',
+        description: 'Desactive source maps en la configuración de empaquetado de producción (Vite, Next.js, Webpack):',
+        code: '// vite.config.ts\nexport default defineConfig({\n  build: { sourcemap: false }\n});',
+      },
+      {
+        platform: 'Nginx',
+        description: 'Deniegue el acceso público a archivos .map en Nginx:',
+        code: 'location ~* \\.map$ {\n  deny all;\n  return 404;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Bloquee el acceso a archivos de mapeo en Apache:',
+        code: '<FilesMatch "\\.map$">\n  Require all denied\n</FilesMatch>',
+      },
+    ],
+  },
+  'PATH-ROBOTS-SENSITIVE-EXPOSED': {
+    owasp: 'A01:2021 – Broken Access Control',
+    cwe: 'CWE-200: Exposure of Sensitive Information',
+    summary:
+      'Elimine del archivo robots.txt los directorios administrativos o rutas privadas de la tienda y proteja el acceso mediante autenticación o listas de control en el servidor.',
+    verificationCommand: 'curl -s https://target.com/robots.txt',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Plantilla de robots.txt seguro sin listar rutas secretas o administrativas:',
+        code: 'User-agent: *\nDisallow: /checkout/thank-you\nDisallow: /api/\nSitemap: https://target.com/sitemap.xml',
+      },
+      {
+        platform: 'Nginx',
+        description: 'Proteja el panel administrativo en el servidor web mediante IP o autenticación básica:',
+        code: 'location ^~ /admin/ {\n  allow 192.168.1.0/24;\n  deny all;\n  auth_basic "Restricted Area";\n  auth_basic_user_file /etc/nginx/.htpasswd;\n}',
+      },
+    ],
+  },
+  'CMS-WP-USER-ENUMERATION': {
+    owasp: 'A01:2021 – Broken Access Control',
+    cwe: 'CWE-200: Exposure of Sensitive Information',
+    summary:
+      'Bloquee el endpoint público de enumeración de usuarios /wp-json/wp/v2/users en WordPress/WooCommerce para prevenir ataques de credential stuffing.',
+    verificationCommand: 'curl -sI https://target.com/wp-json/wp/v2/users',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Deniegue el acceso al endpoint REST de usuarios de WordPress en Nginx:',
+        code: 'location ~ ^/wp-json/wp/v2/users {\n  return 403;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Bloquee la ruta en .htaccess con mod_rewrite:',
+        code: '<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^wp-json/wp/v2/users - [F,L]\n</IfModule>',
+      },
+      {
+        platform: 'Cloudflare',
+        description: 'Cree una regla de Firewall WAF en Cloudflare:',
+        code: '(http.request.uri.path contains "/wp-json/wp/v2/users") -> Action: Block',
+      },
+    ],
+  },
+  'CMS-WP-XMLRPC-ENABLED': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-307: Improper Restriction of Excessive Authentication Attempts',
+    summary:
+      'Deshabilite el acceso público a /xmlrpc.php en WordPress para eliminar vectores de fuerza bruta multicall y amplificación DDoS por pingback.',
+    verificationCommand: 'curl -sI https://target.com/xmlrpc.php',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Bloquee incondicionalmente las peticiones hacia xmlrpc.php:',
+        code: 'location = /xmlrpc.php {\n  deny all;\n  access_log off;\n  return 403;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Deniegue el acceso al archivo en .htaccess:',
+        code: '<Files "xmlrpc.php">\n  Require all denied\n</Files>',
+      },
+      {
+        platform: 'Cloudflare',
+        description: 'Regla WAF de bloqueo en Cloudflare:',
+        code: '(http.request.uri.path eq "/xmlrpc.php") -> Action: Block',
+      },
+    ],
+  },
+  'CMS-WP-DEBUG-LOG-EXPOSED': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-532: Insertion of Sensitive Information into Log File',
+    summary:
+      'Deshabilite WP_DEBUG_LOG en wp-config.php en producción, elimine el archivo /wp-content/debug.log y bloquee el acceso a archivos de registro.',
+    verificationCommand: 'curl -sI https://target.com/wp-content/debug.log',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'En wp-config.php asegúrese de que el registro de depuración esté desactivado:',
+        code: 'define( "WP_DEBUG", false );\ndefine( "WP_DEBUG_LOG", false );\ndefine( "WP_DEBUG_DISPLAY", false );',
+      },
+      {
+        platform: 'Nginx',
+        description: 'Bloquee la descarga de cualquier archivo con extensión .log:',
+        code: 'location ~* \\.log$ {\n  deny all;\n  return 404;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Deniegue archivos de registro en Apache:',
+        code: '<FilesMatch "\\.log$">\n  Require all denied\n</FilesMatch>',
+      },
+    ],
+  },
+  'DNS-SUBDOMAIN-TAKEOVER': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-284: Improper Access Control',
+    summary:
+      'Elimine inmediatamente el registro CNAME huérfano de la zona DNS o vuelva a registrar el recurso en el proveedor cloud (AWS S3, Azure, GitHub, Heroku, Vercel).',
+    verificationCommand: 'dig +short CNAME subdominio.target.com',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Procedimiento de resolución de Subdomain Takeover:',
+        code: '# 1. Identifique el registro CNAME huérfano:\n#    dig CNAME subdominio.dominio.com\n# 2. Ingrese a su proveedor de DNS (Cloudflare, Route53, GoDaddy) y elimine el registro CNAME huérfano.\n# 3. Si el servicio debe seguir activo, cree de inmediato el recurso en el proveedor cloud antes de que sea reclamado.',
+      },
+      {
+        platform: 'Cloudflare',
+        description: 'Elimine el registro CNAME huérfano en Cloudflare DNS:',
+        code: 'En Cloudflare Dashboard > DNS > Records: Localice el CNAME y haga clic en "Delete".',
+      },
+      {
+        platform: 'AWS CLI',
+        description: 'Si el CNAME apuntaba a un bucket S3 huérfano, reclámelo preventivamente:',
+        code: 'aws s3api create-bucket --bucket <nombre-del-bucket-huerfano> --region us-east-1',
+      },
+    ],
+  },
   'PATH-DEV-CONSOLE-EXPOSED': {
     owasp: 'A05:2021 – Security Misconfiguration',
     cwe: 'CWE-200: Exposure of Sensitive Information',
