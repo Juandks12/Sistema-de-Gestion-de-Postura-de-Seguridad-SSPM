@@ -89,6 +89,8 @@ export interface ScanSummaryFindings {
 export interface Scan {
   id: string;
   assetId: string;
+  batchId?: string | null;
+  stage?: number | null;
   type: ScanType;
   status: ScanStatus;
   source: ScanSource;
@@ -1028,4 +1030,94 @@ export interface CloudPostureSummary {
     byCategory: Record<string, number>;
   };
 }
+
+export type DiagnosticProfile = 'COMMERCE_360' | 'PERIMETER_FAST' | 'FULL_AUDIT';
+export type DiagnosticBatchStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+
+export interface DiagnosticStageSummary {
+  stage: number;
+  name: string;
+  description: string;
+  scanTypes: ScanType[];
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  scansCount: number;
+  completedScans: number;
+  failedScans: number;
+}
+
+export interface DiagnosticBatchSummary {
+  id: string;
+  organizationId: string;
+  assetId: string;
+  profile: DiagnosticProfile;
+  status: DiagnosticBatchStatus;
+  currentStage: number;
+  totalStages: number;
+  progressPercentage: number;
+  summary: {
+    totalScansEnqueued?: number;
+    initialScore?: number | null;
+    finalScore?: number | null;
+    deltaScore?: number | null;
+    remediatedFindingsCount?: number;
+    regressionsCount?: number;
+    stageProgress?: DiagnosticStageSummary[];
+  } | null;
+  error?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  scans?: Array<{
+    id: string;
+    type: ScanType;
+    status: ScanStatus;
+    stage?: number | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    summary?: (Record<string, unknown> & { findingsCount?: number; openPortsCount?: number }) | null;
+  }>;
+}
+
+export interface PostureDiffSummary {
+  assetId: string;
+  fromBatchId?: string | null;
+  toBatchId?: string | null;
+  baselineDate?: string | null;
+  comparisonDate?: string | null;
+  scoreComparison: {
+    fromScore: number | null;
+    toScore: number | null;
+    delta: number | null;
+    fromGrade: string | null;
+    toGrade: string | null;
+  };
+  remediatedFindings: Array<{
+    fingerprint: string;
+    ruleId: string;
+    title: string;
+    severity: Severity;
+    location?: string;
+  }>;
+  newRegressions: Array<{
+    fingerprint: string;
+    ruleId: string;
+    title: string;
+    severity: Severity;
+    location?: string;
+  }>;
+  persistentFindings: Array<{
+    fingerprint: string;
+    ruleId: string;
+    title: string;
+    severity: Severity;
+  }>;
+  surfaceChanges: {
+    newSubdomainsCount: number;
+    newOpenPortsCount: number;
+    closedPortsCount: number;
+  };
+  executiveSummary: string;
+}
+
 

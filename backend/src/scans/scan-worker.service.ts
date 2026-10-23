@@ -41,6 +41,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
   private tickRequested = false;
   private shuttingDown = false;
   private readonly inFlight = new Set<Promise<void>>();
+  private readonly completionHooks: Array<(scanId: string, batchId?: string | null) => Promise<void>> = [];
 
   private currentConcurrencyLimit = 2;
   private consecutiveSuccesses = 0;
@@ -81,6 +82,21 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
 
   get effectiveConcurrency(): number {
     return this.currentConcurrencyLimit;
+  }
+
+  registerCompletionHook(fn: (scanId: string, batchId?: string | null) => Promise<void>) {
+    this.completionHooks.push(fn);
+  }
+
+  private async notifyScanFinished(scanId: string, batchId?: string | null) {
+    if (!batchId) return;
+    for (const hook of this.completionHooks) {
+      try {
+        await hook(scanId, batchId);
+      } catch (err) {
+        this.logger.error(`Error en hook de finalización de escaneo ${scanId}: ${err}`);
+      }
+    }
   }
 
   private get enabled(): boolean {
@@ -311,7 +327,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
       });
 
       if (abortReason(signal)) {
-        await this.handleInterrupted(scanId, signal);
+        await this.handleInterrupted(scanId, signal, scan.batchId);
         return;
       }
 
@@ -334,9 +350,12 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         opened,
         newHosts,
       });
+
+      // Notificar hooks de finalización (para lotes y pipeline 360°)
+      await this.notifyScanFinished(scanId, scan.batchId);
     } catch (err) {
       if (abortReason(signal)) {
-        await this.handleInterrupted(scanId, signal);
+        await this.handleInterrupted(scanId, signal, scan.batchId);
         return;
       }
       const controlled = err instanceof ScanExecutionError || err instanceof NmapParseError;
@@ -377,6 +396,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         where: { id: scanId, status: ScanStatus.RUNNING },
         data: { status: ScanStatus.FAILED, finishedAt: new Date(), errorMessage: message },
       });
+      await this.notifyScanFinished(scanId, scan.batchId);
     } finally {
       this.cancellation.release(scanId);
     }
@@ -386,7 +406,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
    * Escaneo interrumpido: por apagado vuelve a la cola; por timeout se marca
    * FAILED; por cancelación del usuario el estado CANCELLED ya está guardado.
    */
-  private async handleInterrupted(scanId: string, signal: AbortSignal): Promise<void> {
+  private async handleInterrupted(scanId: string, signal: AbortSignal, batchId?: string | null): Promise<void> {
     const reason = abortReason(signal);
     if (reason === 'shutdown') {
       await this.prisma.scan.updateMany({
@@ -405,12 +425,14 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
           errorMessage: `El escaneo superó el tiempo máximo permitido (${this.timeoutSeconds} s)`,
         },
       });
+      await this.notifyScanFinished(scanId, batchId);
       return;
     }
     await this.prisma.scan.updateMany({
       where: { id: scanId, status: ScanStatus.RUNNING },
       data: { status: ScanStatus.CANCELLED, finishedAt: new Date() },
     });
+    await this.notifyScanFinished(scanId, batchId);
   }
 
   private async persistOutcome(

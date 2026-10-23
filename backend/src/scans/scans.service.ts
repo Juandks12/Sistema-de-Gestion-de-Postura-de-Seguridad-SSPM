@@ -22,6 +22,8 @@ const scanListSelect = {
   type: true,
   status: true,
   source: true,
+  batchId: true,
+  stage: true,
   targetAddress: true,
   summary: true,
   errorMessage: true,
@@ -40,6 +42,8 @@ export interface EnqueueScanInput {
   /** Nulo para los escaneos del monitoreo continuo. */
   requestedById: string | null;
   source: ScanSource;
+  batchId?: string;
+  stage?: number;
 }
 
 @Injectable()
@@ -151,6 +155,8 @@ export class ScansService {
           status: ScanStatus.PENDING,
           source,
           requestedById,
+          batchId: input.batchId ?? null,
+          stage: input.stage ?? null,
         },
         select: scanListSelect,
       });
