@@ -1,12 +1,14 @@
-import { ArrowLeft, Radar, Server, ShieldAlert, Trash2 } from 'lucide-react';
+import { ArrowLeft, Radar, Server, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { DeleteAssetModal } from '@/components/DeleteAssetModal';
 import { AssetVerificationCard } from '@/components/AssetVerificationCard';
+import { Diagnostic360Stepper } from '@/components/Diagnostic360Stepper';
 import { DiscoveredHostsCard } from '@/components/DiscoveredHostsCard';
 import { DnsSecurityCard } from '@/components/DnsSecurityCard';
 import { EmailSecurityCard } from '@/components/EmailSecurityCard';
+import { PostureDiffModal } from '@/components/PostureDiffModal';
 import { TechStackCard } from '@/components/TechStackCard';
 import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
@@ -19,7 +21,15 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { ScoreHero } from '@/components/ui/ScoreHero';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useAssetVerification, useDashboardAsset, useRequestScan, useUpdateAsset } from '@/hooks/queries';
+import {
+  useAssetVerification,
+  useCancelDiagnostic,
+  useDashboardAsset,
+  useLatestDiagnostic,
+  useRequestScan,
+  useStartDiagnostic,
+  useUpdateAsset,
+} from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
 import { DOMAIN_ONLY_SCANS, SCAN_TYPE_HINT, SCAN_TYPE_LABEL, SEVERITY_LABEL, formatDateTime, timeAgo } from '@/lib/format';
 import type { EmailSecuritySummary, ScanType } from '@/lib/types';
@@ -35,7 +45,12 @@ export function AssetDetailPage() {
   const requestScan = useRequestScan();
   const update = useUpdateAsset();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+
+  const latestDiagnostic = useLatestDiagnostic(id);
+  const startDiagnostic = useStartDiagnostic();
+  const cancelDiagnostic = useCancelDiagnostic();
 
   if (q.isPending) return <Skeleton className="h-64" />;
   if (q.isError || !q.data) return <EmptyState icon={Server} title="Activo no encontrado" action={<Link to="/assets" className="text-sm text-accent hover:underline">Volver a activos</Link>} />;
@@ -57,6 +72,41 @@ export function AssetDetailPage() {
       setNotice({ kind: 'success', text: type ? `Escaneo de ${SCAN_TYPE_LABEL[type].toLowerCase()} encolado.` : 'Auditoría completa encolada.' });
     } catch (err) {
       setNotice({ kind: 'error', text: err instanceof ApiError ? err.message : 'No se pudo encolar el escaneo.' });
+    }
+  };
+
+  const isDiagnosticRunning =
+    latestDiagnostic.data?.status === 'PENDING' || latestDiagnostic.data?.status === 'RUNNING';
+
+  const runDiagnostic360 = async () => {
+    setNotice(null);
+    try {
+      await startDiagnostic.mutateAsync({
+        assetId: asset.id,
+        profile: isDomain ? 'COMMERCE_360' : 'PERIMETER_FAST',
+      });
+      setNotice({
+        kind: 'success',
+        text: 'Diagnóstico Integral 360° encolado. Avanzará automáticamente por las etapas.',
+      });
+    } catch (err) {
+      setNotice({
+        kind: 'error',
+        text: err instanceof ApiError ? err.message : 'No se pudo iniciar el Diagnóstico 360°.',
+      });
+    }
+  };
+
+  const cancelBatch = async (batchId: string) => {
+    setNotice(null);
+    try {
+      await cancelDiagnostic.mutateAsync({ assetId: asset.id, batchId });
+      setNotice({ kind: 'success', text: 'Diagnóstico 360° cancelado.' });
+    } catch (err) {
+      setNotice({
+        kind: 'error',
+        text: err instanceof ApiError ? err.message : 'No se pudo cancelar el diagnóstico.',
+      });
     }
   };
 
@@ -104,6 +154,15 @@ export function AssetDetailPage() {
                 >
                   Auditoría completa
                 </Button>
+                <Button
+                  icon={<Sparkles className="size-4" />}
+                  onClick={runDiagnostic360}
+                  loading={startDiagnostic.isPending}
+                  disabled={!canScan || isDiagnosticRunning}
+                  title={canScan ? undefined : 'Verifica la propiedad del activo para poder diagnosticarlo'}
+                >
+                  Diagnóstico 360°
+                </Button>
               </>
             ) : null}
             {hasRole('ADMIN') ? (
@@ -122,6 +181,20 @@ export function AssetDetailPage() {
       />
       {notice ? <Alert kind={notice.kind} className="mb-4">{notice.text}</Alert> : null}
       <AssetVerificationCard assetId={asset.id} canEdit={canEdit} />
+      {latestDiagnostic.data ? (
+        <div className="mb-4">
+          <Diagnostic360Stepper
+            batch={latestDiagnostic.data}
+            onCancel={
+              latestDiagnostic.data.status === 'RUNNING' || latestDiagnostic.data.status === 'PENDING'
+                ? () => cancelBatch(latestDiagnostic.data!.id)
+                : undefined
+            }
+            onOpenDiff={() => setDiffModalOpen(true)}
+            isCancelling={cancelDiagnostic.isPending}
+          />
+        </div>
+      ) : null}
       {inProgress ? <Alert kind="info" className="mb-4">Hay escaneos en curso. Esta vista se actualiza automáticamente.</Alert> : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -264,6 +337,13 @@ export function AssetDetailPage() {
         asset={asset}
         onClose={() => setDeleteOpen(false)}
         onDeleted={() => navigate('/assets', { replace: true })}
+      />
+
+      <PostureDiffModal
+        open={diffModalOpen}
+        onClose={() => setDiffModalOpen(false)}
+        assetId={asset.id}
+        toBatchId={latestDiagnostic.data?.id}
       />
     </>
   );
