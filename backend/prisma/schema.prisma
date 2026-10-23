@@ -136,6 +136,22 @@ enum FindingStatus {
   FALSE_POSITIVE
 }
 
+/// Estado del ciclo de vida de un lote de Diagnóstico 360°.
+enum DiagnosticBatchStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+/// Perfil de ejecución de la auditoría 360°.
+enum DiagnosticProfile {
+  COMMERCE_360
+  PERIMETER_FAST
+  FULL_AUDIT
+}
+
 /// Ámbito de una instantánea de puntuación.
 enum RiskScoreScope {
   ORGANIZATION
@@ -231,21 +247,22 @@ model Organization {
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users           User[]
-  accountTokens   AccountToken[]
-  auditLogs       AuditLog[]
-  assets          Asset[]
-  scans           Scan[]
-  scanPorts       ScanPort[]
-  findings        Finding[]
-  riskScores      RiskScore[]
-  alerts          Alert[]
-  alertChannels   AlertChannel[]
-  reports         Report[]
-  discoveredHosts DiscoveredHost[]
-  apiKeys         ApiKey[]
-  cloudAccounts   CloudAccount[]
-  cloudResources  CloudResource[]
+  users             User[]
+  accountTokens     AccountToken[]
+  auditLogs         AuditLog[]
+  assets            Asset[]
+  scans             Scan[]
+  scanPorts         ScanPort[]
+  findings          Finding[]
+  riskScores        RiskScore[]
+  alerts            Alert[]
+  alertChannels     AlertChannel[]
+  reports           Report[]
+  discoveredHosts   DiscoveredHost[]
+  apiKeys           ApiKey[]
+  cloudAccounts     CloudAccount[]
+  cloudResources    CloudResource[]
+  diagnosticBatches DiagnosticBatch[]
 
   @@map("organizations")
 }
@@ -278,17 +295,18 @@ model User {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdAssets      Asset[]        @relation("AssetCreatedBy")
-  requestedScans     Scan[]         @relation("ScanRequestedBy")
-  reviewedFindings   Finding[]      @relation("FindingReviewedBy")
-  assignedFindings   Finding[]      @relation("FindingAssignedTo")
-  acknowledgedAlerts Alert[]        @relation("AlertAcknowledgedBy")
-  createdChannels    AlertChannel[] @relation("AlertChannelCreatedBy")
-  generatedReports   Report[]       @relation("ReportGeneratedBy")
-  accountTokens      AccountToken[] @relation("AccountTokenUser")
-  createdTokens      AccountToken[] @relation("AccountTokenCreatedBy")
-  createdApiKeys     ApiKey[]       @relation("ApiKeyCreatedBy")
+  organization               Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAssets              Asset[]           @relation("AssetCreatedBy")
+  requestedScans             Scan[]            @relation("ScanRequestedBy")
+  reviewedFindings           Finding[]         @relation("FindingReviewedBy")
+  assignedFindings           Finding[]         @relation("FindingAssignedTo")
+  acknowledgedAlerts         Alert[]           @relation("AlertAcknowledgedBy")
+  createdChannels            AlertChannel[]    @relation("AlertChannelCreatedBy")
+  generatedReports           Report[]          @relation("ReportGeneratedBy")
+  accountTokens              AccountToken[]    @relation("AccountTokenUser")
+  createdTokens              AccountToken[]    @relation("AccountTokenCreatedBy")
+  createdApiKeys             ApiKey[]          @relation("ApiKeyCreatedBy")
+  requestedDiagnosticBatches DiagnosticBatch[] @relation("DiagnosticBatchRequestedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -323,16 +341,17 @@ model Asset {
   createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy       User?            @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  scans           Scan[]
-  scanPorts       ScanPort[]
-  findings        Finding[]
-  riskScores      RiskScore[]
-  alerts          Alert[]
-  reports         Report[]
-  discoveredHosts DiscoveredHost[]
-  cloudAccount    CloudAccount?
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy         User?             @relation("AssetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scans             Scan[]
+  scanPorts         ScanPort[]
+  findings          Finding[]
+  riskScores        RiskScore[]
+  alerts            Alert[]
+  reports           Report[]
+  discoveredHosts   DiscoveredHost[]
+  cloudAccount      CloudAccount?
+  diagnosticBatches DiagnosticBatch[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -365,6 +384,9 @@ model Scan {
   organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   asset           Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
   requestedBy     User?            @relation("ScanRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  batchId         String?          @map("batch_id") @db.Uuid
+  stage           Int?             @map("stage")
+  batch           DiagnosticBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
   ports           ScanPort[]
   /// Hallazgos detectados por última vez en este escaneo.
   findings        Finding[]
@@ -373,7 +395,35 @@ model Scan {
 
   @@index([organizationId, assetId])
   @@index([status, createdAt])
+  @@index([batchId])
   @@map("scans")
+}
+
+/// Campaña o Lote de Diagnóstico Integral 360° multi-etapa encadenado.
+model DiagnosticBatch {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @map("organization_id") @db.Uuid
+  assetId        String                @map("asset_id") @db.Uuid
+  requestedById  String?               @map("requested_by_id") @db.Uuid
+  profile        DiagnosticProfile     @default(COMMERCE_360)
+  status         DiagnosticBatchStatus @default(PENDING)
+  currentStage   Int                   @default(1) @map("current_stage")
+  totalStages    Int                   @default(3) @map("total_stages")
+  /// Métricas consolidadas, snapshot de score y diferencias de postura (Diff).
+  summary        Json?
+  startedAt      DateTime?             @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?             @map("finished_at") @db.Timestamptz(6)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("DiagnosticBatchRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  scans        Scan[]
+
+  @@index([organizationId, assetId])
+  @@index([status, createdAt])
+  @@map("diagnostic_batches")
 }
 
 /// Puerto/servicio detectado en un escaneo (RF-02 puertos, RF-03 versiones).
@@ -414,29 +464,29 @@ model ScanPort {
 /// mediante `fingerprint` (regla + ubicación): un mismo problema detectado en
 /// escaneos sucesivos es un único hallazgo con `first_seen_at`/`last_seen_at`.
 model Finding {
-  id             String          @id @default(uuid()) @db.Uuid
-  organizationId String          @map("organization_id") @db.Uuid
-  assetId        String          @map("asset_id") @db.Uuid
+  id              String          @id @default(uuid()) @db.Uuid
+  organizationId  String          @map("organization_id") @db.Uuid
+  assetId         String          @map("asset_id") @db.Uuid
   /// Último escaneo en el que se detectó.
-  lastScanId     String?         @map("last_scan_id") @db.Uuid
-  category       FindingCategory
+  lastScanId      String?         @map("last_scan_id") @db.Uuid
+  category        FindingCategory
   /// Identificador de la regla del catálogo (p. ej. HDR-HSTS-MISSING).
-  ruleId         String          @map("rule_id") @db.VarChar(60)
-  severity       FindingSeverity
+  ruleId          String          @map("rule_id") @db.VarChar(60)
+  severity        FindingSeverity
   /// Puntuación CVSS v3.1 de referencia asignada a la regla (0.0-10.0).
-  cvssScore      Decimal?        @map("cvss_score") @db.Decimal(3, 1)
-  status         FindingStatus   @default(OPEN)
-  title          String          @db.VarChar(200)
-  description    String
-  recommendation String
+  cvssScore       Decimal?        @map("cvss_score") @db.Decimal(3, 1)
+  status          FindingStatus   @default(OPEN)
+  title           String          @db.VarChar(200)
+  description     String
+  recommendation  String
   /// Dónde se detectó: "tcp/22", "https://host/", "https://host/.env"...
-  location       String          @db.VarChar(500)
+  location        String          @db.VarChar(500)
   /// Datos concretos que sustentan el hallazgo (cabeceras, fechas, versiones...).
-  evidence       Json?
+  evidence        Json?
   /// sha256(ruleId + location) para deduplicar.
-  fingerprint    String          @db.VarChar(64)
-  firstSeenAt    DateTime        @default(now()) @map("first_seen_at") @db.Timestamptz(6)
-  lastSeenAt     DateTime        @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  fingerprint     String          @db.VarChar(64)
+  firstSeenAt     DateTime        @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt      DateTime        @default(now()) @map("last_seen_at") @db.Timestamptz(6)
   resolvedAt      DateTime?       @map("resolved_at") @db.Timestamptz(6)
   assignedToId    String?         @map("assigned_to_id") @db.Uuid
   dueDate         DateTime?       @map("due_date") @db.Timestamptz(6)
@@ -727,47 +777,47 @@ model ApiKey {
 
 /// Cuenta de proveedor Cloud (AWS o Azure) conectada para evaluación CSPM.
 model CloudAccount {
-  id                      String             @id @default(uuid()) @db.Uuid
-  organizationId          String             @map("organization_id") @db.Uuid
-  provider                CloudProvider
-  name                    String             @db.VarChar(150)
-  authType                CloudAuthType      @map("auth_type")
-  status                  CloudAccountStatus @default(PENDING)
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  provider       CloudProvider
+  name           String             @db.VarChar(150)
+  authType       CloudAuthType      @map("auth_type")
+  status         CloudAccountStatus @default(PENDING)
 
   /// AWS Account ID (12 dígitos) o Azure Subscription ID (UUID)
-  accountOrSubscriptionId String             @map("account_or_subscription_id") @db.VarChar(100)
+  accountOrSubscriptionId String @map("account_or_subscription_id") @db.VarChar(100)
 
   /// Azure Tenant ID (UUID de Microsoft Entra ID)
-  azureTenantId           String?            @map("azure_tenant_id") @db.VarChar(100)
+  azureTenantId String? @map("azure_tenant_id") @db.VarChar(100)
 
   /// AWS IAM Role ARN asumible por el conector de auditoría
-  awsRoleArn              String?            @map("aws_role_arn") @db.VarChar(255)
+  awsRoleArn String? @map("aws_role_arn") @db.VarChar(255)
 
   /// External ID exigido por la relación de confianza para prevenir Confused Deputy
-  awsExternalId           String?            @map("aws_external_id") @db.VarChar(100)
+  awsExternalId String? @map("aws_external_id") @db.VarChar(100)
 
   /// Credenciales sensibles cifradas con AES-256-GCM (clientSecret, accessKeySecret, etc.)
-  encryptedCredentials    String?            @map("encrypted_credentials") @db.Text
+  encryptedCredentials String? @map("encrypted_credentials") @db.Text
 
   /// Regiones seleccionadas para auditoría (p. ej. ["us-east-1", "westus2"])
-  monitoredRegions        String[]           @default([]) @map("monitored_regions")
+  monitoredRegions String[] @default([]) @map("monitored_regions")
 
   /// Activo padre asociado en la tabla assets (para integración con reportes y postura global)
-  assetId                 String?            @unique @map("asset_id") @db.Uuid
+  assetId String? @unique @map("asset_id") @db.Uuid
 
-  lastAuditedAt           DateTime?          @map("last_audited_at") @db.Timestamptz(6)
-  lastAuditError          String?            @map("last_audit_error") @db.VarChar(500)
+  lastAuditedAt  DateTime? @map("last_audited_at") @db.Timestamptz(6)
+  lastAuditError String?   @map("last_audit_error") @db.VarChar(500)
 
-  resourceCount           Int                @default(0) @map("resource_count")
-  failingFindingCount     Int                @default(0) @map("failing_finding_count")
+  resourceCount       Int @default(0) @map("resource_count")
+  failingFindingCount Int @default(0) @map("failing_finding_count")
 
-  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization            Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  asset                   Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  resources               CloudResource[]
-  findings                Finding[]
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset?          @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  resources    CloudResource[]
+  findings     Finding[]
 
   @@unique([organizationId, provider, accountOrSubscriptionId])
   @@index([organizationId, status])
@@ -776,29 +826,29 @@ model CloudAccount {
 
 /// Recurso de infraestructura o servicio inventariado en la nube (S3, VM, NSG, RDS...).
 model CloudResource {
-  id                String            @id @default(uuid()) @db.Uuid
-  organizationId    String            @map("organization_id") @db.Uuid
-  cloudAccountId    String            @map("cloud_account_id") @db.Uuid
-  provider          CloudProvider
-  resourceType      CloudResourceType @map("resource_type")
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  cloudAccountId String            @map("cloud_account_id") @db.Uuid
+  provider       CloudProvider
+  resourceType   CloudResourceType @map("resource_type")
 
   /// Identificador canónico del recurso: ARN en AWS o Resource ID en Azure
-  nativeId          String            @map("native_id") @db.VarChar(500)
-  name              String            @db.VarChar(255)
-  region            String?           @db.VarChar(50)
+  nativeId String  @map("native_id") @db.VarChar(500)
+  name     String  @db.VarChar(255)
+  region   String? @db.VarChar(50)
 
   /// Metadatos crudos del recurso (configuraciones, cifrado, accesibilidad pública, etc.)
-  configuration     Json?
-  tags              Json?
+  configuration Json?
+  tags          Json?
 
-  hasActiveFindings Boolean           @default(false) @map("has_active_findings")
+  hasActiveFindings Boolean @default(false) @map("has_active_findings")
 
-  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  cloudAccount      CloudAccount      @relation(fields: [cloudAccountId], references: [id], onDelete: Cascade)
-  findings          Finding[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cloudAccount CloudAccount @relation(fields: [cloudAccountId], references: [id], onDelete: Cascade)
+  findings     Finding[]
 
   @@unique([cloudAccountId, nativeId])
   @@index([organizationId, provider, resourceType])

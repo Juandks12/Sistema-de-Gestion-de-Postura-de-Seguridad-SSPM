@@ -26,6 +26,9 @@ import type {
   CreatedApiKeyResponse,
   CspmRuleDefinition,
   DeliveryResult,
+  DiagnosticBatchSummary,
+  DiagnosticProfile,
+  PostureDiffSummary,
   DiscoveredHosts,
   ExecutiveBusinessSummary,
   ImportDiscoveredResult,
@@ -95,6 +98,9 @@ export const keys = {
   cloudResources: (f?: CloudResourcesFilter) => ['cloud', 'resources', f ?? {}] as const,
   cloudOnboarding: ['cloud', 'onboarding'] as const,
   cspmRules: (provider?: CloudProvider) => ['cloud', 'rules', provider ?? 'all'] as const,
+  diagnosticLatest: (assetId: string) => ['assets', assetId, 'diagnostic-360', 'latest'] as const,
+  diagnosticBatch: (assetId: string, batchId: string) => ['assets', assetId, 'diagnostic-360', batchId] as const,
+  postureDiff: (assetId: string, from?: string, to?: string) => ['assets', assetId, 'posture-diff', { from, to }] as const,
 };
 
 export interface CloudResourcesFilter {
@@ -258,6 +264,62 @@ export function useRequestScan() {
 export function useCancelScan() {
   const invalidate = useInvalidateAll();
   return useMutation({ mutationFn: (id: string) => api<Scan>(`/scans/${id}/cancel`, { method: 'POST' }), onSuccess: invalidate });
+}
+
+export function useLatestDiagnostic(assetId: string) {
+  return useQuery({
+    queryKey: keys.diagnosticLatest(assetId),
+    queryFn: () => api<DiagnosticBatchSummary | null>(`/assets/${assetId}/diagnostic-360/latest`),
+    enabled: !!assetId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'PENDING' || status === 'RUNNING' ? 2000 : false;
+    },
+  });
+}
+
+export function useStartDiagnostic() {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ assetId, profile }: { assetId: string; profile?: DiagnosticProfile }) =>
+      api<DiagnosticBatchSummary>(`/assets/${assetId}/diagnostic-360`, {
+        method: 'POST',
+        json: profile ? { profile } : {},
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: keys.diagnosticLatest(vars.assetId) });
+      qc.invalidateQueries({ queryKey: keys.dashboardAsset(vars.assetId) });
+      invalidate();
+    },
+  });
+}
+
+export function useCancelDiagnostic() {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ assetId, batchId }: { assetId: string; batchId: string }) =>
+      api<DiagnosticBatchSummary>(`/assets/${assetId}/diagnostic-360/${batchId}/cancel`, {
+        method: 'POST',
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: keys.diagnosticLatest(vars.assetId) });
+      qc.invalidateQueries({ queryKey: keys.dashboardAsset(vars.assetId) });
+      invalidate();
+    },
+  });
+}
+
+export function usePostureDiff(assetId: string, fromBatchId?: string, toBatchId?: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.postureDiff(assetId, fromBatchId, toBatchId),
+    queryFn: () =>
+      api<PostureDiffSummary>(
+        `/assets/${assetId}/posture-diff${qs({ fromBatchId, toBatchId })}`,
+      ),
+    enabled: !!assetId && enabled,
+  });
 }
 
 export interface ReviewFindingInput {

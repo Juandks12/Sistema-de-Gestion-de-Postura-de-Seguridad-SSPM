@@ -21,12 +21,15 @@ import { SubdomainDiscoveryScanner } from './scanners/subdomain-discovery.scanne
 import { WebHeadersScanner } from './scanners/web-headers.scanner';
 import { ScansController } from './scans.controller';
 import { ScansService } from './scans.service';
+import { DiagnosticOrchestratorService } from './diagnostic-orchestrator.service';
+import { DiagnosticController } from './diagnostic.controller';
 
 @Module({
   imports: [FindingsModule, RiskModule, AlertsModule, VulnerabilitiesModule, DiscoveryModule],
-  controllers: [ScansController],
+  controllers: [ScansController, DiagnosticController],
   providers: [
     ScansService,
+    DiagnosticOrchestratorService,
     ScanWorkerService,
     ScanCancellationService,
     NmapRunner,
@@ -58,6 +61,6 @@ import { ScansService } from './scans.service';
         ),
     },
   ],
-  exports: [ScansService, InternetDbClient, INTERNETDB_SOURCE],
+  exports: [ScansService, DiagnosticOrchestratorService, InternetDbClient, INTERNETDB_SOURCE],
 })
 export class ScansModule {}
