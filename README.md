@@ -25,6 +25,23 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 | Bloque 1 (SaaS) | Verificación de propiedad de activos, protección del inicio de sesión y del registro | ✅ Implementado |
 | Bloque 2 (SaaS) | CVE de las versiones detectadas (NVD + KEV), seguridad del correo (SPF/DMARC/DKIM), descubrimiento de subdominios (Certificate Transparency) | ✅ Implementado |
 | Bloque 3 (SaaS) | Registro de auditoría (RNF-06), recuperación de contraseña por correo, invitaciones de usuarios, verificación en dos pasos (TOTP) | ✅ Implementado |
+| Sprint 11 (Pilar 1) | Auditoría E-Commerce, Mini-Crawler seguro, Anti-Magecart PCI-DSS v4.0 (SRI), Secret Hunter (Stripe/MercadoPago/AWS), CMS auditor (WP, Woo, Presta, Magento), RFC 9116 y BIMI | ✅ Implementado |
+| Sprint 12 (Pilar 2) | Diagnóstico 360° en 3 etapas en 1 clic, Stepper reactivo, Diff Temporal de Postura y cancelación en cascada | ✅ Implementado |
+| Sprint 13 (Pilar 3) | Correlación de Rutas de Ataque (Attack Paths con Kill Chains), catálogo de Esfuerzo de Remediación, matriz Quick Wins 24h (< 30 min) y reportes ejecutivos C-Level | ✅ Implementado |
+
+## Documentación del Proyecto
+
+Toda la documentación técnica del sistema se encuentra estructurada temáticamente en el directorio [`docs/`](docs/README.md):
+
+| Categoría | Documentos Principales | Descripción |
+| :--- | :--- | :--- |
+| **Portal Central** | [`docs/README.md`](docs/README.md) | Índice general, glosario de términos y mapa de navegación |
+| **Requerimientos** | [`requirements/functional-requirements.md`](docs/requirements/functional-requirements.md)<br>[`requirements/non-functional-requirements.md`](docs/requirements/non-functional-requirements.md) | Especificación formal de RF-01 a RF-18 y RNF-01 a RNF-10 con criterios de aceptación |
+| **Arquitectura** | [`architecture/overview.md`](docs/architecture/overview.md)<br>[`architecture/workflows-and-diagrams.md`](docs/architecture/workflows-and-diagrams.md)<br>[`architecture/data-model.md`](docs/architecture/data-model.md) | Modelos C4, límites multi-tenant, 5 diagramas Mermaid de flujos y modelo ERD |
+| **Módulos Core** | [`modules/ecommerce-crawler-and-secrets.md`](docs/modules/ecommerce-crawler-and-secrets.md)<br>[`modules/diagnostic-360-orchestrator.md`](docs/modules/diagnostic-360-orchestrator.md)<br>[`modules/attack-paths-and-quick-wins.md`](docs/modules/attack-paths-and-quick-wins.md)<br>[`modules/cspm-multicloud.md`](docs/modules/cspm-multicloud.md)<br>[`modules/risk-scoring-and-slas.md`](docs/modules/risk-scoring-and-slas.md)<br>[`modules/reports-and-alerts.md`](docs/modules/reports-and-alerts.md) | Detalle profundo de cada analizador, motor heurístico, conectores cloud y PDFKit |
+| **Roadmap y Deuda** | [`roadmap/future-integrations.md`](docs/roadmap/future-integrations.md)<br>[`roadmap/technical-debt.md`](docs/roadmap/technical-debt.md) | Conectores GCP, Jira/ServiceNow, SIEM, WAF 1-clic, BullMQ + Redis y workers efímeros |
+| **Decisiones (ADRs)** | [`adr/`](docs/adr/) | Registros formales de decisiones arquitectónicas (ADR-0001 a ADR-0007) |
+| **Compendios** | [`sistema-completo-arquitectura-requerimientos-flujos.md`](docs/sistema-completo-arquitectura-requerimientos-flujos.md)<br>[`pendientes-backlog-futuras-integraciones.md`](docs/pendientes-backlog-futuras-integraciones.md) | Compendios integrales de arquitectura y pendientes para referencia unificada |
 
 ## Stack tecnológico
 
@@ -32,17 +49,19 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 - **Framework:** [NestJS 11](https://nestjs.com/) (Express)
 - **ORM / migraciones:** [Prisma 6](https://www.prisma.io/)
 - **Base de datos:** PostgreSQL 16
-- **Autenticación:** JWT (Bearer) con Passport
+- **Autenticación:** JWT (Bearer) con Passport, Refresh Tokens rotativos y 2FA TOTP (RFC 6238)
 - **Autorización:** RBAC por organización (roles `ADMIN`, `ANALYST`, `VIEWER`)
 - **Documentación de la API:** Swagger / OpenAPI en `/api/docs`
-- **Escaneo:** Nmap ejecutado de forma asíncrona con `child_process.spawn` (sin shell) y cola de trabajos en PostgreSQL
+- **Escaneo de Red:** Nmap ejecutado de forma asíncrona con `child_process.spawn` (sin shell) y cola de trabajos en PostgreSQL
 - **Parser XML:** `fast-xml-parser` para la salida `-oX` de Nmap
-- **Auditoría web:** `undici` (HTTP con conexión a IP validada) y `node:tls` (certificados)
+- **Auditoría Web & E-Commerce:** `undici` (HTTP con conexión a IP validada), `node:tls` (certificados X.509), Mini-Crawler de checkout, validador Anti-Magecart SRI (PCI-DSS v4.0), Secret Hunter con regex y análisis CMS
+- **Postura Cloud (CSPM):** Conectores agentless para AWS (SigV4) y Azure (OAuth2 REST API) con bóveda criptográfica AES-256-GCM (`CryptoVaultService`)
+- **Correlación de Amenazas:** Motor de Rutas de Ataque (Attack Paths con Kill Chains), Diff Temporal de Postura y catálogo de Esfuerzo de Remediación (Quick Wins 24h)
 - **Contenedores:** Docker multi-etapa (Ubuntu 24.04 LTS, Node 22, Nmap 7.94) y Docker Compose
-- **Reportes PDF:** [PDFKit](https://pdfkit.org/) (sin navegador headless: la imagen no crece)
-- **Notificaciones:** [Nodemailer](https://nodemailer.com/) (SMTP) y webhooks con `undici`
-- **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4 y Recharts, servido por Nginx en Docker
-- **CI:** GitHub Actions (lint, pruebas unitarias y e2e con PostgreSQL, build de las imágenes Docker)
+- **Reportes PDF:** [PDFKit](https://pdfkit.org/) vectorial en memoria (WinAnsi Latin-1 sanitizado, sin navegador headless)
+- **Notificaciones:** [Nodemailer](https://nodemailer.com/) (SMTP) y webhooks con `undici` firmados con HMAC-SHA256 (`X-SSPM-Signature`)
+- **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4, Lucide Icons y Recharts, servido por Nginx en Docker
+- **CI/CD:** GitHub Actions (lint estricto, 81 suites de pruebas unitarias/e2e, build multi-etapa y despliegue federado OIDC a Azure)
 
 ## Estructura de carpetas
 
