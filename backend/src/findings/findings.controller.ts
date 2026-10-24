@@ -8,6 +8,7 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
+import { AttackPathsService } from './attack-paths.service';
 import { FindingTriageService } from './finding-triage.service';
 import { FindingsService } from './findings.service';
 import { FINDING_RULES } from './rules.catalog';
@@ -25,6 +26,7 @@ export class FindingsController {
   constructor(
     private readonly findings: FindingsService,
     private readonly triageService: FindingTriageService,
+    private readonly attackPathsService: AttackPathsService,
   ) {}
 
   @Get()
@@ -38,6 +40,13 @@ export class FindingsController {
   @ApiQuery({ name: 'assetId', required: false })
   summary(@CurrentUser() user: AuthUser, @Query() query: SummaryQuery) {
     return this.findings.summary(user.organizationId, query.assetId);
+  }
+
+  @Get('attack-paths')
+  @ApiOperation({ summary: 'Correlación de rutas de ataque y escenarios de riesgo compuesto' })
+  @ApiQuery({ name: 'assetId', required: false })
+  attackPaths(@CurrentUser() user: AuthUser, @Query() query: SummaryQuery) {
+    return this.attackPathsService.analyzeAttackPaths(user.organizationId, query.assetId);
   }
 
   @Get('rules')

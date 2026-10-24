@@ -34,6 +34,54 @@ export type MonitoringFrequency = 'OFF' | 'DAILY' | 'WEEKLY';
 export type ReportType = 'EXECUTIVE' | 'TECHNICAL';
 export type DeliveryStatus = 'SENT' | 'FAILED' | 'SKIPPED';
 export type VerificationMethod = 'DNS_TXT' | 'HTTP_FILE' | 'INHERITED' | 'PRE_AUTHORIZED';
+export type RemediationEffort = 'QUICK_WIN' | 'MODERATE' | 'STRUCTURAL';
+
+export type AttackPathCategory =
+  | 'PAYMENT_FRAUD'
+  | 'STORE_TAKEOVER'
+  | 'BRAND_IMPERSONATION'
+  | 'DATA_EXFILTRATION'
+  | 'INFRASTRUCTURE_COMPROMISE'
+  | 'SUBDOMAIN_TAKEOVER';
+
+export type AttackPathSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
+
+export interface AttackPathKillChainStep {
+  order: number;
+  phase: string;
+  title: string;
+  description: string;
+  matchedRuleId?: string;
+  matched: boolean;
+  findingTitle?: string;
+  location?: string;
+}
+
+export interface AttackPathSummary {
+  id: string;
+  title: string;
+  category: AttackPathCategory;
+  severity: AttackPathSeverity;
+  narrative: string;
+  businessRisk: string;
+  estimatedImpact: string;
+  assetId?: string;
+  assetName?: string;
+  assetValue?: string;
+  killChainSteps: AttackPathKillChainStep[];
+  activeFindings: Array<{
+    id: string;
+    ruleId: string;
+    title: string;
+    severity: Severity;
+    location?: string;
+    effort: RemediationEffort;
+    estimatedMinutes: number;
+  }>;
+  quickWinsAvailable: number;
+  remediationEffort: RemediationEffort;
+  recommendedActions: string[];
+}
 
 export type SeverityCounts = Record<Severity, number>;
 
@@ -145,6 +193,9 @@ export interface Finding {
   } | null;
   remediationGuide?: RemediationGuide;
   sla?: FindingSla;
+  effort?: RemediationEffort;
+  estimatedMinutes?: number;
+  businessImpact?: string | null;
 }
 
 export type SlaStatus = 'OVERDUE' | 'APPROACHING' | 'ON_TRACK' | 'RESOLVED' | 'NO_SLA';
@@ -621,6 +672,12 @@ export interface EmailSecuritySummary {
       returnCodes: string[];
       txt?: string;
     }>;
+  };
+  bimi?: {
+    status: 'valid' | 'missing' | 'invalid';
+    queryDomain: string;
+    location?: string | null;
+    error?: string;
   };
 }
 

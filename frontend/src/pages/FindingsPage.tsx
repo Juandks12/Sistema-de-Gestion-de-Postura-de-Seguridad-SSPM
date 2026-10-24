@@ -13,10 +13,12 @@ import {
   Sparkles,
   UserX,
   X,
+  Zap,
 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
+import { AttackPathsCard } from '@/components/AttackPathsCard';
 import { CveList } from '@/components/CveList';
 import { FindingTriageModal } from '@/components/FindingTriageModal';
 import { RemediationGuideCard } from '@/components/RemediationGuideCard';
@@ -34,7 +36,7 @@ import { useAssignees, useFindings, useFindingsSummary, useRetestFinding, useRev
 import { ApiError, downloadFile } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { CATEGORY_LABEL, CLOUD_RESOURCE_TYPE_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, STATUS_LABEL, cvss, formatDateTime, timeAgo } from '@/lib/format';
-import type { Finding, FindingCategory, FindingStatus, Severity, SlaStatus } from '@/lib/types';
+import type { Finding, FindingCategory, FindingStatus, RemediationEffort, Severity, SlaStatus } from '@/lib/types';
 
 type ReviewAction = 'OPEN' | 'ACCEPTED' | 'FALSE_POSITIVE';
 
@@ -50,6 +52,7 @@ export function FindingsPage() {
     category: (params.get('category') ?? '') as FindingCategory | '',
     assignedToId: params.get('assignedToId') ?? '',
     slaStatus: (params.get('slaStatus') ?? '') as SlaStatus | '',
+    effortLevel: (params.get('effortLevel') ?? '') as RemediationEffort | '',
     page: Number(params.get('page') ?? 1),
   };
   const q = useFindings(filter);
@@ -75,6 +78,7 @@ export function FindingsPage() {
       if (filter.category) sp.set('category', filter.category);
       if (filter.assignedToId) sp.set('assignedToId', filter.assignedToId);
       if (filter.slaStatus) sp.set('slaStatus', filter.slaStatus);
+      if (filter.effortLevel) sp.set('effortLevel', filter.effortLevel);
       await downloadFile(`/findings/export?${sp.toString()}`, `findings-${new Date().toISOString().slice(0, 10)}.csv`);
     } catch (err) {
       console.error('Export error:', err);
@@ -109,7 +113,8 @@ export function FindingsPage() {
     filter.severity ||
     filter.category ||
     filter.assignedToId ||
-    filter.slaStatus
+    filter.slaStatus ||
+    filter.effortLevel
   );
 
   return (
@@ -129,45 +134,61 @@ export function FindingsPage() {
         }
       />
 
-      {/* Domain selector tabs */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      {/* Domain selector tabs & Quick Wins Filter */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFilter('domain', '')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+              !filter.domain
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+            )}
+          >
+            Todos los dominios
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('domain', filter.domain === 'perimeter' ? '' : 'perimeter')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+              filter.domain === 'perimeter'
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+            )}
+          >
+            <Server className="size-3.5" />
+            Perímetro Externo
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('domain', filter.domain === 'cloud' ? '' : 'cloud')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+              filter.domain === 'cloud'
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+            )}
+          >
+            <Cloud className="size-3.5" />
+            Seguridad Cloud (CSPM)
+          </button>
+        </div>
+
         <button
           type="button"
-          onClick={() => setFilter('domain', '')}
+          onClick={() => setFilter('effortLevel', filter.effortLevel === 'QUICK_WIN' ? '' : 'QUICK_WIN')}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
-            !filter.domain
-              ? 'border-accent bg-accent/10 text-accent'
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition',
+            filter.effortLevel === 'QUICK_WIN'
+              ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-2 ring-emerald-500/20'
               : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
           )}
         >
-          Todos los dominios
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('domain', filter.domain === 'perimeter' ? '' : 'perimeter')}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
-            filter.domain === 'perimeter'
-              ? 'border-accent bg-accent/10 text-accent'
-              : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
-          )}
-        >
-          <Server className="size-3.5" />
-          Perímetro Externo
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('domain', filter.domain === 'cloud' ? '' : 'cloud')}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
-            filter.domain === 'cloud'
-              ? 'border-accent bg-accent/10 text-accent'
-              : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
-          )}
-        >
-          <Cloud className="size-3.5" />
-          Seguridad Cloud (CSPM)
+          <Zap className="size-3.5 fill-emerald-500 text-emerald-500" />
+          Quick Wins 24h (&lt; 30 min)
         </button>
       </div>
 
@@ -284,8 +305,16 @@ export function FindingsPage() {
         </button>
       </div>
 
+      {/* Attack Paths Interactive View */}
+      <div className="mb-6">
+        <AttackPathsCard
+          assetId={filter.assetId}
+          onSelectQuickWins={() => setFilter('effortLevel', 'QUICK_WIN')}
+        />
+      </div>
+
       {/* Filter Bar */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         <div>
           <Label htmlFor="f-status">Estado</Label>
           <Select id="f-status" value={filter.status} onChange={(e) => setFilter('status', e.target.value)}>
@@ -300,6 +329,15 @@ export function FindingsPage() {
           <Select id="f-severity" value={filter.severity} onChange={(e) => setFilter('severity', e.target.value)}>
             <option value="">Todas las severidades</option>
             {SEVERITY_ORDER.map((s) => <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>)}
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="f-effort">Esfuerzo</Label>
+          <Select id="f-effort" value={filter.effortLevel} onChange={(e) => setFilter('effortLevel', e.target.value)}>
+            <option value="">Todos los niveles</option>
+            <option value="QUICK_WIN">⚡ Quick Wins 24h</option>
+            <option value="MODERATE">Moderado (&lt; 2h)</option>
+            <option value="STRUCTURAL">Estructural (&gt; 4h)</option>
           </Select>
         </div>
         <div>
@@ -410,6 +448,22 @@ export function FindingsPage() {
                             </span>
                           ) : null}
                           <p className="font-medium text-ink">{f.title}</p>
+                          {f.effort ? (
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold',
+                                f.effort === 'QUICK_WIN'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                  : f.effort === 'MODERATE'
+                                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                                    : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20',
+                              )}
+                            >
+                              {f.effort === 'QUICK_WIN' && <Zap className="size-2.5 fill-emerald-500 text-emerald-500" />}
+                              {f.effort === 'QUICK_WIN' ? 'Quick Win' : f.effort === 'MODERATE' ? 'Moderado' : 'Estructural'}
+                              {f.estimatedMinutes ? ` (${f.estimatedMinutes}m)` : ''}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 md:hidden">
                           <FindingStatusBadge status={f.status} />
@@ -542,11 +596,26 @@ function FindingDetail({
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <p className="text-sm text-ink">{f.description}</p>
+        {f.businessImpact ? (
+          <div className="mt-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs">
+            <span className="font-bold text-amber-600 dark:text-amber-400">Impacto en el negocio: </span>
+            <span className="text-ink-2">{f.businessImpact}</span>
+          </div>
+        ) : null}
         <p className="mt-3 text-xs font-semibold tracking-wide text-muted uppercase">Recomendación</p>
         <p className="mt-1 text-sm text-ink">{f.recommendation}</p>
         <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-ink-2 sm:grid-cols-2">
           <div><dt className="inline text-muted">Ubicación: </dt><dd className="inline break-all">{f.location}</dd></div>
           <div><dt className="inline text-muted">Regla: </dt><dd className="inline">{f.ruleId} · {CATEGORY_LABEL[f.category]}</dd></div>
+          {f.effort ? (
+            <div>
+              <dt className="inline text-muted">Esfuerzo estimado: </dt>
+              <dd className="inline font-semibold">
+                {f.effort === 'QUICK_WIN' ? 'Quick Win (< 30 min)' : f.effort === 'MODERATE' ? 'Moderado (< 2 horas)' : 'Estructural (> 4 horas)'}
+                {f.estimatedMinutes ? ` · ${f.estimatedMinutes} min` : ''}
+              </dd>
+            </div>
+          ) : null}
           <div><dt className="inline text-muted">Primera detección: </dt><dd className="inline">{formatDateTime(f.firstSeenAt)}</dd></div>
           <div><dt className="inline text-muted">Última detección: </dt><dd className="inline">{formatDateTime(f.lastSeenAt)}</dd></div>
           <div>

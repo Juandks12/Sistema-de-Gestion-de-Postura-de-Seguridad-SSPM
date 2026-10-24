@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { FindingStatus, Prisma, ReportType, ScanStatus, ScanType } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AttackPathsService } from '../findings/attack-paths.service';
+import { FINDING_RULES } from '../findings/rules.catalog';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { computeScore, emptyCounts } from '../risk/scoring';
 import { renderReport } from './pdf-renderer';
 import { generateHeuristicSummary } from './heuristic-synthesis';
-import { ReportAsset, ReportData, severityRank } from './report-data';
+import { ReportAsset, ReportData, ReportQuickWin, severityRank } from './report-data';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -53,6 +55,7 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly riskScores: RiskScoresService,
+    private readonly attackPathsService: AttackPathsService,
   ) {}
 
   async gather(actor: AuthUser, type: ReportType, assetId?: string): Promise<ReportData> {
@@ -66,7 +69,7 @@ export class ReportsService {
       if (!scopeAsset) throw new NotFoundException('Activo no encontrado');
     }
 
-    const [current, weekBefore, history, rows, alertsLast30, alertsPending] = await Promise.all([
+    const [current, weekBefore, history, rows, alertsLast30, alertsPending, attackPaths] = await Promise.all([
       this.riskScores.current(organizationId, assetId),
       this.riskScores.latestBefore(organizationId, new Date(now.getTime() - 7 * DAY_MS), assetId),
       this.riskScores.history(organizationId, { assetId, from: new Date(now.getTime() - 30 * DAY_MS), granularity: 'day' }),
@@ -105,6 +108,7 @@ export class ReportsService {
         where: { organizationId, assetId, createdAt: { gte: new Date(now.getTime() - 30 * DAY_MS) } },
       }),
       this.prisma.alert.count({ where: { organizationId, assetId, acknowledgedAt: null } }),
+      this.attackPathsService.analyzeAttackPaths(organizationId, assetId),
     ]);
 
     const assets: ReportAsset[] = [];
@@ -158,6 +162,27 @@ export class ReportsService {
       });
     }
 
+    const quickWins: ReportQuickWin[] = [];
+    for (const a of assets) {
+      for (const f of a.findings) {
+        const rule = FINDING_RULES.get(f.ruleId);
+        if (rule?.effort === 'QUICK_WIN') {
+          quickWins.push({
+            ruleId: f.ruleId,
+            title: f.title,
+            severity: f.severity,
+            location: f.location,
+            asset: a.value,
+            estimatedMinutes: rule.estimatedMinutes ?? 15,
+            recommendation: f.recommendation,
+          });
+        }
+      }
+    }
+    quickWins.sort(
+      (x, y) => severityRank(x.severity) - severityRank(y.severity) || x.estimatedMinutes - y.estimatedMinutes,
+    );
+
     const currentOrg = current as { scoredAssets?: number; totalAssets?: number };
     const reportData: ReportData = {
       type,
@@ -178,6 +203,8 @@ export class ReportsService {
       history: history.points.map((p) => ({ date: p.computedAt, score: p.score })),
       assets,
       alerts: { last30Days: alertsLast30, unacknowledged: alertsPending },
+      attackPaths,
+      quickWins: quickWins.slice(0, 10),
     };
 
     if (type === ReportType.EXECUTIVE) {
