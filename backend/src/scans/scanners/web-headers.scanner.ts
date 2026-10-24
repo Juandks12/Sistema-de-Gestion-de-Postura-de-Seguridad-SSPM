@@ -12,6 +12,7 @@ import { analyzeMagecartAndFormSecurity, MagecartAnalysisResult } from '../web/m
 import { analyzeJsSecretsAndSourceMaps, JsSecretsAnalysisResult } from '../web/js-secrets-sourcemap.analyzer';
 import { analyzeCmsAndEcommercePlatform, CmsEcommerceAnalysisResult } from '../web/cms-ecommerce.analyzer';
 import { analyzeCorsMethodsAndWaf, CorsMethodsWafAnalysisResult } from '../web/cors-methods-waf.analyzer';
+import { analyzeSecurityTxt, SecurityTxtAnalysisResult } from '../web/security-txt.analyzer';
 
 /** RF-04: auditoría de cabeceras HTTP de seguridad, fingerprinting tecnológico e inspección profunda de comercio electrónico. */
 @Injectable()
@@ -93,6 +94,7 @@ export class WebHeadersScanner implements Scanner {
     let jsSecretsResult: JsSecretsAnalysisResult | null = null;
     let cmsResult: CmsEcommerceAnalysisResult | null = null;
     let corsWafResult: CorsMethodsWafAnalysisResult | null = null;
+    let securityTxtResult: SecurityTxtAnalysisResult | null = null;
 
     const primary = reachable.find((p) => new URL(p.outcome.finalUrl).protocol === 'https:') ?? reachable[0];
     if (primary && primary.outcome.ok) {
@@ -131,6 +133,10 @@ export class WebHeadersScanner implements Scanner {
           hasSensitiveFeatures,
         );
         findings.push(...corsWafResult.findings);
+
+        // 6. Verificación de madurez de divulgación responsable security.txt (RFC 9116)
+        securityTxtResult = await analyzeSecurityTxt(primary.outcome.finalUrl, probeOptions);
+        findings.push(...securityTxtResult.findings);
       } catch {
         // Si ctx.signal fue cancelado o falla la sonda profunda secundaria, se conservan los hallazgos base
       }
@@ -174,6 +180,13 @@ export class WebHeadersScanner implements Scanner {
                 dangerousMethodsAllowed: corsWafResult.dangerousMethodsAllowed,
                 wafDetected: corsWafResult.wafDetected,
                 wafProvider: corsWafResult.wafProvider ?? null,
+              }
+            : null,
+          securityTxt: securityTxtResult
+            ? {
+                checked: securityTxtResult.checked,
+                status: securityTxtResult.status,
+                directives: securityTxtResult.directives ?? null,
               }
             : null,
         },

@@ -6,6 +6,9 @@ import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-valid
 export const SLA_STATUSES = ['OVERDUE', 'APPROACHING', 'ON_TRACK', 'NO_SLA'] as const;
 export type SlaStatusQuery = (typeof SLA_STATUSES)[number];
 
+export const EFFORT_LEVELS = ['QUICK_WIN', 'MODERATE', 'STRUCTURAL'] as const;
+export type EffortLevelQuery = (typeof EFFORT_LEVELS)[number];
+
 export const FINDING_DOMAINS = ['perimeter', 'cloud'] as const;
 export type FindingDomainQuery = (typeof FINDING_DOMAINS)[number];
 
@@ -49,6 +52,11 @@ export class ListFindingsQuery {
   @IsOptional()
   @IsIn(SLA_STATUSES)
   slaStatus?: SlaStatusQuery;
+
+  @ApiPropertyOptional({ enum: EFFORT_LEVELS, description: 'Filtrar por nivel de esfuerzo de remediación (Quick Wins vs Mejoras Estructurales)' })
+  @IsOptional()
+  @IsIn(EFFORT_LEVELS)
+  effortLevel?: EffortLevelQuery;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

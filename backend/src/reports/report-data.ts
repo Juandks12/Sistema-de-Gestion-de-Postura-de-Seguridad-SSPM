@@ -1,4 +1,5 @@
 import { AssetType, FindingCategory, FindingSeverity, ReportType, ScanType } from '@prisma/client';
+import { AttackPathSummary } from '../findings/attack-paths.service';
 import { SEVERITY_ORDER, SeverityCounts } from '../risk/scoring';
 import { ExecutiveBusinessSummary } from './executive-summary.interface';
 
@@ -43,6 +44,16 @@ export interface ReportAsset {
   excluded: { accepted: number; falsePositive: number };
 }
 
+export interface ReportQuickWin {
+  ruleId: string;
+  title: string;
+  severity: FindingSeverity;
+  location: string;
+  asset: string;
+  estimatedMinutes: number;
+  recommendation: string;
+}
+
 export interface ReportData {
   type: ReportType;
   generatedAt: Date;
@@ -63,6 +74,8 @@ export interface ReportData {
   assets: ReportAsset[];
   alerts: { last30Days: number; unacknowledged: number };
   executiveSummary?: ExecutiveBusinessSummary;
+  attackPaths?: AttackPathSummary[];
+  quickWins?: ReportQuickWin[];
 }
 
 export const SEVERITY_LABEL: Record<FindingSeverity, string> = {

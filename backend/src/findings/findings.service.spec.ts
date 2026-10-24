@@ -561,4 +561,38 @@ describe('FindingsService - findAll and summary with SLAs', () => {
       assigned: 1,
     });
   });
+
+  it('filtra por effortLevel=QUICK_WIN y enriquece los hallazgos con esfuerzo e impacto', async () => {
+    prismaMock.finding.findMany.mockResolvedValueOnce([
+      {
+        id: 'f-quick-1',
+        ruleId: 'HDR-XCTO-MISSING',
+        severity: FindingSeverity.LOW,
+        status: FindingStatus.OPEN,
+        dueDate: null,
+        recommendation: 'Configure X-Content-Type-Options: nosniff',
+      },
+    ]);
+    prismaMock.finding.count.mockResolvedValueOnce(1);
+
+    const res = await service.findAll('org-1', {
+      effortLevel: 'QUICK_WIN',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(prismaMock.finding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          ruleId: expect.objectContaining({ in: expect.any(Array) }),
+        }),
+      }),
+    );
+    expect(res.items[0]).toMatchObject({
+      effort: 'QUICK_WIN',
+      estimatedMinutes: expect.any(Number),
+      businessImpact: expect.any(String),
+    });
+  });
 });

@@ -42,6 +42,7 @@ import type {
   RetentionStatus,
   AssetDashboard,
   DashboardAsset,
+  AttackPathSummary,
   AuthResponse,
   Finding,
   FindingTriageAnalysis,
@@ -49,6 +50,7 @@ import type {
   FindingsSummary,
   FindingCategory,
   FindingStatus,
+  RemediationEffort,
   FrameworkDetailsResponse,
   OrgHistory,
   OrgUser,
@@ -75,6 +77,7 @@ export const keys = {
   assets: ['assets'] as const,
   findings: (f: FindingsFilter) => ['findings', f] as const,
   findingsSummary: (assetId?: string) => ['findings', 'summary', assetId ?? 'all'] as const,
+  attackPaths: (assetId?: string) => ['findings', 'attack-paths', assetId ?? 'all'] as const,
   findingTriage: (id: string) => ['findings', id, 'triage'] as const,
   scans: (f: ScansFilter) => ['scans', f] as const,
   users: ['users'] as const,
@@ -140,6 +143,7 @@ export interface FindingsFilter {
   category?: FindingCategory | '';
   assignedToId?: string | '';
   slaStatus?: SlaStatus | '';
+  effortLevel?: RemediationEffort | '';
   page?: number;
   pageSize?: number;
 }
@@ -153,6 +157,14 @@ export function useFindingsSummary(assetId?: string) {
     queryKey: keys.findingsSummary(assetId),
     queryFn: () => api<FindingsSummary>(`/findings/summary${qs({ assetId })}`),
     refetchInterval: 15000,
+  });
+}
+
+export function useAttackPaths(assetId?: string) {
+  return useQuery({
+    queryKey: keys.attackPaths(assetId),
+    queryFn: () => api<AttackPathSummary[]>(`/findings/attack-paths${qs({ assetId })}`),
+    refetchInterval: 30000,
   });
 }
 
