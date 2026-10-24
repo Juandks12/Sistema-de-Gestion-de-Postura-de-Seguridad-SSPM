@@ -1,6 +1,7 @@
 import { FindingSeverity } from '@prisma/client';
 import { DnsClient } from '../../common/dns/dns-client';
 import { FindingDraft } from '../scanner.interface';
+import { lookupBimi } from './bimi';
 import { findDkimKeys } from './dkim';
 import { effectivePolicy, lookupDmarc } from './dmarc';
 import { evaluateSpf, isSpfRecord } from './spf';
@@ -39,6 +40,12 @@ export interface EmailSecuritySummary {
     clean: boolean;
     listings: DnsblListing[];
   };
+  bimi?: {
+    status: 'valid' | 'missing' | 'invalid';
+    queryDomain: string;
+    location?: string | null;
+    authority?: string | null;
+  };
 }
 
 const QUALIFIER_TEXT: Record<string, string> = { '+': '+all', '-': '-all', '~': '~all', '?': '?all' };
@@ -56,7 +63,12 @@ export async function analyzeEmailSecurity(
 ): Promise<{ findings: FindingDraft[]; summary: EmailSecuritySummary }> {
   const findings: FindingDraft[] = [];
 
-  const [mxRecords, txt, dmarc] = await Promise.all([dns.mx(domain), dns.txt(domain), lookupDmarc(domain, dns)]);
+  const [mxRecords, txt, dmarc, bimi] = await Promise.all([
+    dns.mx(domain),
+    dns.txt(domain),
+    lookupDmarc(domain, dns),
+    lookupBimi(domain, dns),
+  ]);
   const mx = mxRecords
     .filter((r) => r.exchange && r.exchange !== '.')
     .sort((a, b) => a.priority - b.priority)
@@ -238,6 +250,19 @@ export async function analyzeEmailSecurity(
     }
   }
 
+  // ------------------------------------------------------------------ BIMI
+  if (bimi.status === 'invalid') {
+    findings.push({
+      ruleId: 'EMAIL-BIMI-INVALID',
+      location: `bimi:${bimi.queryDomain}`,
+      evidence: {
+        domain,
+        queryDomain: bimi.queryDomain,
+        reason: bimi.reason,
+      },
+    });
+  }
+
   return {
     findings,
     summary: {
@@ -280,6 +305,14 @@ export async function analyzeEmailSecurity(
             totalIpsChecked: dnsblResult.totalIpsChecked,
             clean: dnsblResult.clean,
             listings: dnsblResult.listings,
+          }
+        : undefined,
+      bimi: bimi
+        ? {
+            status: bimi.status,
+            queryDomain: bimi.queryDomain,
+            location: bimi.status === 'valid' ? bimi.record.location : null,
+            authority: bimi.status === 'valid' ? bimi.record.authority : null,
           }
         : undefined,
     },

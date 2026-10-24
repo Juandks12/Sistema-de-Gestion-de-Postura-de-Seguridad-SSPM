@@ -363,6 +363,48 @@ function renderExecutive(doc: Doc, data: ReportData): void {
     );
   }
 
+  if (data.attackPaths && data.attackPaths.length > 0) {
+    heading(doc, 'Rutas de Ataque y Escenarios de Riesgo Compuesto');
+    data.attackPaths.slice(0, 4).forEach((path) => {
+      ensureSpace(doc, 65);
+      doc.font(FONT_BOLD).fontSize(10);
+      const sevColor = SEVERITY_COLOR[path.severity] ?? COLOR.ink;
+      doc.fillColor(sevColor).text(t(`[${path.severity}] `), MARGIN, doc.y, { continued: true });
+      doc.fillColor(COLOR.ink).text(t(path.title));
+      if (path.assetValue) {
+        paragraph(doc, `Activo: ${path.assetName ? `${path.assetName} (${path.assetValue})` : path.assetValue}`, {
+          color: COLOR.muted,
+          size: 9,
+        });
+      }
+      paragraph(doc, path.narrative);
+      paragraph(doc, `Riesgo de negocio: ${path.businessRisk}`, { color: COLOR.ink2, bold: true, size: 9 });
+      paragraph(doc, `Impacto estimado: ${path.estimatedImpact}`, { color: COLOR.muted, size: 9 });
+      if (path.recommendedActions.length > 0) {
+        paragraph(doc, `Acción sugerida: ${path.recommendedActions[0]}`, { color: COLOR.accent, size: 9 });
+      }
+    });
+  }
+
+  if (data.quickWins && data.quickWins.length > 0) {
+    heading(doc, 'Plan de Remediación Priorizado: Quick Wins 24h (< 30 min)');
+    table(
+      doc,
+      [
+        { header: 'Acción Rápida', width: 4.5 },
+        { header: 'Severidad', width: 1.5 },
+        { header: 'Tiempo Est.', width: 1.5, align: 'center' },
+        { header: 'Activo', width: 2.5 },
+      ],
+      data.quickWins.map((qw) => [
+        qw.title,
+        severityCell(qw.severity),
+        `${qw.estimatedMinutes} min`,
+        qw.asset,
+      ]),
+    );
+  }
+
   const groups = groupRecommendations(data);
   heading(doc, 'Recomendaciones priorizadas');
   if (groups.length === 0) {

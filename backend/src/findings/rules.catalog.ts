@@ -8,6 +8,8 @@ import { FindingCategory, FindingSeverity } from '@prisma/client';
  * La puntuación `cvss` es una referencia asignada a cada regla según el vector
  * típico del problema; no sustituye a una evaluación CVE concreta.
  */
+export type RemediationEffort = 'QUICK_WIN' | 'MODERATE' | 'STRUCTURAL';
+
 export interface FindingRule {
   id: string;
   category: FindingCategory;
@@ -16,12 +18,18 @@ export interface FindingRule {
   title: string;
   description: string;
   recommendation: string;
+  effort: RemediationEffort;
+  estimatedMinutes: number;
+  businessImpact: string;
 }
 
 const C = FindingCategory;
 const S = FindingSeverity;
 
-const rules: FindingRule[] = [
+type RawRule = Omit<FindingRule, 'effort' | 'estimatedMinutes' | 'businessImpact'> &
+  Partial<Pick<FindingRule, 'effort' | 'estimatedMinutes' | 'businessImpact'>>;
+
+const rawRules: RawRule[] = [
   // ------------------------------------------------------------------ puertos
   {
     id: 'SVC-CLEARTEXT-REMOTE-ADMIN',
@@ -904,10 +912,122 @@ const rules: FindingRule[] = [
     recommendation:
       'Identifique el motivo específico en la URL proporcionada por el proveedor DNSBL, resuelva la causa del envío abusivo o posible brecha y solicite la desclasificación (delisting) en el portal de Spamhaus o SpamCop.',
   },
+  // ------------------------------------------------------------------ divulgación (RFC 9116) y marca
+  {
+    id: 'SEC-TXT-MISSING',
+    category: C.SENSITIVE_PATH,
+    severity: S.LOW,
+    cvss: 2.5,
+    title: 'Archivo security.txt ausente (RFC 9116)',
+    description:
+      'No se encontró el archivo de divulgación responsable de vulnerabilidades en /.well-known/security.txt conforme al estándar RFC 9116. Investigadores éticos carecen de un canal formal y seguro para reportar fallos de seguridad detectados en la plataforma antes de que sean explotados maliciosamente.',
+    recommendation:
+      'Cree el archivo /.well-known/security.txt con la directiva Contact: (correo de seguridad o URL) y Expires: vigente según el estándar RFC 9116.',
+  },
+  {
+    id: 'SEC-TXT-EXPIRED',
+    category: C.SENSITIVE_PATH,
+    severity: S.MEDIUM,
+    cvss: 4.5,
+    title: 'Archivo security.txt vencido (RFC 9116)',
+    description:
+      'El archivo /.well-known/security.txt contiene una fecha de expiración en el campo Expires: que se encuentra en el pasado. Los estándares de divulgación consideran inválida una política vencida.',
+    recommendation:
+      'Actualice la directiva Expires: en el archivo security.txt con una fecha futura válida (máximo 1 año hacia adelante).',
+  },
+  {
+    id: 'SEC-TXT-INVALID',
+    category: C.SENSITIVE_PATH,
+    severity: S.LOW,
+    cvss: 3.0,
+    title: 'Archivo security.txt con sintaxis o directivas requeridas incompletas',
+    description:
+      'El archivo /.well-known/security.txt existe pero carece de directivas obligatorias por RFC 9116 como Contact: o Expires:.',
+    recommendation:
+      'Asegúrese de incluir las directivas requeridas Contact: y Expires: con formato de fecha ISO 8601 en su archivo security.txt.',
+  },
+  {
+    id: 'EMAIL-BIMI-INVALID',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.5,
+    title: 'Registro BIMI con sintaxis o directiva insegura',
+    description:
+      'Se detectó un registro DNS BIMI (default._bimi) pero su configuración no cumple con la especificación (por ejemplo, la ubicación del logotipo no utiliza HTTPS o existen múltiples registros en el mismo selector).',
+    recommendation:
+      'Corrija el registro TXT de BIMI en el DNS asegurando que la etiqueta l= apunte a un archivo SVG sobre HTTPS y que no existan registros duplicados.',
+  },
 ];
 
+export function computeRuleEffortAndImpact(r: {
+  id: string;
+  category: FindingCategory;
+  severity: FindingSeverity;
+  effort?: RemediationEffort;
+  estimatedMinutes?: number;
+  businessImpact?: string;
+}): { effort: RemediationEffort; estimatedMinutes: number; businessImpact: string } {
+  if (r.effort && r.estimatedMinutes && r.businessImpact) {
+    return { effort: r.effort, estimatedMinutes: r.estimatedMinutes, businessImpact: r.businessImpact };
+  }
+
+  const isQuickWin =
+    (r.id.startsWith('HDR-') && r.id !== 'HDR-CSP-MISSING') ||
+    r.id.startsWith('SEC-TXT-') ||
+    r.id === 'CMS-WP-XMLRPC-ENABLED' ||
+    r.id === 'CMS-WP-USER-ENUMERATION' ||
+    r.id === 'WAF-MISSING' ||
+    r.id === 'WEB-SOURCEMAPS-EXPOSED' ||
+    r.id === 'WEB-CORS-REFLECTION' ||
+    r.id === 'WEB-FORM-HTTP-TARGET' ||
+    r.id === 'EMAIL-BIMI-INVALID' ||
+    r.id.startsWith('PORT-') ||
+    r.id.startsWith('SVC-CLEARTEXT') ||
+    (r.id.startsWith('PATH-') && !r.id.includes('ADMIN')) ||
+    r.id === 'MAIL-SPF-MISSING' ||
+    r.id === 'MAIL-DMARC-MISSING' ||
+    r.id === 'MAIL-DMARC-MONITOR-ONLY' ||
+    r.id.includes('PUBLIC-READ') ||
+    r.id.includes('PUBLIC-ACCESS');
+
+  const isStructural =
+    r.id === 'HDR-CSP-MISSING' ||
+    r.id.includes('DEPRECATED') ||
+    r.id.includes('OUTDATED') ||
+    r.id.includes('EOL') ||
+    r.id.includes('LEGACY');
+
+  const effort: RemediationEffort = isStructural ? 'STRUCTURAL' : isQuickWin ? 'QUICK_WIN' : 'MODERATE';
+  const estimatedMinutes = isStructural ? 480 : isQuickWin ? 20 : 90;
+
+  let businessImpact = 'Riesgo de seguridad que afecta la confidencialidad e integridad del activo.';
+  if (r.id.includes('PAYMENT') || r.id.includes('SRI') || r.id.includes('Magecart') || r.id.includes('CARD')) {
+    businessImpact = 'Riesgo de fraude financiero, manipulación del checkout o multas por incumplimiento PCI-DSS.';
+  } else if (r.id.includes('ADMIN') || r.id.includes('LOGIN') || r.id.includes('XMLRPC') || r.id.includes('USER-ENUMERATION')) {
+    businessImpact = 'Riesgo de toma de control administrativo de la tienda online y acceso no autorizado a pedidos.';
+  } else if (r.category === FindingCategory.EMAIL_SECURITY || r.id.includes('MAIL') || r.id.includes('DMARC') || r.id.includes('SPF') || r.id.includes('BIMI')) {
+    businessImpact = 'Riesgo de suplantación de identidad (phishing/BEC) hacia clientes o desvío de pagos con facturas falsas.';
+  } else if (r.id.includes('SECRET') || r.id.includes('ENV') || r.id.includes('SOURCEMAP') || r.id.includes('KEY')) {
+    businessImpact = 'Exfiltración de credenciales maestras y propiedad intelectual para acceso directo a bases de datos.';
+  } else if (r.category === FindingCategory.EXPOSED_SERVICE) {
+    businessImpact = 'Exposición perimetral directa a Internet que facilita ataques de fuerza bruta y explotación remota.';
+  }
+
+  return { effort, estimatedMinutes, businessImpact };
+}
+
+const enrichedRules: FindingRule[] = rawRules.map((r) => {
+  const meta = computeRuleEffortAndImpact(r);
+  return {
+    ...r,
+    effort: r.effort ?? meta.effort,
+    estimatedMinutes: r.estimatedMinutes ?? meta.estimatedMinutes,
+    businessImpact: r.businessImpact ?? meta.businessImpact,
+  };
+});
+
 export const FINDING_RULES: ReadonlyMap<string, FindingRule> = new Map(
-  rules.map((r) => [r.id, r] as const),
+  enrichedRules.map((r) => [r.id, r] as const),
 );
 
 export function getRule(id: string): FindingRule {

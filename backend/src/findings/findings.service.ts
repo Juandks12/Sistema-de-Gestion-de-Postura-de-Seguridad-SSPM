@@ -21,7 +21,7 @@ import { tcpPortOpen, tlsProbe } from '../scans/web/tls-probe';
 import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
-import { getRule } from './rules.catalog';
+import { FINDING_RULES, getRule } from './rules.catalog';
 import { getRemediationGuide, RemediationGuide } from './remediation.catalog';
 
 /** Categorías de hallazgo que produce cada tipo de escaneo. */
@@ -369,6 +369,13 @@ export class FindingsService {
       }
     }
 
+    if (query.effortLevel) {
+      const matchingRuleIds = [...FINDING_RULES.values()]
+        .filter((r) => r.effort === query.effortLevel)
+        .map((r) => r.id);
+      where.ruleId = { in: matchingRuleIds };
+    }
+
     const [items, total] = await this.prisma.$transaction([
       this.prisma.finding.findMany({
         where,
@@ -379,11 +386,17 @@ export class FindingsService {
       }),
       this.prisma.finding.count({ where }),
     ]);
-    const enrichedItems = items.map((f) => ({
-      ...f,
-      sla: computeSla(f.dueDate, f.status),
-      remediationGuide: getRemediationGuide(f.ruleId, f.recommendation),
-    }));
+    const enrichedItems = items.map((f) => {
+      const rule = FINDING_RULES.get(f.ruleId);
+      return {
+        ...f,
+        sla: computeSla(f.dueDate, f.status),
+        remediationGuide: getRemediationGuide(f.ruleId, f.recommendation),
+        effort: rule?.effort ?? 'MODERATE',
+        estimatedMinutes: rule?.estimatedMinutes ?? 60,
+        businessImpact: rule?.businessImpact ?? null,
+      };
+    });
     return {
       items: enrichedItems,
       meta: { total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) },
@@ -395,10 +408,14 @@ export class FindingsService {
     if (!finding) {
       throw new NotFoundException('Hallazgo no encontrado');
     }
+    const rule = FINDING_RULES.get(finding.ruleId);
     return {
       ...finding,
       sla: computeSla(finding.dueDate, finding.status),
       remediationGuide: getRemediationGuide(finding.ruleId, finding.recommendation),
+      effort: rule?.effort ?? 'MODERATE',
+      estimatedMinutes: rule?.estimatedMinutes ?? 60,
+      businessImpact: rule?.businessImpact ?? null,
     };
   }
 

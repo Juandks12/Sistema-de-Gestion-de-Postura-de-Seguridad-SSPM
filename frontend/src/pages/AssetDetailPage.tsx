@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { DeleteAssetModal } from '@/components/DeleteAssetModal';
 import { AssetVerificationCard } from '@/components/AssetVerificationCard';
+import { AttackPathsCard } from '@/components/AttackPathsCard';
 import { Diagnostic360Stepper } from '@/components/Diagnostic360Stepper';
 import { DiscoveredHostsCard } from '@/components/DiscoveredHostsCard';
 import { DnsSecurityCard } from '@/components/DnsSecurityCard';
@@ -296,6 +297,14 @@ export function AssetDetailPage() {
 
       <div className="mt-4">
         <TechStackCard technologies={exposure.technologies} />
+      </div>
+
+      <div className="mt-4">
+        <AttackPathsCard
+          assetId={asset.id}
+          onSelectQuickWins={() => navigate(`/findings?assetId=${asset.id}&effortLevel=QUICK_WIN`)}
+          onFilterRule={() => navigate(`/findings?assetId=${asset.id}`)}
+        />
       </div>
 
       <Card className="mt-4">

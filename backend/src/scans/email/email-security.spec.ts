@@ -226,6 +226,20 @@ describe('analyzeEmailSecurity', () => {
     });
   });
 
+  it('detecta registro BIMI inválido si no utiliza HTTPS', async () => {
+    const dns = fakeDns({
+      mx: { 'example.com': [{ exchange: 'mail.example.com', priority: 10 }] },
+      txt: {
+        'example.com': ['v=spf1 -all'],
+        '_dmarc.example.com': ['v=DMARC1; p=reject; rua=mailto:dmarc@example.com'],
+        'default._bimi.example.com': ['v=BIMI1; l=http://insecure.example.com/logo.svg'],
+      },
+    });
+    const { findings, summary } = await analyzeEmailSecurity('example.com', dns);
+    expect(ids(findings)).toContain('EMAIL-BIMI-INVALID');
+    expect(summary.bimi).toMatchObject({ status: 'invalid' });
+  });
+
   it('un subdominio sin correo protegido por el DMARC del dominio no genera hallazgos', async () => {
     const dns = fakeDns({ txt: { '_dmarc.example.com': ['v=DMARC1; p=reject; rua=mailto:a@example.com'] } });
     const { findings, summary } = await analyzeEmailSecurity('www.example.com', dns);
