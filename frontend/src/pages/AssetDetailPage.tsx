@@ -77,7 +77,9 @@ export function AssetDetailPage() {
   };
 
   const isDiagnosticRunning =
-    latestDiagnostic.data?.status === 'PENDING' || latestDiagnostic.data?.status === 'RUNNING';
+    latestDiagnostic.data?.status === 'PENDING' ||
+    latestDiagnostic.data?.status === 'RUNNING' ||
+    latestDiagnostic.data?.status === 'IN_PROGRESS';
 
   const runDiagnostic360 = async () => {
     setNotice(null);
@@ -187,7 +189,9 @@ export function AssetDetailPage() {
           <Diagnostic360Stepper
             batch={latestDiagnostic.data}
             onCancel={
-              latestDiagnostic.data.status === 'RUNNING' || latestDiagnostic.data.status === 'PENDING'
+              latestDiagnostic.data.status === 'RUNNING' ||
+              latestDiagnostic.data.status === 'IN_PROGRESS' ||
+              latestDiagnostic.data.status === 'PENDING'
                 ? () => cancelBatch(latestDiagnostic.data!.id)
                 : undefined
             }

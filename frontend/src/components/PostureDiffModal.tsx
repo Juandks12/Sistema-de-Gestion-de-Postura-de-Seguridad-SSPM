@@ -133,9 +133,9 @@ export function PostureDiffModal({
           {/* Cambios de Superficie */}
           <div className="rounded-xl border border-border bg-surface-2/60 p-3">
             <h5 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
-              <Globe className="size-3.5" /> Variación en Superficie de Ataque
+              <Globe className="size-3.5" /> Variación en Superficie de Ataque y Telemetría Profunda
             </h5>
-            <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="mt-2 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
               <div className="rounded-lg bg-surface p-2 border border-border">
                 <span className="text-muted">Subdominios nuevos</span>
                 <p className="mt-0.5 text-sm font-semibold text-ink">
@@ -154,7 +154,38 @@ export function PostureDiffModal({
                   -{diff.surfaceChanges.closedPortsCount}
                 </p>
               </div>
+              <div className="rounded-lg bg-surface p-2 border border-border">
+                <span className="text-muted">Protección WAF</span>
+                <p className="mt-0.5 truncate text-sm font-semibold text-ink">
+                  {diff.surfaceChanges.wafChanged
+                    ? `${diff.surfaceChanges.wafBefore ?? 'N/A'} → ${diff.surfaceChanges.wafAfter ?? 'N/A'}`
+                    : (diff.surfaceChanges.wafAfter ?? 'Sin cambios')}
+                </p>
+              </div>
             </div>
+            {(diff.surfaceChanges.tlsProtocols && diff.surfaceChanges.tlsProtocols.length > 0) ||
+            typeof diff.surfaceChanges.openApiEndpointsCount === 'number' ||
+            diff.surfaceChanges.debugStackTraceExposed ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-2 text-xs">
+                {diff.surfaceChanges.tlsProtocols && diff.surfaceChanges.tlsProtocols.length > 0 ? (
+                  <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-ink-2">
+                    TLS activo: <strong>{diff.surfaceChanges.tlsProtocols.join(', ')}</strong>
+                  </span>
+                ) : null}
+                {typeof diff.surfaceChanges.openApiEndpointsCount === 'number' &&
+                diff.surfaceChanges.openApiEndpointsCount > 0 ? (
+                  <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-600">
+                    OpenAPI expuestas: <strong>{diff.surfaceChanges.openApiEndpointsCount}</strong> (
+                    {diff.surfaceChanges.unauthenticatedApiOpsCount ?? 0} ops sin auth)
+                  </span>
+                ) : null}
+                {diff.surfaceChanges.debugStackTraceExposed ? (
+                  <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-semibold text-rose-600">
+                    Alerta: Fuga activa de Stack Trace / Debug detectada
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {/* Hallazgos Remediados vs Regresiones */}
