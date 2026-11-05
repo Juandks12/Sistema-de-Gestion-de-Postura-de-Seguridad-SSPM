@@ -34,8 +34,11 @@ export interface TlsProbeInfo {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_CAB_LIFESPAN_DAYS = 398;
 
 const WEAK_SIGNATURE_RE = /(md2|md5|sha1)/i;
+const WEAK_CIPHER_RE = /(?:^|[-_])(RC4|3DES|DES|CBC3|NULL|EXPORT|EXP|ADH|AECDH|ANON|MD5|RC2)(?:[-_]|$)/i;
+const FORWARD_SECRECY_CIPHER_RE = /(?:^|[-_])(ECDHE|DHE|EDH)(?:[-_]|$)|^TLS_(AES|CHACHA20)_/i;
 
 /** Evalúa el resultado de una conexión TLS (RF-05). Función pura. */
 export function analyzeTls(info: TlsProbeInfo, now: Date = new Date()): FindingDraft[] {
@@ -121,6 +124,31 @@ export function analyzeTls(info: TlsProbeInfo, now: Date = new Date()): FindingD
       ruleId: 'TLS-WEAK-SIGNATURE',
       location,
       evidence: { ...base, signatureAlgorithm: cert.signatureAlgorithm },
+    });
+  }
+
+  if (info.cipher) {
+    if (WEAK_CIPHER_RE.test(info.cipher)) {
+      findings.push({
+        ruleId: 'TLS-WEAK-CIPHER',
+        location,
+        evidence: { ...base, cipher: info.cipher },
+      });
+    } else if (info.protocol !== 'TLSv1.3' && !FORWARD_SECRECY_CIPHER_RE.test(info.cipher)) {
+      findings.push({
+        ruleId: 'TLS-NO-FORWARD-SECRECY',
+        location,
+        evidence: { ...base, cipher: info.cipher, protocol: info.protocol },
+      });
+    }
+  }
+
+  const lifespanDays = Math.round((validTo.getTime() - validFrom.getTime()) / DAY_MS);
+  if (!cert.selfSigned && Number.isFinite(lifespanDays) && lifespanDays > MAX_CAB_LIFESPAN_DAYS) {
+    findings.push({
+      ruleId: 'TLS-EXCESSIVE-LIFESPAN',
+      location,
+      evidence: { ...base, lifespanDays, maxAllowedDays: MAX_CAB_LIFESPAN_DAYS },
     });
   }
 

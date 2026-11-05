@@ -44,6 +44,10 @@ export interface PostureSurfaceSummary {
   technologies: string[];
   waf: string;
   externalScriptsCount: number;
+  tlsProtocols?: string[];
+  openApiEndpointsCount?: number;
+  unauthenticatedApiOpsCount?: number;
+  debugStackTraceExposed?: boolean;
 }
 
 export interface PostureDiffResult {
@@ -73,6 +77,8 @@ export interface PostureDiffResult {
     wafBefore: string | null;
     wafAfter: string;
     subdomainsDelta: number;
+    unauthenticatedApiOpsDelta?: number;
+    debugStackTraceExposed?: boolean;
   };
   assessment: string;
 }
@@ -393,11 +399,31 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
       where: { assetId: batch.assetId },
     });
 
-    // Extraer WAF y tecnologías del resumen de WEB_HEADERS
+    // Extraer WAF, tecnologías y fugas de depuración del resumen de WEB_HEADERS
     const webHeadersScan = batch.scans.find((s) => s.type === ScanType.WEB_HEADERS);
     const webSummary = (webHeadersScan?.summary ?? {}) as Record<string, unknown>;
     const waf = (webSummary.waf as string) ?? 'Ninguno detectado';
     const techList = ((webSummary.technologies as Array<{ name: string }>) ?? []).map((t) => t.name);
+    const debugLeakSummary = (webSummary.debugLeak ?? {}) as Record<string, unknown>;
+    const debugStackTraceExposed = Boolean(debugLeakSummary.stackTraceExposed);
+
+    // Extraer telemetría de OpenAPI del resumen de SENSITIVE_PATHS
+    const sensitivePathsScan = batch.scans.find((s) => s.type === ScanType.SENSITIVE_PATHS);
+    const sensitiveSummary = (sensitivePathsScan?.summary ?? {}) as Record<string, unknown>;
+    const openApiSummary = (sensitiveSummary.openApi ?? {}) as Record<string, unknown>;
+    const openApiEndpointsCount = (openApiSummary.endpointsDetected as number) ?? 0;
+    const unauthenticatedApiOpsCount = (openApiSummary.unauthenticatedOperationsCount as number) ?? 0;
+
+    // Extraer protocolos TLS del resumen de SSL_CERT
+    const sslScan = batch.scans.find((s) => s.type === ScanType.SSL_CERT);
+    const sslSummary = (sslScan?.summary ?? {}) as Record<string, unknown>;
+    const tlsProtocols = Array.from(
+      new Set(
+        ((sslSummary.protocols as Array<{ protocol?: string | null }>) ?? [])
+          .map((p) => p.protocol)
+          .filter((p): p is string => Boolean(p)),
+      ),
+    );
 
     const surfaceSummary: PostureSurfaceSummary = {
       openPorts: Array.from(allPorts).sort((a, b) => a - b),
@@ -405,6 +431,10 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
       technologies: techList,
       waf,
       externalScriptsCount: (webSummary.scriptsInspected as number) ?? 0,
+      tlsProtocols,
+      openApiEndpointsCount,
+      unauthenticatedApiOpsCount,
+      debugStackTraceExposed,
     };
 
     const counts = {
@@ -414,6 +444,10 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
       medium: openFindings.filter((f) => f.severity === 'MEDIUM').length,
       low: openFindings.filter((f) => f.severity === 'LOW').length,
     };
+
+    const completedScansCount = batch.scans.filter((s) => s.status === ScanStatus.COMPLETED).length;
+    const allScansFailed = batch.scans.length > 0 && completedScansCount === 0;
+    const finalStatus = allScansFailed ? DiagnosticBatchStatus.FAILED : DiagnosticBatchStatus.COMPLETED;
 
     const summaryPayload = {
       score: {
@@ -428,7 +462,7 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
     await this.prisma.diagnosticBatch.update({
       where: { id: batch.id },
       data: {
-        status: DiagnosticBatchStatus.COMPLETED,
+        status: finalStatus,
         finishedAt: new Date(),
         summary: summaryPayload as unknown as Prisma.InputJsonValue,
       },
@@ -632,6 +666,9 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
     const wafAfter = toSurface.waf ?? 'Ninguno detectado';
     const wafChanged = Boolean(wafBefore && wafBefore !== wafAfter);
     const subdomainsDelta = (toSurface.subdomainsCount ?? 0) - (fromSurface.subdomainsCount ?? 0);
+    const unauthenticatedApiOpsDelta =
+      (toSurface.unauthenticatedApiOpsCount ?? 0) - (fromSurface.unauthenticatedApiOpsCount ?? 0);
+    const debugStackTraceExposed = Boolean(toSurface.debugStackTraceExposed);
 
     // Redacción de conclusión ejecutiva
     let assessment = '';
@@ -672,6 +709,8 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
         wafBefore,
         wafAfter,
         subdomainsDelta,
+        unauthenticatedApiOpsDelta,
+        debugStackTraceExposed,
       },
       assessment,
     };

@@ -157,15 +157,49 @@ export function analyzeHeaders(input: HeadersAnalysisInput): FindingDraft[] {
     }
   }
 
+  const sessionCookiesEmitted: string[] = [];
+
   for (const cookie of all(headers['set-cookie'])) {
     const name = cookie.split('=')[0]?.trim() ?? 'cookie';
     const attrs = cookie.toLowerCase();
     const cookieLocation = `${location}#cookie:${name}`;
     const isSession = SESSION_COOKIE_RE.test(name);
+    if (isSession) {
+      sessionCookiesEmitted.push(name);
+    }
     const hasSecure = /;\s*secure(\s*;|\s*$)/.test(attrs);
     const hasHttpOnly = /;\s*httponly(\s*;|\s*$)/.test(attrs);
     const sameSiteMatch = /;\s*samesite=([a-z]+)/.exec(attrs);
     const sameSite = sameSiteMatch ? sameSiteMatch[1] : null;
+
+    if (/^__host-/i.test(name)) {
+      const violations: string[] = [];
+      if (!isHttps || !hasSecure) violations.push('Falta atributo Secure o conexión HTTPS');
+      if (/;\s*domain=/i.test(attrs)) violations.push('Incluye atributo Domain prohibido en prefijo __Host-');
+      if (!/;\s*path=\/\s*(;|$)/i.test(attrs)) violations.push('Requiere atributo exacto Path=/');
+      if (violations.length > 0) {
+        findings.push({
+          ruleId: 'HDR-COOKIE-PREFIX-INVALID',
+          location: cookieLocation,
+          title: `La cookie "${name}" incumple los requisitos del prefijo de seguridad __Host-`,
+          evidence: { ...base, cookie: name, prefix: '__Host-', violations },
+        });
+      }
+    } else if (/^__secure-/i.test(name)) {
+      if (!isHttps || !hasSecure) {
+        findings.push({
+          ruleId: 'HDR-COOKIE-PREFIX-INVALID',
+          location: cookieLocation,
+          title: `La cookie "${name}" incumple los requisitos del prefijo de seguridad __Secure-`,
+          evidence: {
+            ...base,
+            cookie: name,
+            prefix: '__Secure-',
+            violations: ['Falta atributo Secure o conexión HTTPS'],
+          },
+        });
+      }
+    }
 
     if (isHttps && !hasSecure) {
       findings.push({
@@ -196,6 +230,22 @@ export function analyzeHeaders(input: HeadersAnalysisInput): FindingDraft[] {
         location: cookieLocation,
         title: `La cookie de sesión "${name}" no especifica el atributo SameSite`,
         evidence: { ...base, cookie: name },
+      });
+    }
+  }
+
+  if (sessionCookiesEmitted.length > 0) {
+    const cacheControlRaw = first(headers['cache-control']);
+    const cacheControl = cacheControlRaw?.toLowerCase() ?? '';
+    if (!cacheControl.includes('no-store') && !cacheControl.includes('private')) {
+      findings.push({
+        ruleId: 'HDR-CACHE-CONTROL-MISSING-SENSITIVE',
+        location,
+        evidence: {
+          ...base,
+          cacheControl: cacheControlRaw ?? null,
+          sessionCookies: sessionCookiesEmitted,
+        },
       });
     }
   }

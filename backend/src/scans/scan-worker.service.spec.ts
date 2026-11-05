@@ -27,6 +27,7 @@ describe('ScanWorkerService', () => {
       $transaction: jest.fn(),
       scan: {
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
         updateMany: jest.fn(),
         findFirst: jest.fn(),
@@ -242,8 +243,15 @@ describe('ScanWorkerService', () => {
   });
 
   describe('failStaleScans', () => {
-    it('marca como FAILED los escaneos RUNNING que superaron el tiempo de expiración', async () => {
+    it('marca como FAILED los escaneos RUNNING que superaron el tiempo de expiración y notifica al orquestador 360°', async () => {
+      (prisma.scan.findMany as jest.Mock).mockResolvedValue([
+        { id: 'stale-1', batchId: 'batch-99' },
+        { id: 'stale-2', batchId: null },
+      ]);
       (prisma.scan.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
+
+      const hookMock = jest.fn().mockResolvedValue(undefined);
+      service.registerCompletionHook(hookMock);
 
       const internal = service as unknown as { failStaleScans: () => Promise<void> };
       await internal.failStaleScans();
@@ -259,6 +267,8 @@ describe('ScanWorkerService', () => {
           }),
         }),
       );
+      expect(hookMock).toHaveBeenCalledTimes(1);
+      expect(hookMock).toHaveBeenCalledWith('stale-1', 'batch-99');
     });
   });
 

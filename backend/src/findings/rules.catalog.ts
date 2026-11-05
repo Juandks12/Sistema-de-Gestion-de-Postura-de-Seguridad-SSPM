@@ -316,6 +316,28 @@ const rawRules: RawRule[] = [
     recommendation:
       'Añada el atributo Secure a cualquier cookie configurada con SameSite=None.',
   },
+  {
+    id: 'HDR-COOKIE-PREFIX-INVALID',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.4,
+    title: 'Cookie con prefijo de seguridad __Host- o __Secure- mal configurada (RFC 6265bis)',
+    description:
+      'La cookie utiliza un prefijo criptográfico reservado (__Host- o __Secure-) pero incumple las invariantes obligatorias del estándar RFC 6265bis (como omitir Secure, definir un atributo Domain en __Host- o no fijar Path=/). Los navegadores modernos rechazarán la cookie o quedará vulnerable a sobrescritura desde subdominios.',
+    recommendation:
+      'Para cookies __Host-, asegure HTTPS con los atributos "Secure; Path=/" y elimine cualquier atributo "Domain". Para cookies __Secure-, incluya siempre el atributo "Secure" sobre HTTPS.',
+  },
+  {
+    id: 'HDR-CACHE-CONTROL-MISSING-SENSITIVE',
+    category: C.HTTP_HEADERS,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Respuesta con cookies de sesión sin protección Cache-Control (no-store / private)',
+    description:
+      'El servidor emite cookies de sesión o autenticación (Set-Cookie) en una respuesta HTTP que carece de directivas Cache-Control: no-store o private. Esto puede provocar que proxies intermedios, CDNs mal configuradas o cachés compartidas almacenen respuestas autenticadas o encabezados de sesión.',
+    recommendation:
+      'Añada la cabecera "Cache-Control: no-store, no-cache, must-revalidate, private" en todas las respuestas que establezcan sesiones o devuelvan datos de usuarios autenticados.',
+  },
 
   // ------------------------- inspección profunda web, e-commerce y secretos
   {
@@ -563,6 +585,39 @@ const rawRules: RawRule[] = [
     title: 'El servicio web no ofrece HTTPS',
     description: 'El puerto 80 responde pero no hay TLS en el 443: todo el tráfico viaja sin cifrar.',
     recommendation: 'Configure un certificado TLS (p. ej. con Let\'s Encrypt) y redirija HTTP a HTTPS.',
+  },
+  {
+    id: 'TLS-WEAK-CIPHER',
+    category: C.TLS_CERTIFICATE,
+    severity: S.HIGH,
+    cvss: 7.4,
+    title: 'Suite de cifrado TLS débil o obsoleta negociada (RC4, 3DES, DES, NULL, EXPORT)',
+    description:
+      'El servidor negoció una suite de cifrado criptográficamente débil u obsoleta (como 3DES/Sweet32, RC4, DES, MD5 o cifradores de exportación/nulos). Un atacante con capacidad de interceptación en red puede descifrar sesiones TLS capturadas.',
+    recommendation:
+      'Deshabilite todas las suites de cifrado legadas (RC4, 3DES, DES, MD5, NULL, EXPORT) y restrinja la configuración a cifradores modernos AEAD (AES-GCM, ChaCha20-Poly1305).',
+  },
+  {
+    id: 'TLS-NO-FORWARD-SECRECY',
+    category: C.TLS_CERTIFICATE,
+    severity: S.MEDIUM,
+    cvss: 5.3,
+    title: 'Sesión TLS sin Secreto Perfecto Hacia Adelante (Perfect Forward Secrecy - PFS)',
+    description:
+      'El servidor negoció una suite de cifrado TLS sin intercambio de claves efímero Diffie-Hellman (ECDHE o DHE). Si la clave privada del certificado del servidor llega a ser comprometida en el futuro, un atacante podrá descifrar retrospectivamente todo el tráfico histórico capturado.',
+    recommendation:
+      'Priorice suites de cifrado con intercambio de claves efímero (ECDHE o DHE) en TLS 1.2 y habilite TLS 1.3.',
+  },
+  {
+    id: 'TLS-EXCESSIVE-LIFESPAN',
+    category: C.TLS_CERTIFICATE,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Certificado TLS público excede el periodo máximo de validez (398 días, CA/B Forum)',
+    description:
+      'El certificado público tiene un periodo de validez total superior a 398 días. Conforme a los requisitos base del CA/Browser Forum (Apple, Google Chrome, Mozilla), los navegadores modernos rechazan certificados públicos emitidos con más de 398 días de vigencia.',
+    recommendation:
+      'Reemita el certificado con una vigencia menor o igual a 398 días (idealmente 90 días con renovación automatizada ACME).',
   },
 
   // ---------------------------------------------------------- rutas sensibles

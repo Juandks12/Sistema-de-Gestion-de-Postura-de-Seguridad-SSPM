@@ -129,4 +129,59 @@ describe('analyzeHeaders', () => {
     });
     expect(credsWithNull.map((f) => f.ruleId)).toContain('HDR-CORS-CREDENTIALS-INSECURE');
   });
+
+  it('valida los prefijos criptográficos de cookies __Host- y __Secure- (RFC 6265bis)', () => {
+    const invalidPrefixes = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: {
+        ...secure,
+        'set-cookie': [
+          '__Host-sess=123; Secure; HttpOnly; Domain=example.org; Path=/; SameSite=Lax',
+          '__Secure-token=abc; HttpOnly; Path=/; SameSite=Lax',
+        ],
+      },
+    });
+    const byRule = invalidPrefixes.map((f) => `${f.ruleId}:${f.location}`);
+    expect(byRule).toContain('HDR-COOKIE-PREFIX-INVALID:https://example.org/#cookie:__Host-sess');
+    expect(byRule).toContain('HDR-COOKIE-PREFIX-INVALID:https://example.org/#cookie:__Secure-token');
+
+    const validPrefixes = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: {
+        ...secure,
+        'cache-control': 'no-store, private',
+        'set-cookie': [
+          '__Host-sess=123; Secure; HttpOnly; Path=/; SameSite=Strict',
+          '__Secure-token=abc; Secure; HttpOnly; Path=/; SameSite=Lax',
+        ],
+      },
+    });
+    expect(validPrefixes.map((f) => f.ruleId)).toEqual([]);
+  });
+
+  it('detecta respuestas con cookies de sesión sin Cache-Control: no-store o private', () => {
+    const missingCacheControl = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: {
+        ...secure,
+        'cache-control': 'public, max-age=3600',
+        'set-cookie': ['session_id=xyz; Secure; HttpOnly; SameSite=Lax'],
+      },
+    });
+    expect(missingCacheControl.map((f) => f.ruleId)).toContain('HDR-CACHE-CONTROL-MISSING-SENSITIVE');
+
+    const safeCacheControl = analyzeHeaders({
+      finalUrl: 'https://example.org/',
+      status: 200,
+      headers: {
+        ...secure,
+        'cache-control': 'private, no-store, max-age=0',
+        'set-cookie': ['session_id=xyz; Secure; HttpOnly; SameSite=Lax'],
+      },
+    });
+    expect(safeCacheControl.map((f) => f.ruleId)).not.toContain('HDR-CACHE-CONTROL-MISSING-SENSITIVE');
+  });
 });
