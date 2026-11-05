@@ -237,6 +237,37 @@ describe('DiagnosticOrchestratorService', () => {
         }),
       });
     });
+
+    it('marca el lote como FAILED si todos los escaneos del lote fallaron', async () => {
+      prismaMock.diagnosticBatch.findUnique.mockResolvedValue({
+        id: 'batch-failed',
+        profile: DiagnosticProfile.PERIMETER_FAST,
+        status: DiagnosticBatchStatus.IN_PROGRESS,
+        currentStage: 2,
+        totalStages: 2,
+        assetId: 'asset-1',
+        organizationId: 'org-1',
+        asset: { type: AssetType.DOMAIN },
+        scans: [
+          { stage: 1, status: ScanStatus.FAILED, ports: [] },
+          { stage: 2, status: ScanStatus.FAILED, type: ScanType.WEB_HEADERS, ports: [] },
+          { stage: 2, status: ScanStatus.FAILED, type: ScanType.SSL_CERT, ports: [] },
+        ],
+      });
+
+      prismaMock.riskScore.findFirst.mockResolvedValue(null);
+      prismaMock.finding.findMany.mockResolvedValue([]);
+      prismaMock.discoveredHost.count.mockResolvedValue(0);
+
+      await service.advancePipeline('batch-failed');
+
+      expect(prismaMock.diagnosticBatch.update).toHaveBeenCalledWith({
+        where: { id: 'batch-failed' },
+        data: expect.objectContaining({
+          status: DiagnosticBatchStatus.FAILED,
+        }),
+      });
+    });
   });
 
   describe('getPostureDiff', () => {

@@ -181,6 +181,8 @@ export class AttackPathsService {
       (f) =>
         f.ruleId === 'WEB-FORM-HTTP-TARGET' ||
         f.ruleId === 'HDR-COOKIE-INSECURE' ||
+        f.ruleId === 'HDR-COOKIE-PREFIX-INVALID' ||
+        f.ruleId === 'HDR-CACHE-CONTROL-MISSING-SENSITIVE' ||
         f.ruleId.includes('COOKIE') ||
         f.location?.includes('checkout') ||
         f.location?.includes('cart'),

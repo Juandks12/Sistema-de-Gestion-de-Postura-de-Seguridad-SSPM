@@ -982,6 +982,86 @@ const REMEDIATION_CATALOG: Record<string, Omit<RemediationGuide, 'ruleId'>> = {
       },
     ],
   },
+  'TLS-WEAK-CIPHER': {
+    owasp: 'A02:2021 – Cryptographic Failures',
+    cwe: 'CWE-327: Use of a Broken or Risky Cryptographic Algorithm',
+    summary:
+      'Deshabilite cifradores débiles (3DES, RC4, DES, NULL, EXPORT) y permita únicamente suites AEAD modernas (AES-GCM y ChaCha20-Poly1305).',
+    verificationCommand: 'openssl s_client -connect target.com:443 -cipher "3DES:RC4" 2>/dev/null',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Configure suites modernas recomendadas por Mozilla Intermediate en nginx.conf:',
+        code: 'ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;\nssl_prefer_server_ciphers off;',
+      },
+      {
+        platform: 'Apache',
+        description: 'Configure SSLCipherSuite en Apache:',
+        code: 'SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1\nSSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384\nSSLHonorCipherOrder off',
+      },
+    ],
+  },
+  'TLS-NO-FORWARD-SECRECY': {
+    owasp: 'A02:2021 – Cryptographic Failures',
+    cwe: 'CWE-326: Inadequate Encryption Strength',
+    summary:
+      'Configure el servidor TLS para exigir intercambio de claves efímero Diffie-Hellman (ECDHE o DHE) y habilite TLS 1.3 para garantizar Perfect Forward Secrecy (PFS).',
+    verificationCommand: 'openssl s_client -connect target.com:443 -tls1_2 2>/dev/null | grep "Cipher"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Priorice cifradores ECDHE y TLS 1.3 en Nginx:',
+        code: 'ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM;',
+      },
+    ],
+  },
+  'TLS-EXCESSIVE-LIFESPAN': {
+    owasp: 'A02:2021 – Cryptographic Failures',
+    cwe: 'CWE-295: Improper Certificate Validation',
+    summary:
+      'Reemita el certificado TLS público con un periodo de validez máximo de 398 días (o 90 días con automatización ACME) para cumplir con los requisitos del CA/Browser Forum.',
+    verificationCommand: 'openssl s_client -connect target.com:443 -servername target.com 2>/dev/null | openssl x509 -noout -dates',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Automatice la emisión de certificados de 90 días con Certbot:',
+        code: 'sudo certbot certonly --webroot -w /var/www/html -d target.com',
+      },
+    ],
+  },
+  'HDR-COOKIE-PREFIX-INVALID': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-614: Sensitive Cookie in HTTPS Session Without Secure Attribute',
+    summary:
+      'Asegure que las cookies con prefijo __Host- incluyan "Secure; Path=/" sin atributo "Domain", y que las cookies __Secure- incluyan siempre "Secure" sobre HTTPS.',
+    verificationCommand: 'curl -sI https://target.com | grep -i "set-cookie"',
+    snippets: [
+      {
+        platform: 'Node.js',
+        description: 'Emisión correcta de cookie __Host- en Express:',
+        code: 'res.cookie("__Host-session", sessionToken, {\n  secure: true,\n  httpOnly: true,\n  path: "/",\n  sameSite: "lax",\n});',
+      },
+    ],
+  },
+  'HDR-CACHE-CONTROL-MISSING-SENSITIVE': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-525: Use of Web Browser Cache Containing Sensitive Information',
+    summary:
+      'Añada la cabecera Cache-Control: no-store, private en todas las respuestas HTTP que emitan cookies de sesión o contengan información de usuarios autenticados.',
+    verificationCommand: 'curl -sI https://target.com | grep -iE "set-cookie|cache-control"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Evite el almacenamiento en caché cuando se emitan cookies de sesión:',
+        code: 'add_header Cache-Control "no-store, no-cache, must-revalidate, private" always;',
+      },
+      {
+        platform: 'Node.js',
+        description: 'Configure Cache-Control en rutas de autenticación en Express:',
+        code: 'res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");',
+      },
+    ],
+  },
 
   // --------------------------------------------------- Correo Electrónico
   'MAIL-DMARC-MISSING': {

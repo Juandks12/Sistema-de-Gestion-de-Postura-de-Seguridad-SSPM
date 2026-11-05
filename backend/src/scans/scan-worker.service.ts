@@ -243,6 +243,13 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
   /** Marca como fallidos los escaneos RUNNING abandonados (p. ej. caída del proceso). */
   private async failStaleScans(): Promise<void> {
     const limit = new Date(Date.now() - (this.timeoutSeconds + STALE_MARGIN_SECONDS) * 1000);
+    const staleScans =
+      typeof this.prisma.scan.findMany === 'function'
+        ? await this.prisma.scan.findMany({
+            where: { status: ScanStatus.RUNNING, startedAt: { lt: limit } },
+            select: { id: true, batchId: true },
+          })
+        : [];
     const { count } = await this.prisma.scan.updateMany({
       where: { status: ScanStatus.RUNNING, startedAt: { lt: limit } },
       data: {
@@ -253,6 +260,9 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     });
     if (count > 0) {
       this.logger.warn(`${count} escaneo(s) huérfano(s) marcados como FAILED`);
+      for (const stale of staleScans) {
+        await this.notifyScanFinished(stale.id, stale.batchId);
+      }
     }
   }
 
