@@ -324,6 +324,22 @@ describe('DiagnosticOrchestratorService', () => {
       expect(diff.surface.closedPorts).toEqual([80]);
       expect(diff.surface.wafChanged).toBe(true);
       expect(diff.assessment).toContain('mejoró +18 puntos');
+
+      // Verificar también el contrato normalizado consumido por el frontend (PostureDiffModal)
+      expect(diff.scoreComparison).toEqual({
+        fromScore: 70,
+        toScore: 88,
+        delta: 18,
+        fromGrade: 'C',
+        toGrade: 'B',
+      });
+      expect(diff.remediatedFindings).toHaveLength(1);
+      expect(diff.newRegressions).toHaveLength(1);
+      expect(diff.persistentFindings).toHaveLength(1);
+      expect(diff.surfaceChanges.closedPortsCount).toBe(1);
+      expect(diff.surfaceChanges.newSubdomainsCount).toBe(1);
+      expect(diff.surfaceChanges.wafChanged).toBe(true);
+      expect(diff.executiveSummary).toBe(diff.assessment);
     });
   });
 

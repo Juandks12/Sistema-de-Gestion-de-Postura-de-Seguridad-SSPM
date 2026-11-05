@@ -1089,17 +1089,17 @@ export interface CloudPostureSummary {
 }
 
 export type DiagnosticProfile = 'COMMERCE_360' | 'PERIMETER_FAST' | 'FULL_AUDIT';
-export type DiagnosticBatchStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type DiagnosticBatchStatus = 'PENDING' | 'IN_PROGRESS' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 export interface DiagnosticStageSummary {
   stage: number;
   name: string;
   description: string;
-  scanTypes: ScanType[];
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-  scansCount: number;
-  completedScans: number;
-  failedScans: number;
+  scanTypes?: ScanType[];
+  status: 'PENDING' | 'IN_PROGRESS' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  scansCount?: number;
+  completedScans?: number;
+  failedScans?: number;
 }
 
 export interface DiagnosticBatchSummary {
@@ -1111,6 +1111,7 @@ export interface DiagnosticBatchSummary {
   currentStage: number;
   totalStages: number;
   progressPercentage: number;
+  stages?: DiagnosticStageSummary[];
   summary: {
     totalScansEnqueued?: number;
     initialScore?: number | null;
@@ -1119,10 +1120,24 @@ export interface DiagnosticBatchSummary {
     remediatedFindingsCount?: number;
     regressionsCount?: number;
     stageProgress?: DiagnosticStageSummary[];
+    score?: { score: number; grade: string };
+    findingsCount?: { total: number; critical: number; high: number; medium: number; low: number };
+    surface?: {
+      openPorts: number[];
+      subdomainsCount: number;
+      technologies: string[];
+      waf: string;
+      externalScriptsCount: number;
+      tlsProtocols?: string[];
+      openApiEndpointsCount?: number;
+      unauthenticatedApiOpsCount?: number;
+      debugStackTraceExposed?: boolean;
+    };
   } | null;
   error?: string | null;
   createdAt: string;
   startedAt?: string | null;
+  finishedAt?: string | null;
   completedAt?: string | null;
   cancelledAt?: string | null;
   scans?: Array<{
@@ -1173,6 +1188,14 @@ export interface PostureDiffSummary {
     newSubdomainsCount: number;
     newOpenPortsCount: number;
     closedPortsCount: number;
+    wafChanged?: boolean;
+    wafBefore?: string | null;
+    wafAfter?: string;
+    tlsProtocols?: string[];
+    openApiEndpointsCount?: number;
+    unauthenticatedApiOpsCount?: number;
+    unauthenticatedApiOpsDelta?: number;
+    debugStackTraceExposed?: boolean;
   };
   executiveSummary: string;
 }

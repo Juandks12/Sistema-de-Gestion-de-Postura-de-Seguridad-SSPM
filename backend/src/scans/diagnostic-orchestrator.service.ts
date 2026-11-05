@@ -56,11 +56,20 @@ export interface PostureDiffResult {
   toBatchId: string;
   fromFinishedAt: Date | null;
   toFinishedAt: Date;
+  baselineDate: Date | null;
+  comparisonDate: Date;
   score: {
     previous: number | null;
     current: number;
     delta: number;
     gradeChange: 'IMPROVED' | 'DEGRADED' | 'UNCHANGED';
+  };
+  scoreComparison: {
+    fromScore: number | null;
+    toScore: number;
+    delta: number | null;
+    fromGrade: string | null;
+    toGrade: string;
   };
   findings: {
     newCount: number;
@@ -70,6 +79,9 @@ export interface PostureDiffResult {
     remediatedFindings: PostureFindingSummary[];
     persistentFindings: PostureFindingSummary[];
   };
+  remediatedFindings: PostureFindingSummary[];
+  newRegressions: PostureFindingSummary[];
+  persistentFindings: PostureFindingSummary[];
   surface: {
     newPorts: number[];
     closedPorts: number[];
@@ -80,7 +92,24 @@ export interface PostureDiffResult {
     unauthenticatedApiOpsDelta?: number;
     debugStackTraceExposed?: boolean;
   };
+  surfaceChanges: {
+    newSubdomainsCount: number;
+    subdomainsDelta: number;
+    newOpenPortsCount: number;
+    closedPortsCount: number;
+    newPorts: number[];
+    closedPorts: number[];
+    wafChanged: boolean;
+    wafBefore: string | null;
+    wafAfter: string;
+    tlsProtocols: string[];
+    openApiEndpointsCount: number;
+    unauthenticatedApiOpsCount: number;
+    unauthenticatedApiOpsDelta: number;
+    debugStackTraceExposed: boolean;
+  };
   assessment: string;
+  executiveSummary: string;
 }
 
 @Injectable()
@@ -448,10 +477,13 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
     const completedScansCount = batch.scans.filter((s) => s.status === ScanStatus.COMPLETED).length;
     const allScansFailed = batch.scans.length > 0 && completedScansCount === 0;
     const finalStatus = allScansFailed ? DiagnosticBatchStatus.FAILED : DiagnosticBatchStatus.COMPLETED;
+    const finalScoreNum = currentScore?.score ? Number(currentScore.score) : 100;
 
     const summaryPayload = {
+      totalScansEnqueued: batch.scans.length,
+      finalScore: finalScoreNum,
       score: {
-        score: currentScore?.score ? Number(currentScore.score) : 100,
+        score: finalScoreNum,
         grade: currentScore?.grade ?? 'A',
       },
       findingsCount: counts,
@@ -529,7 +561,11 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
         stage: stg.stage,
         name: stg.name,
         description: stg.description,
+        scanTypes: stg.types,
         status: stageStatus,
+        scansCount: scansInStage.length || stg.types.length,
+        completedScans: scansInStage.filter((s) => s.status === ScanStatus.COMPLETED).length,
+        failedScans: scansInStage.filter((s) => s.status === ScanStatus.FAILED).length,
         scans: scansInStage,
       };
     });
@@ -682,17 +718,29 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
       assessment = `La postura se mantiene estable en ${currentScore}/100 (Grado ${toScoreObj.grade}) con ${persistentFindings.length} hallazgo(s) persistente(s).`;
     }
 
+    const baselineDate = fromBatch?.finishedAt ?? null;
+    const comparisonDate = toBatch.finishedAt ?? toBatch.createdAt;
+
     return {
       assetId,
       fromBatchId: fromBatch?.id ?? null,
       toBatchId: toBatch.id,
-      fromFinishedAt: fromBatch?.finishedAt ?? null,
-      toFinishedAt: toBatch.finishedAt ?? toBatch.createdAt,
+      fromFinishedAt: baselineDate,
+      toFinishedAt: comparisonDate,
+      baselineDate,
+      comparisonDate,
       score: {
         previous: previousScore,
         current: currentScore,
         delta,
         gradeChange,
+      },
+      scoreComparison: {
+        fromScore: previousScore,
+        toScore: currentScore,
+        delta: previousScore !== null ? delta : null,
+        fromGrade: fromScoreObj?.grade ?? null,
+        toGrade: toScoreObj.grade,
       },
       findings: {
         newCount: newFindings.length,
@@ -702,6 +750,9 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
         remediatedFindings,
         persistentFindings,
       },
+      remediatedFindings,
+      newRegressions: newFindings,
+      persistentFindings,
       surface: {
         newPorts,
         closedPorts,
@@ -712,7 +763,24 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
         unauthenticatedApiOpsDelta,
         debugStackTraceExposed,
       },
+      surfaceChanges: {
+        newSubdomainsCount: Math.max(0, subdomainsDelta),
+        subdomainsDelta,
+        newOpenPortsCount: newPorts.length,
+        closedPortsCount: closedPorts.length,
+        newPorts,
+        closedPorts,
+        wafChanged,
+        wafBefore,
+        wafAfter,
+        tlsProtocols: toSurface.tlsProtocols ?? [],
+        openApiEndpointsCount: toSurface.openApiEndpointsCount ?? 0,
+        unauthenticatedApiOpsCount: toSurface.unauthenticatedApiOpsCount ?? 0,
+        unauthenticatedApiOpsDelta,
+        debugStackTraceExposed,
+      },
       assessment,
+      executiveSummary: assessment,
     };
   }
 

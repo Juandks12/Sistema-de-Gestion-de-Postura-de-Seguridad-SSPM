@@ -30,11 +30,12 @@ export function Diagnostic360Stepper({
   onOpenDiff,
   isCancelling,
 }: Diagnostic360StepperProps) {
-  const isRunning = batch.status === 'RUNNING' || batch.status === 'PENDING';
+  const isRunning =
+    batch.status === 'IN_PROGRESS' || batch.status === 'RUNNING' || batch.status === 'PENDING';
   const isCompleted = batch.status === 'COMPLETED';
-  const stageProgress = (batch.summary?.stageProgress ?? []) as DiagnosticStageSummary[];
+  const stageProgress = (batch.stages ?? batch.summary?.stageProgress ?? []) as DiagnosticStageSummary[];
 
-  // Fallback de etapas si no vinieron en summary
+  // Fallback de etapas si no vinieron en stages o summary
   const stages: Array<{ stage: number; name: string; description: string; status: string; count: number }> =
     stageProgress.length > 0
       ? stageProgress.map((s) => ({
@@ -42,7 +43,7 @@ export function Diagnostic360Stepper({
           name: s.name,
           description: s.description,
           status: s.status,
-          count: s.scansCount,
+          count: s.scansCount ?? 1,
         }))
       : [
           {
@@ -155,7 +156,7 @@ export function Diagnostic360Stepper({
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {stages.map((st) => {
             const isStageDone = st.status === 'COMPLETED';
-            const isStageCurrent = st.status === 'RUNNING';
+            const isStageCurrent = st.status === 'RUNNING' || st.status === 'IN_PROGRESS';
             const isStageFailed = st.status === 'FAILED';
 
             return (
@@ -209,17 +210,38 @@ export function Diagnostic360Stepper({
         {/* Resumen posterior a la finalización */}
         {isCompleted && batch.summary ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs">
-            <div className="flex items-center gap-2 text-ink">
+            <div className="flex flex-wrap items-center gap-2 text-ink">
               <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />
               <span>
-                Auditoría encadenada completada ({batch.summary.totalScansEnqueued ?? 6} escaneos analizados en profundidad).
+                Auditoría encadenada completada ({batch.summary.totalScansEnqueued ?? batch.scans?.length ?? 6} escaneos analizados en profundidad).
               </span>
+              {batch.summary.surface?.waf ? (
+                <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                  WAF: {batch.summary.surface.waf}
+                </span>
+              ) : null}
+              {batch.summary.surface?.tlsProtocols && batch.summary.surface.tlsProtocols.length > 0 ? (
+                <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                  TLS: {batch.summary.surface.tlsProtocols.join(', ')}
+                </span>
+              ) : null}
+              {typeof batch.summary.surface?.openApiEndpointsCount === 'number' &&
+              batch.summary.surface.openApiEndpointsCount > 0 ? (
+                <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600">
+                  OpenAPI: {batch.summary.surface.openApiEndpointsCount} spec(s)
+                </span>
+              ) : null}
+              {batch.summary.surface?.debugStackTraceExposed ? (
+                <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-600">
+                  Stack Trace Expuesto
+                </span>
+              ) : null}
             </div>
             {batch.summary.deltaScore !== undefined && batch.summary.deltaScore !== null ? (
               <div className="flex items-center gap-3">
                 <span className="text-muted">
                   Score: <strong className="text-ink">{batch.summary.initialScore ?? 'N/A'}</strong> &rarr;{' '}
-                  <strong className="text-ink">{batch.summary.finalScore ?? 'N/A'}</strong>
+                  <strong className="text-ink">{batch.summary.finalScore ?? batch.summary.score?.score ?? 'N/A'}</strong>
                 </span>
                 <span
                   className={`font-semibold ${
@@ -227,6 +249,12 @@ export function Diagnostic360Stepper({
                   }`}
                 >
                   ({batch.summary.deltaScore >= 0 ? '+' : ''}{batch.summary.deltaScore} pts)
+                </span>
+              </div>
+            ) : batch.summary.score ? (
+              <div className="flex items-center gap-2">
+                <span className="text-muted">
+                  Score consolidado: <strong className="text-ink">{batch.summary.score.score}/100 ({batch.summary.score.grade})</strong>
                 </span>
               </div>
             ) : null}
