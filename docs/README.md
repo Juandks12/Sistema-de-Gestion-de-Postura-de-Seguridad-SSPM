@@ -17,8 +17,8 @@ docs/
 ├── README.md                                # Portal central de documentación (este archivo)
 │
 ├── requirements/                            # Especificación Formal de Requerimientos
-│   ├── functional-requirements.md           # RF-01 a RF-18 detallados con criterios de aceptación
-│   └── non-functional-requirements.md       # RNF-01 a RNF-10 (seguridad, aislamiento, SLAs)
+│   ├── functional-requirements.md           # RF-01 a RF-18 (+ RF-19 a RF-23 planificados)
+│   └── non-functional-requirements.md       # RNF-01 a RNF-10 (+ RNF-11 y RNF-12 planificados)
 │
 ├── architecture/                            # Arquitectura del Sistema y Diseño Técnico
 │   ├── overview.md                          # Visión C4, límites de seguridad y multi-tenancy
@@ -31,20 +31,26 @@ docs/
 │   ├── attack-paths-and-quick-wins.md       # Motor de 6 Rutas de Ataque y Matriz Quick Wins 24h
 │   ├── cspm-multicloud.md                   # Conectores sin agente AWS SigV4 y Azure REST API
 │   ├── risk-scoring-and-slas.md             # Motor determinista de Security Score y SLAs
-│   └── reports-and-alerts.md                # Generador PDFKit, canales de alerta y webhooks
+│   ├── reports-and-alerts.md                # Generador PDFKit, canales de alerta y webhooks
+│   └── malware-analysis.md                  # (Planificado) Análisis de malware en archivos, correos y URLs
+│
+├── backlog/                                 # Backlog detallado de integraciones planificadas
+│   ├── malware-analysis-backlog.md          # Épica, historias, tareas, criterios y plan de sprints
+│   └── malware-analysis-azure-boards.csv    # Importación directa a Azure Boards
 │
 ├── roadmap/                                 # Estrategia de Evolución y Mejora Continua
 │   ├── future-integrations.md               # GCP CSPM, Jira/ServiceNow, SIEM, WAF 1-clic, PCI-DSS
 │   └── technical-debt.md                    # BullMQ + Redis, workers efímeros, observabilidad
 │
-├── adr/                                     # Architecture Decision Records (ADR-0001 a ADR-0007)
+├── adr/                                     # Architecture Decision Records (ADR-0001 a ADR-0008)
 │   ├── 0001-monorepo-vs-multirepo.md
 │   ├── 0002-nmap-subprocess-postgres-queue.md
 │   ├── 0003-scoring-propio-no-certificado.md
 │   ├── 0004-alertas-entrega-asincrona-en-proceso.md
 │   ├── 0005-verificacion-propiedad-y-proteccion-login.md
 │   ├── 0006-cve-correo-y-subdominios.md
-│   └── 0007-auditoria-recuperacion-invitaciones-mfa.md
+│   ├── 0007-auditoria-recuperacion-invitaciones-mfa.md
+│   └── 0008-modulo-analisis-malware.md
 │
 ├── architecture.md                          # Arquitectura base histórica del sistema
 ├── deployment.md                            # Guía de despliegue en entornos Azure y Docker
@@ -89,6 +95,9 @@ docs/
 - [**Reportes Ejecutivos en PDF y Alertas Tempranas**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/reports-and-alerts.md):
   Motor PDFKit sin navegador headless, estructura del Reporte Ejecutivo C-Level vs. Reporte Técnico, notificaciones por correo y webhooks con reintentos exponenciales.
 
+- [**Análisis de Malware en Archivos, Correos y URLs** *(planificado)*](modules/malware-analysis.md):
+  Motores propios (ClamAV, YARA, oletools, analizadores estáticos) y externos por hash o URL (Web Risk, URLhaus, MalwareBazaar, VirusTotal), worker aislado, cuarentena cifrada, veredicto determinista explicable, vigilancia de malware y listas de bloqueo en activos propios. Backlog en [`backlog/malware-analysis-backlog.md`](backlog/malware-analysis-backlog.md).
+
 ---
 
 ## 4. Hoja de Ruta y Evolución (`roadmap/`)
@@ -111,6 +120,7 @@ docs/
 | [ADR-0005](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0005-verificacion-propiedad-y-proteccion-login.md) | Verificación criptográfica de propiedad y protección de login | Aceptado |
 | [ADR-0006](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0006-cve-correo-y-subdominios.md) | Correlación CVE/KEV, seguridad de correo y Certificate Transparency | Aceptado |
 | [ADR-0007](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0007-auditoria-recuperacion-invitaciones-mfa.md) | Auditoría inmutable, recuperación de contraseñas, invitaciones y MFA TOTP | Aceptado |
+| [ADR-0008](adr/0008-modulo-analisis-malware.md) | Módulo de análisis de malware en archivos, correos y URLs | Propuesto |
 
 ---
 
@@ -122,3 +132,8 @@ docs/
 - **SRI (Subresource Integrity)**: Mecanismo W3C que permite al navegador verificar que los recursos cargados desde CDNs externas no hayan sido manipulados maliciosamente mediante comparación de hashes criptográficos (`sha256`, `sha384`).
 - **Attack Path (Ruta de Ataque)**: Cadena de vulnerabilidades o debilidades correlacionadas que un atacante puede explotar en secuencia para alcanzar un objetivo crítico de negocio (ej. exfiltración de base de datos o toma de control de pagos).
 - **Quick Win**: Vulnerabilidad de alta efectividad defensiva cuya remediación toma menos de 30 minutos y no requiere cambios estructurales en el código base o arquitectura.
+- **IOC (Indicador de Compromiso)**: Dato observable que evidencia una amenaza (hash de un archivo malicioso, URL de phishing, dominio o IP de un atacante) y que puede bloquearse en otras herramientas.
+- **YARA**: Lenguaje y herramienta para describir familias de malware mediante patrones de texto o binarios; base de las reglas de detección propias del módulo de análisis de malware.
+- **BEC (Business Email Compromise)**: Fraude por correo en el que el atacante suplanta a un directivo, proveedor o banco para obtener pagos o datos.
+- **EICAR**: Archivo de prueba estándar e inofensivo que todos los antivirus detectan; se usa para verificar que el análisis funciona sin manipular malware real.
+

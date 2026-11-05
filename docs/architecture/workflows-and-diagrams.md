@@ -4,7 +4,7 @@
 > Versión: **2.0.0**  
 > Alcance: **Flujos Críticos del Sistema en Mermaid**
 
-Este documento recopila la especificación técnica y los diagramas de secuencia/flujo de los 5 procesos centrales de la plataforma.
+Este documento recopila la especificación técnica y los diagramas de secuencia/flujo de los 5 procesos centrales de la plataforma y el flujo planificado del módulo de análisis de malware.
 
 ---
 
@@ -15,6 +15,7 @@ Este documento recopila la especificación técnica y los diagramas de secuencia
 3. [Flujo 3: Escaneo de Postura Cloud Multicloud (CSPM AWS & Azure)](#3-flujo-de-escaneo-de-postura-cloud-multicloud-cspm-aws--azure)
 4. [Flujo 4: Ciclo de Vida del Hallazgo y Gestión de SLAs](#4-flujo-del-ciclo-de-vida-del-hallazgo-y-gestión-de-slas)
 5. [Flujo 5: Algoritmo Determinista del Security Score](#5-flujo-del-algoritmo-determinista-del-security-score)
+6. [Flujo 6: Análisis de Malware en Archivos, Correos y URLs *(planificado)*](#6-flujo-de-análisis-de-malware-en-archivos-correos-y-urls-planificado)
 
 ---
 
@@ -234,3 +235,37 @@ flowchart LR
 
     Calc --> A & B & C_Grade & D & F
 ```
+
+---
+
+## 6. Flujo de Análisis de Malware en Archivos, Correos y URLs *(planificado)*
+
+Resumen del pipeline del módulo de análisis de malware. El detalle (secuencias por tipo de envío, máquina de estados y vigilancia de activos) está en [`docs/modules/malware-analysis.md`](../modules/malware-analysis.md#6-flujos-de-trabajo).
+
+```mermaid
+flowchart TD
+    IN["Envío: archivo · correo · URL<br/>(web, API pública o buzón de reporte)"] --> API["API: valida tamaño, tipo y cuota<br/>SHA-256 al vuelo · no abre el contenido"]
+    API --> Q[("Cuarentena cifrada")]
+    API --> DB[("malware_submissions<br/>PENDING")]
+    DB --> W["malware-worker aislado<br/>(FOR UPDATE SKIP LOCKED)"]
+    W --> S1["1. IDENTIFY<br/>tipo real y hashes"]
+    S1 --> S2["2. REPUTATION<br/>caché global → hash/URL en fuentes externas"]
+    S2 -->|"malware conocido"| S6
+    S2 --> S3["3. STATIC<br/>ClamAV · YARA · macros · PDF · scripts · cabeceras de correo"]
+    S3 --> S4["4. DECOMPOSE<br/>adjuntos, archivos de un zip, URLs, descargas → hijos"]
+    S4 -->|"cada hijo recorre el mismo pipeline"| W
+    S4 --> S5{"¿Sospechoso y con<br/>consentimiento?"}
+    S5 -->|Sí| S5b["5. DYNAMIC (opcional)<br/>sandbox externo / urlscan"]
+    S5 -->|No| S6
+    S5b --> S6["6. AGGREGATE<br/>veredicto determinista = máx(señales propias, hijos)"]
+    S6 --> OUT1["Veredicto + señales explicadas + IOC"]
+    S6 --> OUT2["Alerta MALWARE_DETECTED<br/>(correo / webhook)"]
+    S6 --> OUT3["Auditoría · API pública / SIEM"]
+```
+
+### Garantías del flujo:
+- **Aislamiento:** solo el `malware-worker` abre muestras; nunca se ejecutan en la infraestructura propia.
+- **Privacidad:** a terceros solo se envían hashes y URLs, salvo consentimiento registrado.
+- **Tolerancia a fallos:** un motor caído deja el veredicto marcado como incompleto (nunca `CLEAN` si fallan los motores locales).
+- **Activos propios:** los escáneres `MALWARE_REPUTATION` y `WEB_MALWARE` reutilizan los motores de reputación y de HTML/JS y producen hallazgos `MALWARE` que alimentan el Security Score (Flujo 5) y las rutas de ataque (Flujo 2).
+

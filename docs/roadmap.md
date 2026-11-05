@@ -46,6 +46,10 @@ Ver README para el detalle funcional completo.
 4. Selectores DKIM declarados por el cliente y MTA-STS/TLS-RPT en la seguridad del correo.
 5. SSO (SAML/OIDC) como alternativa al login con contraseña para empresas medianas
    (relacionado con la fase 4).
+6. **Módulo de análisis de malware** en archivos, correos y URLs, y vigilancia de malware
+   y listas de bloqueo en los activos propios: diseño en
+   [`docs/modules/malware-analysis.md`](modules/malware-analysis.md) y backlog en
+   [`docs/backlog/malware-analysis-backlog.md`](backlog/malware-analysis-backlog.md).
 
 ## Fase 2 — DevOps (para poder vender con confianza)
 

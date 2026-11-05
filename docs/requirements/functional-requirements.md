@@ -2,9 +2,9 @@
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
 > Versión: **2.0.0**  
-> Alcance: **RF-01 a RF-18**
+> Alcance: **RF-01 a RF-18** (implementados) · **RF-19 a RF-23** (planificados: módulo de análisis de malware)
 
-Este documento detalla los 18 requerimientos funcionales implementados en la plataforma, especificando el módulo responsable, los criterios de aceptación formales, los endpoints REST involucrados y las validaciones de seguridad aplicadas.
+Este documento detalla los 18 requerimientos funcionales implementados en la plataforma y los 5 planificados para el módulo de análisis de malware, especificando el módulo responsable, los criterios de aceptación formales, los endpoints REST involucrados y las validaciones de seguridad aplicadas.
 
 ---
 
@@ -30,6 +30,11 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 | [RF-16](#rf-16-generador-de-reportes-ejecutivos-y-técnicos-en-pdf) | Generador de Reportes PDF | `ReportsModule` | Alta |
 | [RF-17](#rf-17-sistema-de-alertas-tempranas-y-webhooks) | Sistema de Alertas Tempranas y Webhooks | `AlertsModule` | Alta |
 | [RF-18](#rf-18-monitoreo-continuo-programado) | Monitoreo Continuo Programado | `MonitoringModule` | Media |
+| [RF-19](#rf-19-análisis-de-malware-en-archivos) | Análisis de Malware en Archivos *(planificado)* | `MalwareModule` | Crítica |
+| [RF-20](#rf-20-análisis-de-correos-sospechosos) | Análisis de Correos Sospechosos *(planificado)* | `MalwareModule` | Crítica |
+| [RF-21](#rf-21-análisis-de-urls-sospechosas) | Análisis de URLs Sospechosas *(planificado)* | `MalwareModule` | Alta |
+| [RF-22](#rf-22-vigilancia-de-reputación-y-malware-en-activos-propios) | Vigilancia de Reputación y Malware en Activos *(planificado)* | `ScansModule` (MalwareReputation / WebMalware) | Crítica |
+| [RF-23](#rf-23-indicadores-de-compromiso-e-integración-soc) | Indicadores de Compromiso e Integración SOC *(planificado)* | `MalwareModule` + `PublicApiModule` | Media |
 
 ---
 
@@ -292,3 +297,70 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
   3. Encolado progresivo con dispersión temporal (*jitter*) para evitar picos de carga en la base de datos o en la red.
   4. Disparo automático de alertas si el monitoreo detecta regresiones o nuevas vulnerabilidades.
 - **Endpoints:** `PATCH /api/v1/organizations/settings/monitoring`.
+
+---
+
+## Requerimientos planificados: Módulo de Análisis de Malware
+
+Diseño completo en [`docs/modules/malware-analysis.md`](../modules/malware-analysis.md), decisiones en [ADR-0008](../adr/0008-modulo-analisis-malware.md) y desglose en el [backlog del módulo](../backlog/malware-analysis-backlog.md).
+
+### RF-19: Análisis de Malware en Archivos
+- **Módulo Responsable:** `MalwareModule` (`backend/src/malware/`), procesado por el contenedor aislado `malware-worker`.
+- **Descripción:** Permite a ADMIN y ANALYST subir un archivo sospechoso y obtener un veredicto explicable (`CLEAN`, `UNKNOWN`, `SUSPICIOUS`, `MALICIOUS`).
+- **Criterios de Aceptación:**
+  1. El archivo se recibe en streaming (máx. 32 MB configurable), se calculan SHA-256, SHA-1 y MD5 al vuelo y se guarda cifrado en cuarentena; la API nunca lo abre.
+  2. Se identifica el tipo real por bytes mágicos y se señalan extensiones engañosas (doble extensión, RTLO).
+  3. Se analiza con ClamAV, reglas YARA, analizadores de macros de Office, PDF, scripts y ejecutables; los comprimidos se analizan de forma recursiva con límites contra bombas de descompresión.
+  4. La reputación externa se consulta solo por hash, salvo consentimiento explícito para compartir el contenido.
+  5. El veredicto es determinista, lista las señales que lo justifican en lenguaje claro y se marca como incompleto si un motor falla.
+  6. Cuota diaria por organización; VIEWER no puede subir archivos.
+- **Endpoints:** `POST /api/v1/malware/submissions/files`, `GET /api/v1/malware/submissions`, `GET /api/v1/malware/submissions/:id`, `POST /api/v1/malware/submissions/:id/cancel`, `POST /api/v1/malware/submissions/:id/reanalyze`.
+
+---
+
+### RF-20: Análisis de Correos Sospechosos
+- **Módulo Responsable:** `MalwareModule` (motor `EMAIL_HEADERS` y descomponedor de correo).
+- **Descripción:** Detecta phishing, suplantación (BEC) y malware en correos subidos (`.eml`/`.msg`) o reenviados a un buzón de reporte por organización.
+- **Criterios de Aceptación:**
+  1. Evalúa SPF, DKIM y DMARC (y su alineación) a partir del `Authentication-Results` añadido por un servidor de confianza configurado.
+  2. Detecta `Reply-To`/`Return-Path` divergentes, nombres visibles engañosos y dominios parecidos a los dominios verificados de la organización.
+  3. Analiza cada adjunto como un archivo (RF-19) y cada URL como una URL (RF-21); el veredicto del correo es el máximo de sus señales y sus hijos.
+  4. El HTML del correo nunca se renderiza en la interfaz.
+  5. El buzón de reporte verifica la firma del proveedor de correo entrante y responde al remitente con el veredicto (fase 2).
+- **Endpoints:** `POST /api/v1/malware/submissions/emails`, `POST /api/v1/malware/inbound/email` (webhook firmado).
+
+---
+
+### RF-21: Análisis de URLs Sospechosas
+- **Módulo Responsable:** `MalwareModule` (motores de reputación, descarga segura y `SCRIPT_HTML`).
+- **Descripción:** Indica si un enlace lleva a malware o phishing sin que el usuario lo abra.
+- **Criterios de Aceptación:**
+  1. Consulta listas de reputación (Google Web Risk, URLhaus) antes de visitar la URL.
+  2. La descarga reutiliza las protecciones anti-SSRF del escáner: IP fijada, rangos privados bloqueados, cada redirección revalidada, máx. 5 redirecciones y 5 MB.
+  3. El contenido se inspecciona de forma estática (sin ejecutar JavaScript): formularios de credenciales, marcas suplantadas, iframes ocultos, ofuscación, mineros y skimmers.
+  4. Una descarga binaria se analiza como archivo (RF-19).
+- **Endpoints:** `POST /api/v1/malware/submissions/urls`.
+
+---
+
+### RF-22: Vigilancia de Reputación y Malware en Activos Propios
+- **Módulo Responsable:** `ScansModule` (nuevos `ScanType` `MALWARE_REPUTATION` y `WEB_MALWARE`).
+- **Descripción:** Detecta si el dominio, la IP o el sitio web de un activo distribuyen malware o están en listas de bloqueo.
+- **Criterios de Aceptación:**
+  1. `MALWARE_REPUTATION` (pasivo) consulta Web Risk, URLhaus y listas DNS para el dominio/IP del activo.
+  2. `WEB_MALWARE` (activo, exige activo verificado) recorre el sitio con el crawler existente y analiza HTML y scripts con ClamAV, YARA y `SCRIPT_HTML` en el worker de malware.
+  3. Genera hallazgos de la categoría `MALWARE` (reglas `MAL-*`) que cuentan en el Security Score, alimentan la ruta de ataque `AP-MALWARE-DISTRIBUTION` y el mapeo de cumplimiento.
+  4. Ambos escáneres forman parte del Diagnóstico 360° y del monitoreo continuo, y disparan la alerta `ASSET_REPUTATION_LISTED`.
+- **Endpoints:** `POST /api/v1/scans` (tipos nuevos), `POST /api/v1/assets/:id/diagnostic-360`.
+
+---
+
+### RF-23: Indicadores de Compromiso e Integración SOC
+- **Módulo Responsable:** `MalwareModule` + `PublicApiModule`.
+- **Descripción:** Extrae y expone los indicadores de compromiso (IOC) de cada análisis para bloquearlos en otras herramientas.
+- **Criterios de Aceptación:**
+  1. Se extraen hashes, URLs, dominios, IPs y direcciones de correo, con el contexto en que aparecieron.
+  2. Exportación en CSV y NDJSON (STIX 2.1 en fase 3), siempre limitada a la organización.
+  3. API pública con los scopes `malware:read` (veredictos e IOC) y `malware:submit` (URLs y hashes).
+- **Endpoints:** `GET /api/v1/malware/indicators`, `GET /api/public/v1/malware/verdicts`, `GET /api/public/v1/malware/indicators`, `POST /api/public/v1/malware/submissions/urls`, `POST /api/public/v1/malware/submissions/hashes`.
+

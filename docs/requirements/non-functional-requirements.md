@@ -2,7 +2,7 @@
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
 > Versión: **2.0.0**  
-> Alcance: **RNF-01 a RNF-10**
+> Alcance: **RNF-01 a RNF-10** (vigentes) · **RNF-11 y RNF-12** (planificados: módulo de análisis de malware)
 
 Este documento detalla los requerimientos no funcionales y lineamientos de calidad técnica que rigen el diseño, implementación y operación en producción de la plataforma SSPM.
 
@@ -22,6 +22,8 @@ Este documento detalla los requerimientos no funcionales y lineamientos de calid
 | **RNF-08** | Privacidad y Sanitización | Privacidad / DLP | Máscara criptográfica `redactToken` en logs y base de datos |
 | **RNF-09** | Estándares Abiertos | Interoperabilidad | RFC 9116, BIMI, RFC 4180 (CSV BOM), PDF-1.4 WinAnsi |
 | **RNF-10** | Retención y Purga de Datos | Mantenibilidad / Costo | Servicio programado de purga de scans antiguos y sesiones |
+| **RNF-11** | Aislamiento y Manejo Seguro de Muestras *(planificado)* | Seguridad / Contención | Contenedor `malware-worker` sin privilegios, cuarentena cifrada y análisis solo estático |
+| **RNF-12** | Privacidad y Consentimiento al Compartir Muestras *(planificado)* | Privacidad / Cumplimiento | Solo hashes a terceros por defecto, consentimiento auditado y retención corta |
 
 ---
 
@@ -124,3 +126,27 @@ Este documento detalla los requerimientos no funcionales y lineamientos de calid
     - Tokens de sesión y refresh tokens revocados o expirados.
     - Archivos temporales generados durante la compilación de reportes PDF.
   - Manejo graceful de apagado de contenedores (`SIGTERM`) esperando a que los escaneos en curso guarden su estado antes de terminar el proceso.
+
+---
+
+### RNF-11: Aislamiento y Manejo Seguro de Muestras
+- **Estado:** Planificado (módulo de análisis de malware, [ADR-0008](../adr/0008-modulo-analisis-malware.md)).
+- **Objetivo:** Que una muestra maliciosa no pueda comprometer la plataforma ni ejecutarse por accidente.
+- **Implementación Técnica:**
+  - La API solo recibe el flujo, calcula hashes y guarda la muestra cifrada (AES-256-GCM por objeto) en un almacenamiento privado; nunca la abre.
+  - El análisis corre en el contenedor `malware-worker`: usuario sin privilegios, sistema de archivos de solo lectura con `tmpfs`, sin *capabilities*, `no-new-privileges`, límites de CPU, memoria y tiempo, y sin secretos de la API.
+  - Nunca se ejecutan muestras en la infraestructura propia; el análisis dinámico solo ocurre en un sandbox externo con consentimiento.
+  - Herramientas (ClamAV, YARA, 7z, oletools) ejecutadas sin shell, con argumentos fijos, actualizadas y escaneadas con Trivy en CI.
+  - Límites contra bombas de descompresión y *path traversal*; las muestras solo se descargan como ZIP cifrado, por un ADMIN y con auditoría.
+
+---
+
+### RNF-12: Privacidad y Consentimiento al Compartir Muestras
+- **Estado:** Planificado (módulo de análisis de malware).
+- **Objetivo:** Proteger la confidencialidad de los archivos y correos de los clientes.
+- **Implementación Técnica:**
+  - Por defecto solo salen de la plataforma hashes y URLs; el contenido completo se comparte con terceros (VirusTotal, sandbox, urlscan) únicamente si la política de la organización lo permite y el envío lo autoriza, y cada caso se registra en la auditoría.
+  - Retención de muestras en cuarentena de 7 días por defecto (1-30 configurable); después solo quedan hashes, veredictos, señales e IOC.
+  - La caché global de reputación guarda únicamente respuestas públicas de terceros, nunca datos de una organización.
+  - Los logs no incluyen contenido de muestras ni cuerpos de correo.
+
