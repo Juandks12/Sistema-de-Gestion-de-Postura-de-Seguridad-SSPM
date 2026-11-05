@@ -79,4 +79,29 @@ describe('analyzeTls', () => {
       'TLS-WEAK-SIGNATURE',
     );
   });
+
+  it('detecta suites de cifrado débiles o sin Perfect Forward Secrecy (PFS)', () => {
+    expect(ids({ ...healthy, protocol: 'TLSv1.2', cipher: 'DES-CBC3-SHA' })).toContain('TLS-WEAK-CIPHER');
+    expect(ids({ ...healthy, protocol: 'TLSv1.2', cipher: 'ECDHE-RSA-RC4-SHA' })).toContain('TLS-WEAK-CIPHER');
+    expect(ids({ ...healthy, protocol: 'TLSv1.2', cipher: 'AES256-GCM-SHA384' })).toContain('TLS-NO-FORWARD-SECRECY');
+    expect(ids({ ...healthy, protocol: 'TLSv1.2', cipher: 'ECDHE-RSA-AES256-GCM-SHA384' })).toEqual([]);
+  });
+
+  it('detecta certificados públicos con periodo de validez superior a 398 días (CA/B Forum)', () => {
+    const longLived = {
+      ...healthy,
+      certificate: {
+        ...healthy.certificate,
+        validFrom: days(-200),
+        validTo: days(250), // 450 días de vigencia total
+        selfSigned: false,
+      },
+    };
+    expect(ids(longLived)).toContain('TLS-EXCESSIVE-LIFESPAN');
+
+    // Si es autofirmado no aplica la restricción de CA/Browser Forum
+    expect(ids({ ...longLived, certificate: { ...longLived.certificate, selfSigned: true } })).not.toContain(
+      'TLS-EXCESSIVE-LIFESPAN',
+    );
+  });
 });
