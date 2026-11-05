@@ -18,13 +18,25 @@ La infraestructura usa los módulos de
 - `infra.yml`: `plan` en cada PR que toque `infra/`, `apply` en `main` con
   aprobación del environment `prod`.
 - `deploy-azure.yml`, en cada push a `main` que toque `backend/` o `frontend/`:
-  1. publica la imagen de la API en GHCR (`:<sha>` y `:latest`);
-  2. la despliega en Container Apps y espera a `/api/v1/health` con `database: up`
-     (las migraciones de Prisma corren al arrancar);
-  3. compila el frontend con `VITE_API_BASE=<api>/api/v1` y lo publica en Static Web Apps.
+  1. construye la imagen de la API, la escanea con Trivy y la publica en GHCR
+     (`:<sha>` y `:latest`);
+  2. la firma con Cosign (keyless) y le atesta el SBOM;
+  3. despliega **solo la imagen firmada** en Container Apps y espera a
+     `/api/v1/health` con `database: up` (las migraciones de Prisma corren al arrancar);
+  4. compila el frontend con `VITE_API_BASE=<api>/api/v1` y lo publica en Static Web Apps.
 
-Sin las variables de Azure del repo, los workflows solo publican la imagen y
-omiten el resto.
+Los pasos usan los workflows estándar de
+[github-workflows](https://github.com/miguelortiz13/github-workflows). Sin las
+variables de Azure del repo, solo se publica y firma la imagen.
+
+Verificar la firma de una imagen:
+
+```bash
+cosign verify ghcr.io/juandks12/sspm-api@sha256:<digest> \
+  --certificate-identity-regexp '^https://github.com/miguelortiz13/github-workflows/\.github/workflows/container-sign\.yml@' \
+  --certificate-github-workflow-repository Juandks12/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ## Configuración inicial (una vez)
 

@@ -453,6 +453,10 @@ export class AttackPathsService {
       (f) =>
         f.ruleId === 'WEB-SOURCEMAPS-EXPOSED' ||
         f.ruleId === 'WEB-JS-SECRET-EXPOSED' ||
+        f.ruleId === 'WEB-JS-SECRET-LEAK' ||
+        f.ruleId === 'API-QUERY-SECRET-PARAM' ||
+        f.ruleId === 'WEB-DEBUG-STACKTRACE-LEAK' ||
+        f.ruleId === 'WEB-INTERNAL-PATH-DISCLOSURE' ||
         f.ruleId === 'PATH-ENV-EXPOSED' ||
         f.ruleId === 'PATH-GIT-EXPOSED' ||
         f.ruleId === 'PATH-SECRETS-EXPOSED' ||
@@ -466,6 +470,10 @@ export class AttackPathsService {
         f.ruleId === 'HDR-CORS-ORIGIN-REFLECTION' ||
         f.ruleId === 'HDR-CORS-WILDCARD' ||
         f.ruleId === 'PATH-SWAGGER-UI-EXPOSED' ||
+        f.ruleId === 'API-SWAGGER-EXPOSED' ||
+        f.ruleId === 'API-DOCS-UNAUTHENTICATED-OPERATIONS' ||
+        f.ruleId === 'API-INTERNAL-HOST-EXPOSED' ||
+        f.ruleId === 'API-GRAPHQL-INTROSPECTION' ||
         f.ruleId === 'PATH-GRAPHQL-INTROSPECTION-EXPOSED',
     );
 

@@ -6,6 +6,11 @@ on:
   push:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
+# Pasos estándar con miguelortiz13/github-workflows; la política de commits y
+# las pruebas e2e con PostgreSQL son propias del proyecto.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -44,21 +49,12 @@ jobs:
 
   backend-lint-test:
     name: Backend · lint + unit tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npx prisma generate
-      - run: npm test -- --ci
+    uses: miguelortiz13/github-workflows/.github/workflows/build-node.yml@v0.4.0
+    with:
+      node-version: "22"
+      working-directory: backend
+      install-command: npm ci && npx prisma generate
+      scripts: lint test
 
   backend-e2e:
     name: Backend · e2e tests
@@ -97,44 +93,46 @@ jobs:
 
   frontend-lint-typecheck:
     name: Frontend · lint + typecheck + build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run build
+    uses: miguelortiz13/github-workflows/.github/workflows/build-node.yml@v0.4.0
+    with:
+      node-version: "22"
+      working-directory: frontend
+      scripts: lint typecheck build
 
-  docker-build:
-    name: Docker · build de imágenes (producción)
-    runs-on: ubuntu-latest
+  # Las imágenes de producción se construyen y escanean (Trivy) sin publicarse:
+  # la de la API se publica y firma en deploy-azure.yml al llegar a main.
+  image-api:
+    name: Docker · imagen backend (build + Trivy)
     needs: [backend-lint-test, frontend-lint-typecheck]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build imagen backend
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          target: production
-          push: false
-          tags: sspm-api:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Build imagen frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: frontend
-          target: production
-          push: false
-          tags: sspm-web:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+    uses: miguelortiz13/github-workflows/.github/workflows/container-build.yml@v0.4.0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image-name: sspm-api
+      context: backend
+      target: production
+      push: false
+
+  image-web:
+    name: Docker · imagen frontend (build + Trivy)
+    needs: [backend-lint-test, frontend-lint-typecheck]
+    uses: miguelortiz13/github-workflows/.github/workflows/container-build.yml@v0.4.0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image-name: sspm-web
+      context: frontend
+      target: production
+      push: false
+
+  secrets-scan:
+    name: Seguridad · escaneo de secretos (Gitleaks)
+    uses: miguelortiz13/github-workflows/.github/workflows/security-baseline.yml@v0.4.0
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      # Requiere Dependency graph activo (lo activa un admin del repo).
+      dependency-review: false
