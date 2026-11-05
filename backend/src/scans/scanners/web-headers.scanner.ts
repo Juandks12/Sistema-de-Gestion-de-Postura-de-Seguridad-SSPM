@@ -13,6 +13,8 @@ import { analyzeJsSecretsAndSourceMaps, JsSecretsAnalysisResult } from '../web/j
 import { analyzeCmsAndEcommercePlatform, CmsEcommerceAnalysisResult } from '../web/cms-ecommerce.analyzer';
 import { analyzeCorsMethodsAndWaf, CorsMethodsWafAnalysisResult } from '../web/cors-methods-waf.analyzer';
 import { analyzeSecurityTxt, SecurityTxtAnalysisResult } from '../web/security-txt.analyzer';
+import { probeAndAnalyzeOpenApi, OpenApiAnalysisResult } from '../web/openapi-security.analyzer';
+import { probeAndAnalyzeDebugLeaks, DebugLeakAnalysisResult } from '../web/debug-leak.analyzer';
 
 /** RF-04: auditoría de cabeceras HTTP de seguridad, fingerprinting tecnológico e inspección profunda de comercio electrónico. */
 @Injectable()
@@ -95,6 +97,8 @@ export class WebHeadersScanner implements Scanner {
     let cmsResult: CmsEcommerceAnalysisResult | null = null;
     let corsWafResult: CorsMethodsWafAnalysisResult | null = null;
     let securityTxtResult: SecurityTxtAnalysisResult | null = null;
+    let openApiResult: OpenApiAnalysisResult | null = null;
+    let debugLeakResult: DebugLeakAnalysisResult | null = null;
 
     const primary = reachable.find((p) => new URL(p.outcome.finalUrl).protocol === 'https:') ?? reachable[0];
     if (primary && primary.outcome.ok) {
@@ -137,6 +141,18 @@ export class WebHeadersScanner implements Scanner {
         // 6. Verificación de madurez de divulgación responsable security.txt (RFC 9116)
         securityTxtResult = await analyzeSecurityTxt(primary.outcome.finalUrl, probeOptions);
         findings.push(...securityTxtResult.findings);
+
+        // 7. Inspección profunda de especificaciones OpenAPI / Swagger
+        openApiResult = await probeAndAnalyzeOpenApi(primary.outcome.finalUrl, probeOptions);
+        if (openApiResult) {
+          findings.push(...openApiResult.findings);
+        }
+
+        // 8. Sondeo activo de fuga de trazas de depuración (Stack Traces) y rutas internas
+        debugLeakResult = await probeAndAnalyzeDebugLeaks(primary.outcome.finalUrl, probeOptions);
+        if (debugLeakResult) {
+          findings.push(...debugLeakResult.findings);
+        }
       } catch {
         // Si ctx.signal fue cancelado o falla la sonda profunda secundaria, se conservan los hallazgos base
       }
@@ -187,6 +203,25 @@ export class WebHeadersScanner implements Scanner {
                 checked: securityTxtResult.checked,
                 status: securityTxtResult.status,
                 directives: securityTxtResult.directives ?? null,
+              }
+            : null,
+          openApi: openApiResult
+            ? {
+                analyzed: openApiResult.analyzed,
+                specType: openApiResult.specType,
+                totalOperations: openApiResult.totalOperations,
+                unauthenticatedOperations: openApiResult.unauthenticatedOperations.length,
+                querySecretsCount: openApiResult.querySecretParams.length,
+                internalHosts: openApiResult.internalHosts,
+              }
+            : null,
+          debugLeak: debugLeakResult
+            ? {
+                analyzed: debugLeakResult.analyzed,
+                stackTraceDetected: debugLeakResult.stackTraceDetected,
+                framework: debugLeakResult.framework ?? null,
+                disclosedPathsCount: debugLeakResult.internalPathsDisclosed.length,
+                debugHeaders: debugLeakResult.debugHeadersFound,
               }
             : null,
         },
