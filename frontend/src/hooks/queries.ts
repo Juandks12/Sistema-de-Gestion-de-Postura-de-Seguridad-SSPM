@@ -285,7 +285,7 @@ export function useLatestDiagnostic(assetId: string) {
     enabled: !!assetId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === 'PENDING' || status === 'RUNNING' ? 2000 : false;
+      return status === 'PENDING' || status === 'RUNNING' || status === 'IN_PROGRESS' ? 2000 : false;
     },
   });
 }
