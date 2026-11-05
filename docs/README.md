@@ -2,7 +2,7 @@
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM – SaaS Lite)**  
 > Versión: **2.0.0 (Sprint 13 / Épica Macro #110)**  
-> Repositorio Principal: [Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM)
+> Repositorio Principal: [Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM](..)
 
 Bienvenido a la documentación técnica estructurada del **Sistema de Gestión de Postura de Seguridad (SSPM)**. Esta documentación ha sido organizada temáticamente para brindar trazabilidad completa a desarrolladores, auditores de seguridad, arquitectos DevSecOps y directores de tecnología (C-Levels).
 
@@ -17,8 +17,8 @@ docs/
 ├── README.md                                # Portal central de documentación (este archivo)
 │
 ├── requirements/                            # Especificación Formal de Requerimientos
-│   ├── functional-requirements.md           # RF-01 a RF-18 detallados con criterios de aceptación
-│   └── non-functional-requirements.md       # RNF-01 a RNF-10 (seguridad, aislamiento, SLAs)
+│   ├── functional-requirements.md           # RF-01 a RF-18 (+ RF-19 a RF-23 planificados)
+│   └── non-functional-requirements.md       # RNF-01 a RNF-10 (+ RNF-11 y RNF-12 planificados)
 │
 ├── architecture/                            # Arquitectura del Sistema y Diseño Técnico
 │   ├── overview.md                          # Visión C4, límites de seguridad y multi-tenancy
@@ -31,20 +31,26 @@ docs/
 │   ├── attack-paths-and-quick-wins.md       # Motor de 6 Rutas de Ataque y Matriz Quick Wins 24h
 │   ├── cspm-multicloud.md                   # Conectores sin agente AWS SigV4 y Azure REST API
 │   ├── risk-scoring-and-slas.md             # Motor determinista de Security Score y SLAs
-│   └── reports-and-alerts.md                # Generador PDFKit, canales de alerta y webhooks
+│   ├── reports-and-alerts.md                # Generador PDFKit, canales de alerta y webhooks
+│   └── malware-analysis.md                  # (Planificado) Análisis de malware en archivos, correos y URLs
+│
+├── backlog/                                 # Backlog detallado de integraciones planificadas
+│   ├── malware-analysis-backlog.md          # Épica, historias, tareas, criterios y plan de sprints
+│   └── malware-analysis-azure-boards.csv    # Importación directa a Azure Boards
 │
 ├── roadmap/                                 # Estrategia de Evolución y Mejora Continua
 │   ├── future-integrations.md               # GCP CSPM, Jira/ServiceNow, SIEM, WAF 1-clic, PCI-DSS
 │   └── technical-debt.md                    # BullMQ + Redis, workers efímeros, observabilidad
 │
-├── adr/                                     # Architecture Decision Records (ADR-0001 a ADR-0007)
+├── adr/                                     # Architecture Decision Records (ADR-0001 a ADR-0008)
 │   ├── 0001-monorepo-vs-multirepo.md
 │   ├── 0002-nmap-subprocess-postgres-queue.md
 │   ├── 0003-scoring-propio-no-certificado.md
 │   ├── 0004-alertas-entrega-asincrona-en-proceso.md
 │   ├── 0005-verificacion-propiedad-y-proteccion-login.md
 │   ├── 0006-cve-correo-y-subdominios.md
-│   └── 0007-auditoria-recuperacion-invitaciones-mfa.md
+│   ├── 0007-auditoria-recuperacion-invitaciones-mfa.md
+│   └── 0008-modulo-analisis-malware.md
 │
 ├── architecture.md                          # Arquitectura base histórica del sistema
 ├── deployment.md                            # Guía de despliegue en entornos Azure y Docker
@@ -56,46 +62,49 @@ docs/
 
 ## 1. Requerimientos del Sistema (`requirements/`)
 
-- [**Requerimientos Funcionales (RF-01 a RF-18)**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/requirements/functional-requirements.md):
+- [**Requerimientos Funcionales (RF-01 a RF-18)**](requirements/functional-requirements.md):
   Inventario de activos, verificación criptográfica de propiedad, descubrimiento pasivo Certificate Transparency, escaneo no intrusivo Nmap, cabeceras HTTP/TLS, seguridad de correo (SPF/DMARC/DKIM/BIMI), auditoría e-commerce PCI-DSS v4.0, RFC 9116 security.txt, CSPM multicloud AWS/Azure, diagnóstico 360° en 3 etapas, diff temporal, correlación de rutas de ataque, matriz de remediación Quick Wins 24h, scoring determinista 0-100 y reportes ejecutivos en PDF.
-- [**Requerimientos No Funcionales (RNF-01 a RNF-10)**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/requirements/non-functional-requirements.md):
+- [**Requerimientos No Funcionales (RNF-01 a RNF-10)**](requirements/non-functional-requirements.md):
   Aislamiento multi-tenancy a nivel de query, autenticación JWT con MFA TOTP (RFC 6238), control de acceso basado en roles (RBAC), escaneo no destructivo, determinismo matemático del scoring, auditoría inmutable de eventos, concurrencia adaptativa PostgreSQL, ofuscación estricta de credenciales detectadas (`redactToken`), cumplimiento RFC 4180 / WinAnsi Latin-1 y retención automatizada de datos.
 
 ---
 
 ## 2. Arquitectura y Diseño Técnico (`architecture/`)
 
-- [**Visión General de Arquitectura**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/architecture/overview.md):
+- [**Visión General de Arquitectura**](architecture/overview.md):
   Modelo C4 (Contexto y Contenedores), topología de microservicios lógicos en monorrepo NestJS, límites de confianza, modelo de aislamiento de datos y esquema de despliegue en Azure Container Apps + Static Web Apps.
-- [**Flujos y Diagramas de Secuencia**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/architecture/workflows-and-diagrams.md):
+- [**Flujos y Diagramas de Secuencia**](architecture/workflows-and-diagrams.md):
   Diagramas Mermaid de los 5 flujos vitales del sistema: Orquestador 360°, Correlación de Rutas de Ataque, Conectores CSPM AWS/Azure, Ciclo de Vida y Estados de SLAs de Hallazgos, y Algoritmo de Security Score.
-- [**Modelo de Datos y Esquema Relacional**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/architecture/data-model.md):
+- [**Modelo de Datos y Esquema Relacional**](architecture/data-model.md):
   Esquema de entidades relacionales (Prisma ORM), llaves foráneas, índices de rendimiento, restricciones multi-tenant y diagrama ERD integral.
 
 ---
 
 ## 3. Módulos Especializados (`modules/`)
 
-- [**Auditoría E-Commerce, Mini-Crawler y Secret Hunter**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/ecommerce-crawler-and-secrets.md):
+- [**Auditoría E-Commerce, Mini-Crawler y Secret Hunter**](modules/ecommerce-crawler-and-secrets.md):
   Inspección de pasarelas de pago, análisis de Subresource Integrity (Magecart), búsqueda de credenciales expuestas en frontend con regex, introspección CMS (WordPress, WooCommerce, PrestaShop, Magento, Shopify), divulgación RFC 9116 y verificación de marca BIMI.
-- [**Orquestador de Diagnóstico 360° y Diff Temporal**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/diagnostic-360-orchestrator.md):
+- [**Orquestador de Diagnóstico 360° y Diff Temporal**](modules/diagnostic-360-orchestrator.md):
   Pipeline secuencial en 3 etapas encoladas, barra de progreso reactiva, cancelación en cascada y cálculo del delta temporal de postura frente al lote anterior.
-- [**Correlación de Rutas de Ataque (Attack Paths) y Quick Wins 24h**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/attack-paths-and-quick-wins.md):
+- [**Correlación de Rutas de Ataque (Attack Paths) y Quick Wins 24h**](modules/attack-paths-and-quick-wins.md):
   Los 6 escenarios de impacto de negocio (Fraude en Pagos, Toma de Control, Suplantación BEC, Exfiltración de Datos, Compromiso de Servidor, Subdomain Takeover) y catálogo de remediación (< 30 min, < 2 h, > 4 h).
-- [**Postura de Seguridad Cloud Multicloud (CSPM)**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/cspm-multicloud.md):
+- [**Postura de Seguridad Cloud Multicloud (CSPM)**](modules/cspm-multicloud.md):
   Conexión agentless para AWS y Azure, bóveda de cifrado AES-256-GCM para llaves de acceso, catálogo de reglas CIS Benchmark y remediaciones paso a paso.
-- [**Motor de Riesgo, Security Score y SLAs**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/risk-scoring-and-slas.md):
+- [**Motor de Riesgo, Security Score y SLAs**](modules/risk-scoring-and-slas.md):
   Fórmula matemática transparente (0-100), penalizaciones ponderadas, topes máximos por severidad, grados A-F y reloj de SLAs por severidad.
-- [**Reportes Ejecutivos en PDF y Alertas Tempranas**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/reports-and-alerts.md):
+- [**Reportes Ejecutivos en PDF y Alertas Tempranas**](modules/reports-and-alerts.md):
   Motor PDFKit sin navegador headless, estructura del Reporte Ejecutivo C-Level vs. Reporte Técnico, notificaciones por correo y webhooks con reintentos exponenciales.
+
+- [**Análisis de Malware en Archivos, Correos y URLs** *(planificado)*](modules/malware-analysis.md):
+  Motores propios (ClamAV, YARA, oletools, analizadores estáticos) y externos por hash o URL (Web Risk, URLhaus, MalwareBazaar, VirusTotal), worker aislado, cuarentena cifrada, veredicto determinista explicable, vigilancia de malware y listas de bloqueo en activos propios. Backlog en [`backlog/malware-analysis-backlog.md`](backlog/malware-analysis-backlog.md).
 
 ---
 
 ## 4. Hoja de Ruta y Evolución (`roadmap/`)
 
-- [**Futuras Integraciones Estratégicas**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/roadmap/future-integrations.md):
+- [**Futuras Integraciones Estratégicas**](roadmap/future-integrations.md):
   Conector CSPM para Google Cloud Platform (GCP), sincronización bidireccional Jira/ServiceNow, integración SIEM (Splunk HEC, Microsoft Sentinel, AWS Security Hub), playbooks WAF de auto-remediación en 1-clic, atestación PCI-DSS v4.0 SAQ-A y CLI Shift-Left para CI/CD.
-- [**Gestión de Deuda Técnica y Escala**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/roadmap/technical-debt.md):
+- [**Gestión de Deuda Técnica y Escala**](roadmap/technical-debt.md):
   Migración de colas PostgreSQL a Redis + BullMQ, desacoplamiento en workers efímeros (Fargate/K8s), instrumentación OpenTelemetry y rate limiting jerárquico por organización.
 
 ---
@@ -104,13 +113,14 @@ docs/
 
 | ADR | Título | Estado |
 | :--- | :--- | :---: |
-| [ADR-0001](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0001-monorepo-vs-multirepo.md) | Monorrepo vs. Multirrepo | Aceptado |
-| [ADR-0002](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0002-nmap-subprocess-postgres-queue.md) | Ejecución de Nmap como subproceso con cola en PostgreSQL | Aceptado |
-| [ADR-0003](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0003-scoring-propio-no-certificado.md) | Algoritmo determinista propio para cálculo de Security Score | Aceptado |
-| [ADR-0004](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0004-alertas-entrega-asincrona-en-proceso.md) | Notificaciones de alerta asíncronas en proceso | Aceptado |
-| [ADR-0005](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0005-verificacion-propiedad-y-proteccion-login.md) | Verificación criptográfica de propiedad y protección de login | Aceptado |
-| [ADR-0006](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0006-cve-correo-y-subdominios.md) | Correlación CVE/KEV, seguridad de correo y Certificate Transparency | Aceptado |
-| [ADR-0007](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/adr/0007-auditoria-recuperacion-invitaciones-mfa.md) | Auditoría inmutable, recuperación de contraseñas, invitaciones y MFA TOTP | Aceptado |
+| [ADR-0001](adr/0001-monorepo-vs-multirepo.md) | Monorrepo vs. Multirrepo | Aceptado |
+| [ADR-0002](adr/0002-nmap-subprocess-postgres-queue.md) | Ejecución de Nmap como subproceso con cola en PostgreSQL | Aceptado |
+| [ADR-0003](adr/0003-scoring-propio-no-certificado.md) | Algoritmo determinista propio para cálculo de Security Score | Aceptado |
+| [ADR-0004](adr/0004-alertas-entrega-asincrona-en-proceso.md) | Notificaciones de alerta asíncronas en proceso | Aceptado |
+| [ADR-0005](adr/0005-verificacion-propiedad-y-proteccion-login.md) | Verificación criptográfica de propiedad y protección de login | Aceptado |
+| [ADR-0006](adr/0006-cve-correo-y-subdominios.md) | Correlación CVE/KEV, seguridad de correo y Certificate Transparency | Aceptado |
+| [ADR-0007](adr/0007-auditoria-recuperacion-invitaciones-mfa.md) | Auditoría inmutable, recuperación de contraseñas, invitaciones y MFA TOTP | Aceptado |
+| [ADR-0008](adr/0008-modulo-analisis-malware.md) | Módulo de análisis de malware en archivos, correos y URLs | Propuesto |
 
 ---
 
@@ -122,3 +132,8 @@ docs/
 - **SRI (Subresource Integrity)**: Mecanismo W3C que permite al navegador verificar que los recursos cargados desde CDNs externas no hayan sido manipulados maliciosamente mediante comparación de hashes criptográficos (`sha256`, `sha384`).
 - **Attack Path (Ruta de Ataque)**: Cadena de vulnerabilidades o debilidades correlacionadas que un atacante puede explotar en secuencia para alcanzar un objetivo crítico de negocio (ej. exfiltración de base de datos o toma de control de pagos).
 - **Quick Win**: Vulnerabilidad de alta efectividad defensiva cuya remediación toma menos de 30 minutos y no requiere cambios estructurales en el código base o arquitectura.
+- **IOC (Indicador de Compromiso)**: Dato observable que evidencia una amenaza (hash de un archivo malicioso, URL de phishing, dominio o IP de un atacante) y que puede bloquearse en otras herramientas.
+- **YARA**: Lenguaje y herramienta para describir familias de malware mediante patrones de texto o binarios; base de las reglas de detección propias del módulo de análisis de malware.
+- **BEC (Business Email Compromise)**: Fraude por correo en el que el atacante suplanta a un directivo, proveedor o banco para obtener pagos o datos.
+- **EICAR**: Archivo de prueba estándar e inofensivo que todos los antivirus detectan; se usa para verificar que el análisis funciona sin manipular malware real.
+

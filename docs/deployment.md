@@ -34,6 +34,20 @@ equipo.
 | Salida a Internet | La API necesita salir por HTTPS a `services.nvd.nist.gov`, `crt.sh` y `api.certspotter.com`, y hacer consultas DNS (UDP y TCP al puerto 53) para la seguridad del correo. Si la red lo impide, desactiva `CVE_LOOKUP_ENABLED` o `SUBDOMAIN_DISCOVERY_ENABLED`. |
 | `SCHEDULER_ENABLED` | Puede quedar en `true` en varias réplicas: cada activo se reclama una sola vez por periodo. Si el planificador se separa en un proceso propio, pon `false` en las instancias de la API. |
 
+### 2.1 Módulo de análisis de malware *(planificado)*
+
+Cuando se habilite el módulo ([diseño](modules/malware-analysis.md#15-configuración-y-despliegue), [ADR-0008](adr/0008-modulo-analisis-malware.md)):
+
+| Variable / recurso | Nota |
+|---|---|
+| `MALWARE_ENABLED=true` en la API, `MALWARE_WORKER_ENABLED=false` en la API | La API recibe los envíos pero **nunca** los analiza. |
+| Contenedor `malware-worker` | Misma imagen del backend con `node dist/malware-worker.main.js`, `MALWARE_WORKER_ENABLED=true`, sin root, sistema de archivos de solo lectura, `tmpfs` en `/tmp`, sin *capabilities* y con límites de CPU/memoria. Sin `JWT_SECRET`. |
+| Sidecar `clamav` | Imagen `clamav/clamav:stable` junto al worker (`CLAMAV_HOST=localhost`), con volumen para las firmas (~300 MB) y salida a la red de actualización de firmas. |
+| `MALWARE_STORAGE_DRIVER=azure-blob` | Obligatorio en producción: cuenta de almacenamiento dedicada, contenedor privado `malware-quarantine`, sin acceso público, política de ciclo de vida y escaneo automático de Defender desactivado o excluido en esa cuenta. |
+| `MALWARE_ENCRYPTION_KEY` | Clave de cifrado de las muestras, distinta de `JWT_SECRET`, en Key Vault. |
+| `WEB_RISK_API_KEY`, `URLHAUS_AUTH_KEY`, `MALWAREBAZAAR_AUTH_KEY`, `VIRUSTOTAL_API_KEY` | Opcionales: sin ellas los motores quedan `SKIPPED`. Revisar los términos de uso comercial de cada proveedor. |
+| Salida a Internet del worker | HTTPS a las APIs de reputación configuradas y, para el análisis de URLs, a Internet en general (idealmente por una IP de salida dedicada). |
+
 ## 3. Migraciones en despliegue
 
 `docker-entrypoint.sh` aplica `prisma migrate deploy` automáticamente al
@@ -55,6 +69,7 @@ por defecto).
 - [ ] `NVD_API_KEY` configurada y salida a NVD, crt.sh y DNS permitida (ver tabla).
 - [ ] SMTP configurado y probado con el botón "Probar" de Configuración (o al menos un webhook).
 - [ ] Logs centralizados (ver roadmap DevOps en `docs/roadmap.md`).
+- [ ] Si el módulo de malware está activo: worker separado de la API, cuarentena privada con cifrado y retención, y firmas de ClamAV actualizándose.
 - [ ] Página de estado / health check (`/api/v1/health`) monitoreada
       externamente (uptime robot, Better Uptime, etc.).
 

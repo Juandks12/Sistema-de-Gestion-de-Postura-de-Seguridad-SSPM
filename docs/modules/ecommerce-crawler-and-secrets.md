@@ -1,7 +1,7 @@
 # Módulo de Auditoría E-Commerce, Mini-Crawler y Secret Hunter
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulo Backend: [`scans/web/`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/web/) y [`scans/analyzers/`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/analyzers/)  
+> Módulo Backend: [`scans/web/`](../../backend/src/scans/web/) y [`scans/analyzers/`](../../backend/src/scans/analyzers/)  
 > Versión: **2.0.0 (Sprint 11 - Pilar 1)**
 
 Este documento describe la arquitectura, algoritmos y reglas de detección del módulo especializado en auditoría profunda de comercios electrónicos, protección de pasarelas de pago, análisis de bundles JavaScript y cumplimiento PCI-DSS v4.0.

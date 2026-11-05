@@ -172,6 +172,17 @@ flowchart TD
 
 ---
 
+### 3.7 Integración 7: Módulo de Análisis de Malware (Archivos, Correos y URLs)
+
+**Objetivo:** Responder "¿esto que me llegó es peligroso?" para archivos, correos y enlaces, y detectar si los sitios o dominios propios distribuyen malware o están en listas de bloqueo.
+
+- **Estado:** Diseño completo y backlog listo para implementar (Sprints 14-21): [diseño](modules/malware-analysis.md) · [ADR-0008](adr/0008-modulo-analisis-malware.md) · [backlog](backlog/malware-analysis-backlog.md).
+- **Motores:** propios y locales como núcleo (ClamAV, YARA, oletools, analizadores de PDF, scripts, ejecutables y cabeceras de correo) y externos por hash o URL (CIRCL hashlookup, MalwareBazaar, URLhaus, Google Web Risk, VirusTotal con BYOK); sandbox dinámico y urlscan.io solo con consentimiento (fase 3).
+- **Seguridad:** contenedor `malware-worker` aislado (la API nunca abre muestras), cuarentena cifrada con retención corta y análisis solo estático.
+- **Integración:** nuevos escáneres `MALWARE_REPUTATION` y `WEB_MALWARE`, categoría de hallazgos `MALWARE`, ruta de ataque `AP-MALWARE-DISTRIBUTION`, controles ISO 27001 A.8.7 / PCI-DSS 5 / CIS 10, alertas `MALWARE_DETECTED` y API pública para SIEM/SOAR.
+
+---
+
 ## 4. Hoja de Ruta Estratégica Trimestral (Roadmap 2026 - 2027)
 
 ```mermaid
@@ -190,6 +201,10 @@ gantt
     Auto-Remediación WAF en 1-Clic            :q3_1, 2027-04, 2027-05
     Workers Aislados en Contenedores Efímeros:q3_2, 2027-05, 2027-06
     CLI Shift-Left para GitHub/GitLab CI     :q3_3, 2027-05, 2027-06
+    section Módulo de Análisis de Malware
+    Fase 1 MVP (archivos y URLs)             :mal_1, 2026-11, 2027-01
+    Fase 2 (correos y activos propios)       :mal_2, 2027-01, 2027-02
+    Fase 3 (sandbox opt-in, STIX)            :mal_3, 2027-02, 2027-03
 ```
 
 ### Hitos Clave por Trimestre

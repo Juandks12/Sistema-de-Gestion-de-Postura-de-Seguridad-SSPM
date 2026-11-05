@@ -1,8 +1,8 @@
 # Módulo de Reportes Ejecutivos en PDF y Alertas Tempranas
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulos Backend: [`reports/`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/reports/) y [`alerts/`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/alerts/)  
-> Servicios: [`pdf-renderer.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/reports/pdf-renderer.ts) y [`alerts.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/alerts/alerts.service.ts)  
+> Módulos Backend: [`reports/`](../../backend/src/reports/) y [`alerts/`](../../backend/src/alerts/)  
+> Servicios: [`pdf-renderer.ts`](../../backend/src/reports/pdf-renderer.ts) y [`alerts.service.ts`](../../backend/src/alerts/alerts.service.ts)  
 > Versión: **2.0.0**
 
 Este documento describe el motor de generación de reportes en formato PDF mediante renderizado vectorial en memoria y el sistema de notificación de alertas tempranas multicanal.

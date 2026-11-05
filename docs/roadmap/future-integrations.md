@@ -126,3 +126,14 @@ flowchart TD
   1. Bloquear despliegue (`exit 1`) si se detectan archivos de mapas `.js.map` en el directorio de distribución `dist/`.
   2. Bloquear despliegue si se detectan llaves privadas o credenciales de pasarelas en bundles JS.
   3. Bloquear despliegue si faltan hashes de integridad en las etiquetas `<script>` externas.
+
+---
+
+## 7. Módulo de Análisis de Malware (Archivos, Correos y URLs)
+
+**Objetivo:** Responder "¿esto que me llegó es peligroso?" para archivos, correos y enlaces, y detectar si los sitios o dominios propios distribuyen malware o están en listas de bloqueo.
+
+- **Estado:** Diseño completo y backlog listo para implementar (Sprints 14-21): [diseño](../modules/malware-analysis.md) · [ADR-0008](../adr/0008-modulo-analisis-malware.md) · [backlog](../backlog/malware-analysis-backlog.md).
+- **Motores:** propios y locales como núcleo (ClamAV, YARA, oletools, analizadores de PDF, scripts, ejecutables y cabeceras de correo) y externos por hash o URL (CIRCL hashlookup, MalwareBazaar, URLhaus, Google Web Risk, VirusTotal con BYOK); sandbox dinámico y urlscan.io solo con consentimiento (fase 3).
+- **Seguridad:** contenedor `malware-worker` aislado (la API nunca abre muestras), cuarentena cifrada con retención corta y análisis solo estático.
+- **Integración:** nuevos escáneres `MALWARE_REPUTATION` y `WEB_MALWARE`, categoría de hallazgos `MALWARE`, ruta de ataque `AP-MALWARE-DISTRIBUTION`, controles ISO 27001 A.8.7 / PCI-DSS 5 / CIS 10, alertas `MALWARE_DETECTED` y API pública para SIEM/SOAR.

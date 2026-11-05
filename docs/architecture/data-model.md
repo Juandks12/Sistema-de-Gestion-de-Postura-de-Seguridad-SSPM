@@ -266,6 +266,16 @@ erDiagram
 - **`reports`**: Bitácora de reportes ejecutivos y técnicos generados en PDF bajo demanda.
 - **`api_keys`**: Credenciales de máquina para integración con SIEM, SOAR y scripts externos.
 
+### 2.7 Análisis de Malware *(planificado)*
+Tablas del módulo descrito en [`docs/modules/malware-analysis.md`](../modules/malware-analysis.md) (sección 8, con el esquema Prisma completo y validado). La migración es aditiva: solo crea tablas y tipos, y añade valores a enums existentes.
+- **`malware_submissions`**: Envíos analizados (`FILE`, `EMAIL`, `URL`) y, a la vez, cola del worker de malware (`FOR UPDATE SKIP LOCKED`). Forman un árbol con `parent_id`/`root_id` (correo → adjunto → zip → archivo). Guarda hashes, tipo detectado frente al declarado, veredicto (`CLEAN`, `UNKNOWN`, `SUSPICIOUS`, `MALICIOUS`), puntaje, confianza, versión del modelo de veredicto, consentimiento para compartir el contenido (`share_content`) y la clave del objeto en cuarentena (`storage_key`, nula tras la purga). Las muestras nunca se guardan en la base de datos.
+- **`malware_engine_results`**: Resultado de cada motor (ClamAV, YARA, oletools, Web Risk…) con estado, detecciones, señales, versión de firmas y duración. Único por envío y motor.
+- **`malware_indicators`**: Indicadores de compromiso extraídos (hashes, URLs, dominios, IPs, correos) con el contexto en que aparecieron.
+- **`malware_reputation_cache`**: Caché **global** de respuestas públicas de reputación por hash o URL (como `cve_product_cache`). No contiene datos de ninguna organización.
+- **`malware_settings`**: Configuración por organización: motores externos, claves propias cifradas (AES-256-GCM), política de compartición, retención de muestras y token del buzón de reporte.
+- **`external_api_usage`**: Contadores por minuto y por día del consumo de APIs externas.
+- **Enums ampliados:** `ScanType` (`MALWARE_REPUTATION`, `WEB_MALWARE`), `FindingCategory` (`MALWARE`) y `AlertType` (`MALWARE_DETECTED`, `ASSET_REPUTATION_LISTED`).
+
 ---
 
 ## 3. Estrategias de Rendimiento e Índices

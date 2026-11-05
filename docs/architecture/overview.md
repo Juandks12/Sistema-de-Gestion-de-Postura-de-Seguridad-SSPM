@@ -126,6 +126,26 @@ graph TD
 
 ---
 
+### 2.3 Contenedores planificados: Módulo de Análisis de Malware
+
+El módulo de análisis de malware ([diseño](../modules/malware-analysis.md), [ADR-0008](../adr/0008-modulo-analisis-malware.md)) añade dos contenedores y un almacén, manteniendo a la API fuera del contacto con las muestras:
+
+```mermaid
+graph LR
+    API_Gateway["API NestJS<br>MalwareModule (controladores)"] -->|"stream cifrado"| Quarantine[("Cuarentena<br>[Azure Blob privado]")]
+    API_Gateway -->|"INSERT PENDING"| PostgreSQL[("PostgreSQL 16")]
+    subgraph "Contenedor aislado (sin privilegios, FS de solo lectura)"
+        MalWorker["malware-worker<br>[misma imagen del backend]<br>Pipeline y motores: YARA, 7z, oletools"]
+        ClamAV["clamd (sidecar)<br>[ClamAV + freshclam]"]
+    end
+    MalWorker -->|"FOR UPDATE SKIP LOCKED"| PostgreSQL
+    MalWorker -->|"lectura"| Quarantine
+    MalWorker -->|"TCP 3310 INSTREAM"| ClamAV
+    MalWorker -->|"solo hash / URL"| Ext["Web Risk · URLhaus · MalwareBazaar<br>CIRCL · VirusTotal"]
+```
+
+---
+
 ## 3. Modelo de Aislamiento Multi-Tenancy
 
 El sistema garantiza aislamiento lógico de nivel bancario entre organizaciones mediante una estrategia de **Defensa en Profundidad**:
@@ -192,4 +212,5 @@ graph LR
 ### Características de Despliegue:
 - **Autoscaling:** Azure Container Apps ajusta el número de réplicas en función del consumo de CPU y la profundidad de la cola de escaneo.
 - **Identidad Administrada (Managed Identity):** No se almacenan contraseñas de Azure Key Vault en archivos de configuración ni variables de entorno del repositorio.
+- **Módulo de malware (planificado):** se suma una Container App `malware-worker` sin *ingress*, con ClamAV como *sidecar*, y una cuenta de almacenamiento dedicada para la cuarentena (ver [despliegue del módulo](../modules/malware-analysis.md#153-azure-terraform)).
 - **Cero Downtime:** Actualizaciones mediante despliegues azul/verde (*Blue/Green Deployments*) gestionados automáticamente por GitHub Actions.
