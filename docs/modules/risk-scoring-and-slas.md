@@ -1,7 +1,7 @@
 # Módulo de Motor de Riesgo, Security Score y SLAs
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulo Backend: [`risk/risk.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/risk/risk.service.ts) y [`risk/scoring.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/risk/scoring.ts)  
+> Módulo Backend: [`risk/risk-scores.service.ts`](../../backend/src/risk/risk-scores.service.ts) y [`risk/scoring.ts`](../../backend/src/risk/scoring.ts)  
 > Versión: **2.0.0**
 
 Este documento detalla la formulación matemática determinista del **Security Score**, las penalizaciones ponderadas por criticidad, la escala de calificación en grados y la gestión de acuerdos de nivel de servicio (SLAs) para la mitigación de vulnerabilidades.

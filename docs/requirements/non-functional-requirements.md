@@ -54,7 +54,7 @@ Este documento detalla los requerimientos no funcionales y lineamientos de calid
     1. **`ADMIN`:** Control total de la organización, gestión de usuarios, configuración de facturación, alta de cuentas Cloud y eliminación de activos.
     2. **`ANALYST`:** Lanzamiento de escaneos, gestión de hallazgos (triage, cambio de estados, re-test), generación de reportes y configuración de alertas.
     3. **`VIEWER`:** Acceso de solo lectura al dashboard, métricas de riesgo y reportes ejecutivos.
-  - Aplicación en backend mediante el guard global [`RolesGuard`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/common/guards/roles.guard.ts) y decorador `@Roles(Role.ADMIN)`.
+  - Aplicación en backend mediante el guard global [`RolesGuard`](../../backend/src/common/guards/roles.guard.ts) y decorador `@Roles(Role.ADMIN)`.
   - Aplicación en frontend mediante componentes de protección de ruta `<ProtectedRoute>` y renderizado condicional de botones de acción.
 
 ---
@@ -102,7 +102,7 @@ Este documento detalla los requerimientos no funcionales y lineamientos de calid
 ### RNF-08: Privacidad, Sanitización y Ofuscación de Secretos
 - **Objetivo:** Cumplir con normativas de protección de datos personales (GDPR, Ley 1581) y estándares bancarios (PCI-DSS) impidiendo que secretos reales se almacenen en texto claro.
 - **Implementación Técnica:**
-  - La función centralizada [`redactToken()`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/analyzers/js-secrets-sourcemap.analyzer.ts) ofusca cualquier credencial detectada por el Secret Hunter (ej. convirtiendo `sk_live_51AbC...99zX` en `sk_live_...9zX`).
+  - La función centralizada [`redactToken()`](../../backend/src/scans/web/js-secrets-sourcemap.analyzer.ts) ofusca cualquier credencial detectada por el Secret Hunter (ej. convirtiendo `sk_live_51AbC...99zX` en `sk_live_...9zX`).
   - Las credenciales de acceso a cuentas Cloud (AWS Access Key Secret y Azure Client Secret) se cifran antes de persistirse utilizando el algoritmo **AES-256-GCM** en `CryptoVaultService`, con un vector de inicialización (IV) de 12 bytes y un tag de autenticación de 16 bytes almacenados de forma independiente.
 
 ---
@@ -121,7 +121,7 @@ Este documento detalla los requerimientos no funcionales y lineamientos de calid
 ### RNF-10: Resiliencia, Retención de Datos y Purga Automática
 - **Objetivo:** Evitar el crecimiento descontrolado del volumen de la base de datos y optimizar los costos de almacenamiento.
 - **Implementación Técnica:**
-  - Servicio programado [`RetentionService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/monitoring/retention.service.ts) que ejecuta limpiezas nocturnas de:
+  - Servicio programado [`RetentionService`](../../backend/src/retention/retention.service.ts) que ejecuta limpiezas nocturnas de:
     - Escaneos completados o fallidos con antigüedad superior a 90 días (preservando los hallazgos y el score histórico).
     - Tokens de sesión y refresh tokens revocados o expirados.
     - Archivos temporales generados durante la compilación de reportes PDF.

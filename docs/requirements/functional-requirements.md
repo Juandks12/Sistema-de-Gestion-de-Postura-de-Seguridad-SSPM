@@ -39,7 +39,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-01: Gestión de Inventario de Activos
-- **Módulo Responsable:** [`AssetsModule`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/assets/assets.service.ts)
+- **Módulo Responsable:** [`AssetsModule`](../../backend/src/assets/assets.service.ts)
 - **Descripción:** Permite a los usuarios registrar, visualizar, actualizar y desactivar activos pertenecientes al perímetro de su organización (Dominios raíz, Subdominios e IPs públicas IPv4).
 - **Criterios de Aceptación:**
   1. Validación estricta de formato FQDN (Fully Qualified Domain Name) o IPv4 pública; se rechazan rangos privados (RFC 1918: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) y loopback (`127.0.0.1`).
@@ -51,7 +51,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-02: Verificación Criptográfica de Propiedad
-- **Módulo Responsable:** [`AssetVerificationService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/assets/asset-verification.service.ts)
+- **Módulo Responsable:** [`AssetVerificationService`](../../backend/src/assets/verification/asset-verification.service.ts)
 - **Descripción:** Garantiza que una organización solo pueda escanear activos sobre los cuales tiene control legítimo, evitando el uso indebido de la plataforma contra terceros no autorizados.
 - **Criterios de Aceptación:**
   1. Generación de un token criptográfico pseudoaleatorio de 32 bytes en formato hexadecimal.
@@ -64,7 +64,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-03: Descubrimiento Pasivo de Superficie (EASM)
-- **Módulo Responsable:** [`SubdomainDiscoveryService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/scanners/subdomain-discovery.scanner.ts)
+- **Módulo Responsable:** [`SubdomainDiscoveryService`](../../backend/src/scans/scanners/subdomain-discovery.scanner.ts)
 - **Descripción:** Identifica subdominios públicos pertenecientes a la organización mediante consultas no invasivas a registros de transparencia de certificados (Certificate Transparency logs).
 - **Criterios de Aceptación:**
   1. Consulta a crt.sh extrayendo certificados SSL/TLS emitidos históricamente para el dominio base.
@@ -77,7 +77,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-04: Auditoría de Red, Puertos y Servicios
-- **Módulo Responsable:** [`PortScanner`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/scanners/port-scanner.ts) y [`NmapService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/nmap/nmap.service.ts)
+- **Módulo Responsable:** [`PortScanScanner`](../../backend/src/scans/scanners/port-scan.scanner.ts) y [`NmapRunner`](../../backend/src/scans/nmap/nmap.runner.ts)
 - **Descripción:** Evalúa los puertos TCP expuestos en el activo mediante Nmap en modo seguro, identificando versiones de software y correlacionándolas con bases de datos de vulnerabilidades.
 - **Criterios de Aceptación:**
   1. Ejecución mediante `child_process.spawn` sin invocación de shell para prevenir inyección de comandos.
@@ -90,7 +90,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-05: Auditoría de Cabeceras HTTP y TLS
-- **Módulo Responsable:** [`WebHeadersScanner`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/scanners/web-headers.scanner.ts) y [`SslCertScanner`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/scanners/ssl-cert.scanner.ts)
+- **Módulo Responsable:** [`WebHeadersScanner`](../../backend/src/scans/scanners/web-headers.scanner.ts) y [`SslCertScanner`](../../backend/src/scans/scanners/ssl-cert.scanner.ts)
 - **Descripción:** Inspecciona la configuración criptográfica de transporte y las directivas de seguridad web del servidor HTTP.
 - **Criterios de Aceptación:**
   1. Validación de cabeceras de endurecimiento: HSTS (`Strict-Transport-Security`), CSP (`Content-Security-Policy`), `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`.
@@ -102,7 +102,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-06: Seguridad del Correo Electrónico y Marca
-- **Módulo Responsable:** [`EmailSecurityScanner`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/scanners/email-security.scanner.ts) y [`BimiVerifier`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/scanners/bimi.ts)
+- **Módulo Responsable:** [`EmailSecurityScanner`](../../backend/src/scans/scanners/email-security.scanner.ts) y [`BimiVerifier`](../../backend/src/scans/email/bimi.ts)
 - **Descripción:** Analiza la postura de seguridad contra suplantación de identidad (Phishing / BEC) y validación de autenticidad de marca en correos electrónicos.
 - **Criterios de Aceptación:**
   1. Evaluación de registros SPF: Existencia, sintaxis, número de lookups DNS (máx. 10) y política de cierre (`~all` vs `-all`).
@@ -116,7 +116,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-07: Auditoría Web Profunda, E-Commerce y Secret Hunter
-- **Módulo Responsable:** [`EcommerceCrawler`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/web/ecommerce-crawler.ts), [`MagecartSecurityAnalyzer`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/analyzers/magecart-security.analyzer.ts), [`JsSecretsSourcemapAnalyzer`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/analyzers/js-secrets-sourcemap.analyzer.ts) y [`CmsEcommerceAnalyzer`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/analyzers/cms-ecommerce.analyzer.ts)
+- **Módulo Responsable:** [`EcommerceCrawler`](../../backend/src/scans/web/ecommerce-crawler.ts), [`MagecartSecurityAnalyzer`](../../backend/src/scans/web/magecart-security.analyzer.ts), [`JsSecretsSourcemapAnalyzer`](../../backend/src/scans/web/js-secrets-sourcemap.analyzer.ts) y [`CmsEcommerceAnalyzer`](../../backend/src/scans/web/cms-ecommerce.analyzer.ts)
 - **Descripción:** Ejecuta una inspección especializada sobre tiendas online para prevenir fraude de tarjetas de crédito (PCI-DSS v4.0), exfiltración de llaves de API y ataques a CMS.
 - **Criterios de Aceptación:**
   1. **Mini-Crawler seguro:** Descubre páginas clave respetando `robots.txt` (pasarela `/checkout`, formularios `/cart`, panel `/admin`).
@@ -130,7 +130,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-08: Madurez de Divulgación Responsable (RFC 9116)
-- **Módulo Responsable:** [`SecurityTxtAnalyzer`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/analyzers/security-txt.analyzer.ts)
+- **Módulo Responsable:** [`SecurityTxtAnalyzer`](../../backend/src/scans/web/security-txt.analyzer.ts)
 - **Descripción:** Comprueba si la organización implementa el estándar RFC 9116 para la recepción de reportes de vulnerabilidades por parte de investigadores externos.
 - **Criterios de Aceptación:**
   1. Sondeo HTTP GET en `/.well-known/security.txt` y `/security.txt`.
@@ -142,7 +142,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-09: Auditoría de Postura Cloud Multicloud (CSPM)
-- **Módulo Responsable:** [`CloudScanService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/cloud-scan.service.ts), [`AwsConnectorService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/connectors/aws-connector.service.ts) y [`AzureConnectorService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/connectors/azure-connector.service.ts)
+- **Módulo Responsable:** [`CloudScanService`](../../backend/src/cloud/cloud-scan.service.ts), [`AwsConnectorService`](../../backend/src/cloud/connectors/aws-connector.service.ts) y [`AzureConnectorService`](../../backend/src/cloud/connectors/azure-connector.service.ts)
 - **Descripción:** Audita sin agentes la configuración de seguridad en nubes públicas (AWS y Azure), contrastando recursos contra CIS Benchmarks.
 - **Criterios de Aceptación:**
   1. Conexión segura con AWS mediante llamadas REST firmadas con AWS SigV4 y cifrado en reposo de Access Keys (`CryptoVaultService` AES-256-GCM).
@@ -157,7 +157,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-10: Orquestador de Diagnóstico 360° Encadenado
-- **Módulo Responsable:** [`DiagnosticOrchestratorService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/diagnostic-orchestrator.service.ts)
+- **Módulo Responsable:** [`DiagnosticOrchestratorService`](../../backend/src/scans/diagnostic-orchestrator.service.ts)
 - **Descripción:** Permite ejecutar una auditoría integral multi-etapa con un solo clic, encadenando descubrimiento, escaneo de red y análisis web profundo de forma ordenada.
 - **Criterios de Aceptación:**
   1. Creación de un registro maestro `DiagnosticBatch` con estado `RUNNING` y seguimiento de etapa (`stage: 1..3`).
@@ -171,7 +171,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-11: Motor de Diff Temporal de Postura
-- **Módulo Responsable:** [`PostureDiffService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/posture-diff.service.ts)
+- **Módulo Responsable:** `PostureDiffService`
 - **Descripción:** Compara el resultado del lote de diagnóstico actual contra el lote previo del activo para mostrar de forma transparente la evolución de la postura de seguridad.
 - **Criterios de Aceptación:**
   1. Identificación del lote inmediato anterior completado para el mismo activo.
@@ -185,7 +185,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-12: Correlación de Rutas de Ataque (Attack Paths)
-- **Módulo Responsable:** [`AttackPathsService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/attack-paths.service.ts)
+- **Módulo Responsable:** [`AttackPathsService`](../../backend/src/findings/attack-paths.service.ts)
 - **Descripción:** Motor heurístico que analiza el conjunto de hallazgos abiertos de la organización y los correlaciona en cadenas de explotación (Kill Chains) con impacto de negocio.
 - **Criterios de Aceptación:**
   1. Detección automática de los 6 escenarios críticos:
@@ -203,7 +203,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-13: Matriz Quick Wins 24h vs. Mejoras Estructurales
-- **Módulo Responsable:** [`FindingsService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/findings.service.ts) y [`RulesCatalog`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/rules-catalog.ts)
+- **Módulo Responsable:** [`FindingsService`](../../backend/src/findings/findings.service.ts) y [`RulesCatalog`](../../backend/src/findings/rules.catalog.ts)
 - **Descripción:** Categoriza los hallazgos según el esfuerzo humano y técnico requerido para su mitigación, permitiendo remediación ágil en menos de 24 horas.
 - **Criterios de Aceptación:**
   1. Asignación de nivel de esfuerzo a cada regla del catálogo:
@@ -217,7 +217,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-14: Gestión de Hallazgos, SLAs y Triage Inteligente
-- **Módulo Responsable:** [`FindingsService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/findings.service.ts)
+- **Módulo Responsable:** [`FindingsService`](../../backend/src/findings/findings.service.ts)
 - **Descripción:** Administra el ciclo de vida de los hallazgos de seguridad detectados, asignación de responsables, control de vencimiento de SLAs y verificación de re-test.
 - **Criterios de Aceptación:**
   1. Estados formales de hallazgo: `OPEN`, `IN_PROGRESS`, `VERIFYING`, `RESOLVED`, `ACCEPTED`, `FALSE_POSITIVE`.
@@ -235,7 +235,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-15: Motor de Riesgo y Security Score Determinista
-- **Módulo Responsable:** [`RiskService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/risk/risk.service.ts) y [`scoring.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/risk/scoring.ts)
+- **Módulo Responsable:** [`RiskScoresService`](../../backend/src/risk/risk-scores.service.ts) y [`scoring.ts`](../../backend/src/risk/scoring.ts)
 - **Descripción:** Calcula la postura global de seguridad de la organización en una escala normalizada de 0 a 100 puntos y su correspondiente calificación en grado escolar (A, B, C, D, F).
 - **Criterios de Aceptación:**
   1. Algoritmo 100% determinista basado exclusivamente en los hallazgos abiertos no aceptados.
@@ -259,7 +259,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-16: Generador de Reportes Ejecutivos y Técnicos en PDF
-- **Módulo Responsable:** [`ReportsService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/reports/reports.service.ts) y [`PdfRendererService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/reports/pdf-renderer.ts)
+- **Módulo Responsable:** [`ReportsService`](../../backend/src/reports/reports.service.ts) y [`PdfRendererService`](../../backend/src/reports/pdf-renderer.ts)
 - **Descripción:** Produce documentos PDF de alta fidelidad estética listos para presentar a juntas directivas, aseguradoras de ciberriesgo o equipos de ingeniería.
 - **Criterios de Aceptación:**
   1. Renderizado en streaming con PDFKit sin requerir Chromium headless, manteniendo el contenedor liviano.
@@ -273,7 +273,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-17: Sistema de Alertas Tempranas y Webhooks
-- **Módulo Responsable:** [`AlertsService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/alerts/alerts.service.ts)
+- **Módulo Responsable:** [`AlertsService`](../../backend/src/alerts/alerts.service.ts)
 - **Descripción:** Monitorea y despacha notificaciones inmediatas ante eventos que degraden la postura de seguridad del perímetro.
 - **Criterios de Aceptación:**
   1. Disparadores de alerta en tiempo real:
@@ -289,7 +289,7 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 ---
 
 ### RF-18: Monitoreo Continuo Programado
-- **Módulo Responsable:** [`MonitoringService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/monitoring/monitoring.service.ts)
+- **Módulo Responsable:** [`MonitoringService`](../../backend/src/monitoring/monitoring.service.ts)
 - **Descripción:** Ejecuta periódicamente auditorías automáticas sobre todos los activos activos de la organización sin requerir acción manual del usuario.
 - **Criterios de Aceptación:**
   1. Frecuencias configurables a nivel de organización: `DAILY` (Diario), `WEEKLY` (Semanal) o `DISABLED` (Desactivado).

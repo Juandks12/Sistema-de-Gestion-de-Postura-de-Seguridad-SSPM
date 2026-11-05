@@ -1,8 +1,8 @@
 # Módulo de Correlación de Rutas de Ataque (Attack Paths) y Quick Wins 24h
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulo Backend: [`findings/attack-paths.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/attack-paths.service.ts) y [`findings/rules-catalog.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/rules-catalog.ts)  
-> Componente Frontend: [`AttackPathsCard.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/components/AttackPathsCard.tsx)  
+> Módulo Backend: [`findings/attack-paths.service.ts`](../../backend/src/findings/attack-paths.service.ts) y [`findings/rules-catalog.ts`](../../backend/src/findings/rules.catalog.ts)  
+> Componente Frontend: [`AttackPathsCard.tsx`](../../frontend/src/components/AttackPathsCard.tsx)  
 > Versión: **2.0.0 (Sprint 13 - Pilar 3)**
 
 Este documento describe la arquitectura, la lógica heurística y los escenarios de amenaza del motor de correlación de Rutas de Ataque (*Attack Paths*) y la matriz de priorización Quick Wins 24h.
@@ -90,7 +90,7 @@ El motor evalúa los hallazgos abiertos (`OPEN`, `IN_PROGRESS`, `VERIFYING`) de 
 
 ## 3. Catálogo de Esfuerzo de Remediación (Remediation Effort)
 
-Cada regla del catálogo [`rules-catalog.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/rules-catalog.ts) cuenta con una clasificación formal de esfuerzo:
+Cada regla del catálogo [`rules-catalog.ts`](../../backend/src/findings/rules.catalog.ts) cuenta con una clasificación formal de esfuerzo:
 
 ```typescript
 export enum RemediationEffort {
@@ -119,7 +119,7 @@ export enum RemediationEffort {
 La matriz permite al equipo técnico o al comercio desarticular rutas críticas de ataque atacando primero los eslabones más fáciles de mitigar:
 
 1. **Filtro Rápido en Frontend:**
-   En [`FindingsPage.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/pages/FindingsPage.tsx) y [`AssetDetailPage.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/pages/AssetDetailPage.tsx), un botón interactivo **"⚡ Quick Wins (< 30 min)"** aísla inmediatamente los hallazgos que pueden resolverse en la misma jornada laboral.
+   En [`FindingsPage.tsx`](../../frontend/src/pages/FindingsPage.tsx) y [`AssetDetailPage.tsx`](../../frontend/src/pages/AssetDetailPage.tsx), un botón interactivo **"⚡ Quick Wins (< 30 min)"** aísla inmediatamente los hallazgos que pueden resolverse en la misma jornada laboral.
 2. **Tarjeta de Rutas Activas (`AttackPathsCard.tsx`):**
    Muestra cada ruta activa con su nivel de riesgo y destaca un indicador:  
    *`"Desarticula esta ruta resolviendo 2 Quick Wins disponibles"`*.

@@ -1,8 +1,8 @@
 # Módulo Orquestador de Diagnóstico 360° y Diff Temporal
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulo Backend: [`scans/diagnostic-orchestrator.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/diagnostic-orchestrator.service.ts) y [`scans/posture-diff.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/posture-diff.service.ts)  
-> Componente Frontend: [`Diagnostic360Stepper.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/components/Diagnostic360Stepper.tsx)  
+> Módulo Backend: [`scans/diagnostic-orchestrator.service.ts`](../../backend/src/scans/diagnostic-orchestrator.service.ts) y `scans/posture-diff.service.ts`  
+> Componente Frontend: [`Diagnostic360Stepper.tsx`](../../frontend/src/components/Diagnostic360Stepper.tsx)  
 > Versión: **2.0.0 (Sprint 12 - Pilar 2)**
 
 Este documento describe la arquitectura, la máquina de estados y los algoritmos del Orquestador de Diagnóstico 360° y el motor de Diff Temporal de Postura.

@@ -1,8 +1,8 @@
 # Módulo de Postura de Seguridad Cloud Multicloud (CSPM)
 
 > **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulo Backend: [`cloud/`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/)  
-> Servicios: [`aws-connector.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/connectors/aws-connector.service.ts), [`azure-connector.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/connectors/azure-connector.service.ts) y [`crypto-vault.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/crypto-vault.service.ts)  
+> Módulo Backend: [`cloud/`](../../backend/src/cloud/)  
+> Servicios: [`aws-connector.service.ts`](../../backend/src/cloud/connectors/aws-connector.service.ts), [`azure-connector.service.ts`](../../backend/src/cloud/connectors/azure-connector.service.ts) y [`crypto-vault.service.ts`](../../backend/src/common/crypto/crypto-vault.service.ts)  
 > Versión: **2.0.0**
 
 Este documento describe la arquitectura de los conectores nativos sin agente (*agentless*) para **Amazon Web Services (AWS)** y **Microsoft Azure**, el almacenamiento criptográfico de credenciales y el catálogo de reglas de postura cloud basadas en CIS Benchmarks.
@@ -58,7 +58,7 @@ Para conectarse a las nubes de los clientes, la plataforma debe almacenar secret
 
 ## 3. Conector de Amazon Web Services (AWS)
 
-El servicio [`AwsConnectorService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/connectors/aws-connector.service.ts) implementa la autenticación segura sin requerir SDKs pesados de terceros mediante firmas criptográficas **AWS Signature Version 4 (SigV4)**.
+El servicio [`AwsConnectorService`](../../backend/src/cloud/connectors/aws-connector.service.ts) implementa la autenticación segura sin requerir SDKs pesados de terceros mediante firmas criptográficas **AWS Signature Version 4 (SigV4)**.
 
 ### Métodos de Conexión Soportados:
 1. **Rol Asumible IAM (Role ARN):** Mecanismo recomendado donde el cliente crea un rol en su cuenta AWS con relación de confianza hacia la cuenta de SSPM y un `ExternalId` único para mitigar el ataque de *Confused Deputy*.
@@ -84,7 +84,7 @@ El servicio [`AwsConnectorService`](file:///home/miguel/Proyectos/Sistema-de-Ges
 
 ## 4. Conector de Microsoft Azure
 
-El servicio [`AzureConnectorService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/cloud/connectors/azure-connector.service.ts) interactúa con Azure Resource Manager (ARM) REST APIs.
+El servicio [`AzureConnectorService`](../../backend/src/cloud/connectors/azure-connector.service.ts) interactúa con Azure Resource Manager (ARM) REST APIs.
 
 ### Métodos de Conexión Soportados:
 - **Service Principal (Microsoft Entra ID):** Requiere `tenantId`, `clientId`, `subscriptionId` y `clientSecret` cifrado. Se le asigna el rol nativo de Azure **Reader** sobre la suscripción deseada.
