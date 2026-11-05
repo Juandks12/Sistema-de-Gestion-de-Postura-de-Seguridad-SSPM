@@ -7,6 +7,8 @@ import { abortReason, FindingDraft, ScanContext, Scanner, ScanOutcome, requireTa
 import { createHttpAgent, httpProbe, HttpProbeOptions, HttpProbeResult } from '../web/http-client';
 import { PathResponse, SENSITIVE_PATHS, SensitivePathRule } from '../web/sensitive-paths.catalog';
 import { buildUrl, webTargetsFor } from './web-targets';
+import { analyzeOpenApiSpec } from '../web/openapi-security.analyzer';
+import { inspectContentForDebugLeaks } from '../web/debug-leak.analyzer';
 
 const MAX_BODY = 64 * 1024;
 
@@ -15,6 +17,7 @@ interface PathCheck {
   url: string;
   status: number | null;
   matched: boolean;
+  bodyText?: string;
   error?: string;
 }
 
@@ -106,20 +109,41 @@ export class SensitivePathsScanner implements Scanner {
       // y siempre con firma de contenido, lo que neutraliza los soft 404.
       const candidate = (res.status >= 200 && res.status < 300) || res.status === 401;
       const matched = candidate && rule.signature(toPathResponse(res));
-      return { rule, url, status: res.status, matched };
+      const bodyText = matched ? res.body.toString('utf8') : undefined;
+      return { rule, url, status: res.status, matched, bodyText };
     });
 
     if (abortReason(ctx.signal)) throw new ScanExecutionError('Escaneo interrumpido');
 
-    const findings: FindingDraft[] = checks
-      .filter((c) => c.matched)
-      .map((c) => ({
+    const findings: FindingDraft[] = [];
+
+    // Inspeccionar la respuesta canary (error / 404) en busca de trazas de debug y rutas internas
+    if (canaryRes.ok) {
+      const canaryLeak = inspectContentForDebugLeaks(
+        canaryRes.body.toString('utf8'),
+        canaryRes.headers,
+        canaryRes.finalUrl || `${baseUrl}${canary}`,
+      );
+      findings.push(...canaryLeak.findings);
+    }
+
+    for (const c of checks.filter((chk) => chk.matched)) {
+      findings.push({
         ruleId: c.rule.ruleId,
         location: c.url,
         title: `${c.rule.label} accesible públicamente (${c.rule.path})`,
         // Nunca se guarda el contenido: puede contener secretos.
         evidence: { path: c.rule.path, status: c.status, signatureMatched: true },
-      }));
+      });
+
+      // Si se expone la especificación OpenAPI / Swagger, profundizar en operaciones y parámetros
+      if (c.rule.ruleId === 'API-SWAGGER-EXPOSED' && c.bodyText) {
+        const openApiAnalysis = analyzeOpenApiSpec(c.bodyText, c.url);
+        if (openApiAnalysis.analyzed) {
+          findings.push(...openApiAnalysis.findings);
+        }
+      }
+    }
 
     return {
       parameters: { baseUrl, pathsChecked: SENSITIVE_PATHS.length, concurrency, timeoutMs },

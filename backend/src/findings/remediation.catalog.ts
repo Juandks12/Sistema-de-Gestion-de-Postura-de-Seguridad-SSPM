@@ -501,6 +501,49 @@ const REMEDIATION_CATALOG: Record<string, Omit<RemediationGuide, 'ruleId'>> = {
       },
     ],
   },
+  'WEB-DEBUG-STACKTRACE-LEAK': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-209: Generation of Error Message Containing Sensitive Information',
+    summary:
+      'Deshabilite el modo de depuración en entornos productivos y configure manejadores de errores globales para registrar las excepciones en archivos de log seguros sin exponer trazas a los clientes.',
+    verificationCommand: 'curl -sI https://target.com/_sspm_nonexistent_probe',
+    snippets: [
+      {
+        platform: 'Node.js',
+        description: 'Establezca la variable de entorno NODE_ENV=production y agregue un manejador de error final en Express:',
+        code: 'process.env.NODE_ENV = "production";\napp.use((err, req, res, next) => {\n  logger.error(err.stack);\n  res.status(500).json({ error: "Internal Server Error" });\n});',
+      },
+      {
+        platform: 'General',
+        description: 'En PHP (php.ini):',
+        code: 'display_errors = Off\ndisplay_startup_errors = Off\nlog_errors = On\nerror_reporting = E_ALL',
+      },
+      {
+        platform: 'Spring Boot',
+        description: 'En application.properties para Spring Boot:',
+        code: 'server.error.include-stacktrace=never\nserver.error.include-message=never\nserver.error.whitelabel.enabled=false',
+      },
+    ],
+  },
+  'WEB-INTERNAL-PATH-DISCLOSURE': {
+    owasp: 'A05:2021 – Security Misconfiguration',
+    cwe: 'CWE-200: Exposure of Sensitive Information',
+    summary:
+      'Configure páginas de error personalizadas y suprima rutas del sistema de archivos en respuestas del servidor web y frameworks para evitar revelar la estructura del servidor.',
+    verificationCommand: 'curl -s https://target.com/nonexistent-canary | grep -E "/var/www|/home/|C:\\\\"',
+    snippets: [
+      {
+        platform: 'Nginx',
+        description: 'Defina directivas error_page y oculte tokens de servidor en /etc/nginx/nginx.conf:',
+        code: 'server_tokens off;\nerror_page 404 /404.html;\nerror_page 500 502 503 504 /50x.html;\nlocation = /50x.html {\n    root /usr/share/nginx/html;\n}',
+      },
+      {
+        platform: 'Apache',
+        description: 'Configure páginas de error estáticas en httpd.conf o .htaccess:',
+        code: 'ServerSignature Off\nServerTokens Prod\nErrorDocument 404 /errors/404.html\nErrorDocument 500 /errors/500.html',
+      },
+    ],
+  },
   'PATH-ROBOTS-SENSITIVE-EXPOSED': {
     owasp: 'A01:2021 – Broken Access Control',
     cwe: 'CWE-200: Exposure of Sensitive Information',
@@ -712,6 +755,63 @@ const REMEDIATION_CATALOG: Record<string, Omit<RemediationGuide, 'ruleId'>> = {
         platform: 'Docker',
         description: 'En aplicaciones FastAPI / Python, oculte la documentación en producción:',
         code: "import os\nfrom fastapi import FastAPI\nis_prod = os.getenv('ENV') == 'production'\napp = FastAPI(docs_url=None if is_prod else '/docs', redoc_url=None if is_prod else '/redoc')",
+      },
+    ],
+  },
+  'API-DOCS-UNAUTHENTICATED-OPERATIONS': {
+    owasp: 'API2:2023 – Broken Authentication',
+    cwe: 'CWE-306: Missing Authentication for Critical Function',
+    summary:
+      'Configure esquemas de autenticación obligatorios (OAuth2, Bearer JWT, API Key) en la especificación OpenAPI y asegure que todos los endpoints mutativos (POST/PUT/DELETE) o administrativos exijan autorización en el backend.',
+    verificationCommand: 'curl -s https://target.com/openapi.json | grep -A 10 "security"',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Defina el esquema de seguridad global en OpenAPI v3 (openapi.yaml):',
+        code: 'components:\n  securitySchemes:\n    BearerAuth:\n      type: http\n      scheme: bearer\n      bearerFormat: JWT\nsecurity:\n  - BearerAuth: []',
+      },
+      {
+        platform: 'Spring Boot',
+        description: 'Asegure que Spring Security requiera autenticación por defecto en todos los endpoints:',
+        code: 'http\n  .authorizeHttpRequests(auth -> auth\n    .requestMatchers("/api/public/**").permitAll()\n    .anyRequest().authenticated()\n  );',
+      },
+      {
+        platform: 'Node.js',
+        description: 'Aplique middleware de autenticación antes de las rutas protegidas en Express:',
+        code: 'app.use("/api", verifyJwtToken);\napp.post("/api/users", createUserController);',
+      },
+    ],
+  },
+  'API-QUERY-SECRET-PARAM': {
+    owasp: 'API2:2023 – Broken Authentication',
+    cwe: 'CWE-598: Use of GET Request Method With Sensitive Query Strings',
+    summary:
+      'Elimine parámetros sensibles (api_key, token, password, client_secret) de la URL (query string). Utilice cabeceras HTTP Authorization o el cuerpo de peticiones HTTPS para prevenir fugas en logs de servidor, proxies y Referer.',
+    verificationCommand: 'curl -sI "https://target.com/api/v1/resource?api_key=test"',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Migre a cabeceras HTTP Authorization en la especificación OpenAPI:',
+        code: 'components:\n  securitySchemes:\n    ApiKeyAuth:\n      type: apiKey\n      in: header\n      name: X-API-Key',
+      },
+      {
+        platform: 'Node.js',
+        description: 'Obtenga las credenciales desde la cabecera Authorization en Express:',
+        code: 'const authHeader = req.headers.authorization;\nconst token = authHeader && authHeader.split(" ")[1];',
+      },
+    ],
+  },
+  'API-INTERNAL-HOST-EXPOSED': {
+    owasp: 'API7:2023 – Security Misconfiguration',
+    cwe: 'CWE-200: Exposure of Sensitive Information',
+    summary:
+      'Elimine hostnames internos (.local, .internal) y direcciones IP privadas de los bloques "servers" o "host" en las especificaciones OpenAPI/Swagger antes de publicarlas.',
+    verificationCommand: 'curl -s https://target.com/openapi.json | grep -E "192\\.168|10\\.|\\.internal"',
+    snippets: [
+      {
+        platform: 'General',
+        description: 'Configure URLs relativas o el dominio público en la sección servers de OpenAPI v3:',
+        code: 'servers:\n  - url: /api/v1\n    description: Servidor relativo canónico\n  - url: https://api.midominio.com/v1\n    description: Producción pública',
       },
     ],
   },

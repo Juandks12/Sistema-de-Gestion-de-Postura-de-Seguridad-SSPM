@@ -18,6 +18,8 @@ export interface HttpProbeOptions {
   pinnedAddress?: string;
   /** Reintentos ante fallos transitorios de conexión (por defecto: 1) */
   retries?: number;
+  /** Si debe reintentar con backoff adaptativo ante respuestas HTTP 429 / WAF rate limiting (por defecto: true) */
+  retryOn429?: boolean;
   /** Dispatcher o Agent con connection pooling persistente (reutiliza sockets y Keep-Alive). */
   dispatcher?: Dispatcher;
 }
@@ -225,6 +227,28 @@ export async function httpProbe(url: string, options: HttpProbeOptions): Promise
             headersTimeout: timeoutMs,
             bodyTimeout: timeoutMs,
           });
+
+          // WAF-Aware Adaptive Throttling: reintento adaptativo ante HTTP 429 Too Many Requests
+          if (res.statusCode === 429 && options.retryOn429 !== false && attempt < maxRetries && !options.signal.aborted) {
+            let backoffMs = 500 * Math.pow(2, attempt) + Math.floor(Math.random() * 100);
+            const retryAfterHeader = res.headers['retry-after'];
+            if (typeof retryAfterHeader === 'string') {
+              const seconds = parseInt(retryAfterHeader, 10);
+              if (!isNaN(seconds) && seconds > 0) {
+                backoffMs = Math.min(seconds * 1000, 5000);
+              } else {
+                const retryDate = Date.parse(retryAfterHeader);
+                if (!isNaN(retryDate)) {
+                  const diff = retryDate - Date.now();
+                  if (diff > 0) backoffMs = Math.min(diff, 5000);
+                }
+              }
+            }
+            await res.body.dump().catch(() => undefined);
+            await sleep(backoffMs);
+            continue;
+          }
+
           break;
         } catch (err) {
           lastErr = err;

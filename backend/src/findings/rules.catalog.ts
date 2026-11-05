@@ -407,6 +407,28 @@ const rawRules: RawRule[] = [
       'Deshabilite la generación de source maps en el build de producción o configure el servidor web/CDN para denegar el acceso a archivos con extensión .map.',
   },
   {
+    id: 'WEB-DEBUG-STACKTRACE-LEAK',
+    category: C.HTTP_HEADERS,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Fuga de trazas de depuración o Stack Trace en entorno de producción',
+    description:
+      'El servidor web o aplicación responde ante excepciones o sondeos mostrando trazas completas de ejecución (Stack Trace de Node.js, Python, PHP, Java o .NET), revelando código fuente, versiones de librerías y lógica interna.',
+    recommendation:
+      'Deshabilite el modo de depuración en entornos productivos (NODE_ENV=production, DEBUG=False, display_errors=Off) e implemente manejadores de excepciones globales con respuestas de error estandarizadas.',
+  },
+  {
+    id: 'WEB-INTERNAL-PATH-DISCLOSURE',
+    category: C.HTTP_HEADERS,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Divulgación de rutas internas del sistema de archivos',
+    description:
+      'Las respuestas del servidor web o páginas de error revelan rutas absolutas del sistema operativo del servidor (/var/www/, /home/, /app/src/, C:\\inetpub\\), exponiendo la estructura del sistema.',
+    recommendation:
+      'Configure el servidor web y los frameworks para suprimir rutas internas en mensajes de error y normalizar respuestas a errores 4xx/5xx.',
+  },
+  {
     id: 'PATH-ROBOTS-SENSITIVE-EXPOSED',
     category: C.HTTP_HEADERS,
     severity: S.MEDIUM,
@@ -626,6 +648,39 @@ const rawRules: RawRule[] = [
       'La interfaz Swagger UI o especificación OpenAPI expone la definición completa de endpoints, parámetros, métodos HTTP y modelos de datos de la API sin autenticación.',
     recommendation:
       'Deshabilite la interfaz Swagger en entornos de producción o limite su acceso mediante autenticación o lista blanca de IPs.',
+  },
+  {
+    id: 'API-DOCS-UNAUTHENTICATED-OPERATIONS',
+    category: C.SENSITIVE_PATH,
+    severity: S.HIGH,
+    cvss: 7.5,
+    title: 'Operaciones sensibles sin autenticación expuestas en documentación OpenAPI / Swagger',
+    description:
+      'La especificación OpenAPI/Swagger publicada expone endpoints de mutación de datos (POST/PUT/DELETE) o rutas administrativas/financieras sin esquemas de seguridad ni requerimiento de autenticación.',
+    recommendation:
+      'Configure esquemas de seguridad obligatorios (OAuth2, Bearer JWT o API Key) en la especificación OpenAPI y asegure que todos los endpoints sensibles estén protegidos en el backend.',
+  },
+  {
+    id: 'API-QUERY-SECRET-PARAM',
+    category: C.SENSITIVE_PATH,
+    severity: S.HIGH,
+    cvss: 7.4,
+    title: 'Parámetros confidenciales o secretos transmitidos en cadena de consulta (Query String)',
+    description:
+      'La documentación o endpoints de la API declaran parámetros sensibles (api_key, token, password, client_secret) en la query string en lugar de cabeceras HTTP Authorization o cuerpo de petición.',
+    recommendation:
+      'Migre los parámetros de autenticación a cabeceras HTTP Authorization (Bearer token) y transmita información confidencial exclusivamente en el cuerpo de peticiones HTTPS.',
+  },
+  {
+    id: 'API-INTERNAL-HOST-EXPOSED',
+    category: C.SENSITIVE_PATH,
+    severity: S.LOW,
+    cvss: 3.5,
+    title: 'Hostnames o direcciones IP internas divulgadas en especificación OpenAPI',
+    description:
+      'La especificación OpenAPI o Swagger expone en su sección de servidores (servers o host) direcciones IP privadas (RFC 1918) o dominios de red interna (.local, .internal, .lan, .corp).',
+    recommendation:
+      'Reemplace las direcciones internas por URLs públicas canónicas o relativas en los servidores de la especificación OpenAPI antes de desplegar en producción.',
   },
   {
     id: 'API-ACTUATOR-ENV-EXPOSED',
@@ -974,6 +1029,9 @@ export function computeRuleEffortAndImpact(r: {
   const isQuickWin =
     (r.id.startsWith('HDR-') && r.id !== 'HDR-CSP-MISSING') ||
     r.id.startsWith('SEC-TXT-') ||
+    r.id.startsWith('API-') ||
+    r.id === 'WEB-DEBUG-STACKTRACE-LEAK' ||
+    r.id === 'WEB-INTERNAL-PATH-DISCLOSURE' ||
     r.id === 'CMS-WP-XMLRPC-ENABLED' ||
     r.id === 'CMS-WP-USER-ENUMERATION' ||
     r.id === 'WAF-MISSING' ||
@@ -1009,6 +1067,10 @@ export function computeRuleEffortAndImpact(r: {
     businessImpact = 'Riesgo de suplantación de identidad (phishing/BEC) hacia clientes o desvío de pagos con facturas falsas.';
   } else if (r.id.includes('SECRET') || r.id.includes('ENV') || r.id.includes('SOURCEMAP') || r.id.includes('KEY')) {
     businessImpact = 'Exfiltración de credenciales maestras y propiedad intelectual para acceso directo a bases de datos.';
+  } else if (r.id.includes('DEBUG') || r.id.includes('STACKTRACE') || r.id.includes('INTERNAL-PATH')) {
+    businessImpact = 'Fuga de detalles internos de la arquitectura, rutas del sistema y lógica de negocio que asisten a la explotación de vulnerabilidades.';
+  } else if (r.id.includes('API-DOCS') || r.id.includes('UNAUTHENTICATED')) {
+    businessImpact = 'Exposición de la superficie de ataque de la API y endpoints sensibles sin controles de acceso en producción.';
   } else if (r.category === FindingCategory.EXPOSED_SERVICE) {
     businessImpact = 'Exposición perimetral directa a Internet que facilita ataques de fuerza bruta y explotación remota.';
   }

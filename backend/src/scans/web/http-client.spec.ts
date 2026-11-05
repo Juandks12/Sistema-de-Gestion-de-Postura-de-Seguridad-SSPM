@@ -156,4 +156,68 @@ describe('httpProbe', () => {
     // El cliente no debe cerrar el dispatcher del llamador
     expect(mockDispatcher.close).not.toHaveBeenCalled();
   });
+
+  it('reintenta ante HTTP 429 con cabecera retry-after y retorna respuesta satisfactoria', async () => {
+    async function* makeBody(content: string) {
+      yield Buffer.from(content);
+    }
+    const createMockBody = (content: string) => {
+      const iter = makeBody(content);
+      return Object.assign(iter, { dump: jest.fn().mockResolvedValue(undefined) });
+    };
+
+    mockedRequest
+      .mockResolvedValueOnce({
+        statusCode: 429,
+        headers: { 'retry-after': '0', 'content-type': 'text/plain' },
+        body: createMockBody('Too Many Requests'),
+      })
+      .mockResolvedValueOnce({
+        statusCode: 200,
+        headers: { 'content-type': 'application/json' },
+        body: createMockBody('{"status":"recovered"}'),
+      });
+
+    const outcome = await httpProbe('http://93.184.216.34/rate-limited', {
+      allowPrivate: false,
+      signal: new AbortController().signal,
+      retries: 1,
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.status).toBe(200);
+      expect(outcome.body.toString('utf-8')).toBe('{"status":"recovered"}');
+    }
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('no reintenta HTTP 429 si retryOn429 es false', async () => {
+    async function* makeBody(content: string) {
+      yield Buffer.from(content);
+    }
+    const createMockBody = (content: string) => {
+      const iter = makeBody(content);
+      return Object.assign(iter, { dump: jest.fn().mockResolvedValue(undefined) });
+    };
+
+    mockedRequest.mockResolvedValueOnce({
+      statusCode: 429,
+      headers: { 'content-type': 'text/plain' },
+      body: createMockBody('Rate limit exceeded'),
+    });
+
+    const outcome = await httpProbe('http://93.184.216.34/rate-limited-no-retry', {
+      allowPrivate: false,
+      signal: new AbortController().signal,
+      retries: 2,
+      retryOn429: false,
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.status).toBe(429);
+    }
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
 });
