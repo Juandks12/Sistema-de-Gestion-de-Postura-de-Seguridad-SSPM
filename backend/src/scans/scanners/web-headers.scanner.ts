@@ -141,7 +141,6 @@ export class WebHeadersScanner implements Scanner {
         // 6. Verificación de madurez de divulgación responsable security.txt (RFC 9116)
         securityTxtResult = await analyzeSecurityTxt(primary.outcome.finalUrl, probeOptions);
         findings.push(...securityTxtResult.findings);
-
         // 7. Inspección profunda de especificaciones OpenAPI / Swagger
         openApiResult = await probeAndAnalyzeOpenApi(primary.outcome.finalUrl, probeOptions);
         if (openApiResult) {
