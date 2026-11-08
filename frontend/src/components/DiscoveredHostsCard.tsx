@@ -219,34 +219,36 @@ export function DiscoveredHostsCard({
             ) : (
               <ul className="max-h-[26rem] divide-y divide-line overflow-y-auto">
                 {items.map((h) => (
-                  <li key={h.id} className="flex items-start gap-3 px-5 py-2.5">
-                    {selectable ? (
-                      <input
-                        type="checkbox"
-                        className="mt-1 size-4 shrink-0 accent-accent"
-                        checked={selected.has(h.id)}
-                        onChange={() => toggle(h.id)}
-                        aria-label={`Seleccionar ${h.hostname}`}
-                      />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-1.5 text-sm">
-                        <span className="font-medium [overflow-wrap:anywhere] text-ink">{h.hostname}</span>
-                        {h.wildcard ? <Pill>Comodín</Pill> : null}
-                        {h.internal ? <Pill className="border-warning/60 text-[#8a5b00] dark:text-warning">IP interna</Pill> : null}
-                        {!h.resolves ? <Pill className="text-muted">No resuelve</Pill> : null}
-                      </p>
-                      <p className="mt-0.5 text-xs [overflow-wrap:anywhere] text-muted" title={h.lastCertificateAt ? `Último certificado: ${formatDateTime(h.lastCertificateAt)}` : undefined}>
-                        {h.addresses.length > 0 ? `${h.addresses.slice(0, 3).join(', ')}${h.addresses.length > 3 ? '…' : ''} · ` : ''}
-                        visto desde {timeAgo(h.firstSeenAt)}
-                      </p>
+                  <li key={h.id} className="flex flex-col gap-2.5 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      {selectable ? (
+                        <input
+                          type="checkbox"
+                          className="mt-1 size-4 shrink-0 accent-accent"
+                          checked={selected.has(h.id)}
+                          onChange={() => toggle(h.id)}
+                          aria-label={`Seleccionar ${h.hostname}`}
+                        />
+                      ) : null}
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-center gap-1.5 text-sm">
+                          <span className="font-mono font-medium break-all text-ink sm:break-normal">{h.hostname}</span>
+                          {h.wildcard ? <Pill>Comodín</Pill> : null}
+                          {h.internal ? <Pill className="border-warning/60 text-[#8a5b00] dark:text-warning">IP interna</Pill> : null}
+                          {!h.resolves ? <Pill className="text-muted">No resuelve</Pill> : null}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted" title={h.lastCertificateAt ? `Último certificado: ${formatDateTime(h.lastCertificateAt)}` : undefined}>
+                          {h.addresses.length > 0 ? `${h.addresses.slice(0, 3).join(', ')}${h.addresses.length > 3 ? '…' : ''} · ` : ''}
+                          visto desde {timeAgo(h.firstSeenAt)}
+                        </p>
+                      </div>
                     </div>
                     {h.inventoryAssetId ? (
                       <Link to={`/assets/${h.inventoryAssetId}`} className="shrink-0 text-sm font-medium text-accent hover:underline">
                         Ver activo
                       </Link>
                     ) : canEdit ? (
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
                         {!h.ignored && canScan ? (
                           <Button
                             size="sm"
