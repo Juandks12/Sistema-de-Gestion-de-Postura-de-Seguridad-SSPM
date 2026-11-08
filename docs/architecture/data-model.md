@@ -1,7 +1,7 @@
 # Modelo de Datos y Esquema de Base de Datos
 
-> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Versión: **2.0.0**  
+> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)**  
+> Versión: **3.0.0 (Sprint 23)**  
 > Motor: **PostgreSQL 16 + Prisma ORM 6**
 
 Este documento detalla el modelo de datos relacional de la plataforma, el diagrama Entidad-Relación (ERD), la definición de tablas, relaciones, índices de rendimiento y las políticas de integridad multi-tenancy.
@@ -15,6 +15,7 @@ erDiagram
     organizations ||--o{ users : "tiene"
     organizations ||--o{ assets : "posee"
     organizations ||--o{ cloud_accounts : "conecta"
+    organizations ||--o{ malware_analyses : "analiza"
     organizations ||--o{ alerts : "genera"
     organizations ||--o{ alert_channels : "configura"
     organizations ||--o{ reports : "emite"
@@ -25,6 +26,7 @@ erDiagram
     assets ||--o{ scans : "ejecuta"
     assets ||--o{ diagnostic_batches : "orquesta"
     assets ||--o{ findings : "presenta"
+    assets ||--o{ malware_analyses : "vincula"
     assets ||--o{ scan_ports : "expone"
     assets ||--o{ discovered_hosts : "descubre"
     assets ||--o| cloud_accounts : "asocia"
@@ -40,6 +42,7 @@ erDiagram
     scans ||--o{ discovered_hosts : "origina"
 
     users ||--o{ findings : "asignado_a"
+    users ||--o{ malware_analyses : "solicitado_por"
     users ||--o{ reports : "generado_por"
     users ||--o{ diagnostic_batches : "solicitado_por"
     users ||--o{ alert_channels : "creado_por"
@@ -229,6 +232,30 @@ erDiagram
         integer size_bytes
         timestamp created_at
     }
+
+    malware_analyses {
+        uuid id PK
+        uuid organization_id FK
+        uuid asset_id FK
+        uuid requested_by_id FK
+        string artifact_type
+        string artifact_name
+        string mime_type
+        integer size_bytes
+        string sha256
+        string sha1
+        string md5
+        string verdict
+        integer risk_score
+        string severity
+        text summary
+        json static_analysis
+        json threat_intel
+        json indicators
+        json recommendations
+        uuid promoted_finding_id
+        timestamp created_at
+    }
 ```
 
 ---
@@ -250,11 +277,12 @@ erDiagram
 - **`scans`**: Trabajos individuales de escaneo (`PORT_SCAN`, `WEB_HEADERS`, `SSL_CERT`, `SENSITIVE_PATHS`, `EMAIL_SECURITY`, `SUBDOMAIN_DISCOVERY`). Funciona como cola de procesamiento asíncrona mediante lectura transaccional `FOR UPDATE SKIP LOCKED`.
 - **`scan_ports`**: Servicios de red detectados por Nmap. Desglosa puerto, protocolo, estado, versión de software y CPEs asociados para cruce con CVEs y CISA KEV.
 
-### 2.4 Gestión de Hallazgos y Vulnerabilidades
-- **`findings`**: Entidad central de vulnerabilidades y desalineaciones de postura. 
+### 2.4 Gestión Centralizada de Hallazgos, Taxonomía GRC y Laboratorio de Malware
+- **`findings`**: Entidad central de vulnerabilidades, desalineaciones de postura cloud, auditorías manuales e indicadores promovidos desde el Laboratorio de Malware.
   - **Deduplicación:** Se basa en una clave única compuesta `@@unique([assetId, fingerprint])`, donde `fingerprint = sha256(ruleId + location)`.
   - **Trazabilidad:** Preserva las marcas de tiempo `first_seen_at` y `last_seen_at`. Cuando una vulnerabilidad deja de reproducirse en escaneos posteriores, su estado cambia automáticamente a `RESOLVED` sin duplicar la fila.
-  - **SLAs y Triage:** Registra fecha de vencimiento (`due_date`), usuario asignado (`assigned_to_id`), notas de remediación y justificaciones formales de riesgo aceptado.
+  - **SLAs, Triaje en Lote y Enriquecimiento GRC:** Registra fecha de vencimiento (`due_date`), usuario asignado (`assigned_to_id`), notas de remediación (`remediation_note`) y justificaciones formales (`review_note`). En tiempo de servicio (`FindingsService.enrichFinding`), cada registro se enriquece dinámicamente con `sourceType` (`PERIMETER_SCAN`, `CLOUD_CSPM`, `THREAT_MALWARE_LAB`, `MANUAL_AUDIT`), `cweId`, `owaspCategory`, `mitreAttackTechnique`, `complianceControls[]` (5 marcos normativos) y comandos `remediationCli` / `remediationIac`.
+- **`malware_analyses`**: Registro forense de artefactos analizados en el **Threat & Malware Lab** (`artifact_type`: `EMAIL` | `FILE` | `URL`). Almacena hashes criptográficos (`sha256`, `sha1`, `md5`), veredicto (`CLEAN`, `SUSPICIOUS`, `MALICIOUS`), `risk_score` (0–100), telemetría estática en JSON (`static_analysis`), correlación de inteligencia de amenazas (`threat_intel`), lista de indicadores de compromiso (`indicators`) y referencia al hallazgo creado (`promoted_finding_id`) cuando el analista promueve la amenaza al Centro de Hallazgos y GRC.
 
 ### 2.5 Seguridad Cloud Multicloud (CSPM)
 - **`cloud_accounts`**: Cuentas conectadas de AWS y Azure. Almacena credenciales sensibles (`encrypted_credentials`) cifradas mediante **AES-256-GCM**, IDs de suscripción/cuenta, roles asumibles y regiones monitoreadas.

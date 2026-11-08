@@ -1,10 +1,6 @@
-# Sistema de Gestión de Postura de Seguridad (SSPM – SaaS Lite)
+# Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)
 
-Plataforma SaaS multi-tenant orientada a PyMEs para registrar activos externos
-(dominios e IPs públicas), escanearlos con herramientas automatizadas (Nmap, análisis
-de cabeceras HTTP, certificados SSL/TLS), clasificar hallazgos por criticidad,
-calcular un *Security Score* comprensible para la toma de decisiones, vigilar los
-activos de forma continua con alertas tempranas y generar reportes PDF.
+Plataforma SaaS multi-tenant de seguridad unificada organizada en **5 Dominios de Seguridad** para registrar activos externos y cuentas cloud (dominios, IPs públicas, AWS y Azure), auditarlos mediante un **Orquestador de Diagnóstico Profundo 360°**, analizar artefactos sospechosos en el **Laboratorio Forense de Malware y Phishing (Correos `.eml`, Archivos/Hashes y URLs)**, centralizar vulnerabilidades en el **Centro Maestro de Hallazgos y Gobierno Normativo (GRC Hub: ISO 27001, PCI-DSS v4.0, SOC 2, NIST CSF 2.0, CIS Controls v8)**, correlacionar **Rutas de Ataque (Kill-Chains)**, calcular un *Security Score* determinista, emitir alertas tempranas y exportar telemetría a SIEM/SOAR y reportes ejecutivos/técnicos en PDF.
 
 La documentación técnica ampliada (arquitectura, decisiones, despliegue y roadmap)
 está en [`docs/`](docs/); la memoria académica y el material de negocio viven en el
@@ -28,6 +24,13 @@ Este repositorio contiene el **backend** (API REST, en `backend/`) y el **fronte
 | Sprint 11 (Pilar 1) | Auditoría E-Commerce, Mini-Crawler seguro, Anti-Magecart PCI-DSS v4.0 (SRI), Secret Hunter (Stripe/MercadoPago/AWS), CMS auditor (WP, Woo, Presta, Magento), RFC 9116 y BIMI | ✅ Implementado |
 | Sprint 12 (Pilar 2) | Diagnóstico 360° en 3 etapas en 1 clic, Stepper reactivo, Diff Temporal de Postura y cancelación en cascada | ✅ Implementado |
 | Sprint 13 (Pilar 3) | Correlación de Rutas de Ataque (Attack Paths con Kill Chains), catálogo de Esfuerzo de Remediación, matriz Quick Wins 24h (< 30 min) y reportes ejecutivos C-Level | ✅ Implementado |
+| Sprints 14–17 | Conectores CSPM Multicloud (AWS SigV4 & Azure ARM), Marco de Cumplimiento Normativo (5 marcos), Analizadores profundos (OpenAPI/Swagger, GraphQL, WAF, DNS CAA/DNSSEC/DNSBL, TLS 1.0/1.1) | ✅ Implementado |
+| Sprint 18 (Fase 1) | Alineación total Frontend ↔ Backend en Diagnóstico 360° y Diff de Postura (telemetría WAF, TLS, OpenAPI, Stack Traces) | ✅ Implementado |
+| Sprint 19 (Fase 2) | Integración de Monitoreo Continuo con Orquestador 360° (`COMMERCE_360`), re-auditoría automática CSPM Cloud y Alertas Tempranas | ✅ Implementado |
+| Sprint 20 (Fase 3) | Centro Unificado de Hallazgos y Gobierno Normativo (GRC Hub: CWE, OWASP, MITRE ATT&CK, controles GRC, auditoría manual y triaje/SLA en lote) | ✅ Implementado |
+| Sprint 21 (Fase 4) | Laboratorio Forense de Malware, Phishing y Amenazas — Backend (`ThreatLabModule`: motores `.eml`/BEC, Archivos/Hashes/Macros/PDF y URLs + promoción a hallazgo) | ✅ Implementado |
+| Sprint 22 (Fase 5) | Interfaz del Laboratorio Forense (`ThreatLabPage.tsx`) y Reestructuración Modular en **5 Dominios de Seguridad** (`AppShell.tsx`) | ✅ Implementado |
+| Sprint 23 (Fase 6) | API Pública SIEM/SOAR Extendida (`/attack-paths`, `/compliance`, `/threat-lab`), Reportes PDF con Matriz GRC/ThreatLab/360°, promoción 1-clic de subdominios CT a 360° y vectores DNS/SPF (`DNS-WILDCARD-ENABLED`, `MAIL-SPF-PERMERROR-RISK`) | ✅ Implementado |
 
 ## Documentación del Proyecto
 
@@ -35,10 +38,10 @@ Toda la documentación técnica del sistema se encuentra estructurada temáticam
 
 | Categoría | Documentos Principales | Descripción |
 | :--- | :--- | :--- |
-| **Portal Central** | [`docs/README.md`](docs/README.md) | Índice general, glosario de términos y mapa de navegación |
-| **Requerimientos** | [`requirements/functional-requirements.md`](docs/requirements/functional-requirements.md)<br>[`requirements/non-functional-requirements.md`](docs/requirements/non-functional-requirements.md) | Especificación formal de RF-01 a RF-18 y RNF-01 a RNF-10 con criterios de aceptación |
-| **Arquitectura** | [`architecture/overview.md`](docs/architecture/overview.md)<br>[`architecture/workflows-and-diagrams.md`](docs/architecture/workflows-and-diagrams.md)<br>[`architecture/data-model.md`](docs/architecture/data-model.md) | Modelos C4, límites multi-tenant, 5 diagramas Mermaid de flujos y modelo ERD |
-| **Módulos Core** | [`modules/ecommerce-crawler-and-secrets.md`](docs/modules/ecommerce-crawler-and-secrets.md)<br>[`modules/diagnostic-360-orchestrator.md`](docs/modules/diagnostic-360-orchestrator.md)<br>[`modules/attack-paths-and-quick-wins.md`](docs/modules/attack-paths-and-quick-wins.md)<br>[`modules/cspm-multicloud.md`](docs/modules/cspm-multicloud.md)<br>[`modules/risk-scoring-and-slas.md`](docs/modules/risk-scoring-and-slas.md)<br>[`modules/reports-and-alerts.md`](docs/modules/reports-and-alerts.md) | Detalle profundo de cada analizador, motor heurístico, conectores cloud y PDFKit |
+| **Portal Central** | [`docs/README.md`](docs/README.md) | Índice general, arquitectura de 5 Dominios, glosario y mapa de navegación |
+| **Requerimientos** | [`requirements/functional-requirements.md`](docs/requirements/functional-requirements.md)<br>[`requirements/non-functional-requirements.md`](docs/requirements/non-functional-requirements.md) | Especificación formal de RF-01 a RF-21 y RNF-01 a RNF-10 con criterios de aceptación |
+| **Arquitectura** | [`architecture/overview.md`](docs/architecture/overview.md)<br>[`architecture/workflows-and-diagrams.md`](docs/architecture/workflows-and-diagrams.md)<br>[`architecture/data-model.md`](docs/architecture/data-model.md) | Modelos C4, límites multi-tenant, 7 diagramas Mermaid de flujos y modelo ERD completo |
+| **Módulos Core** | [`modules/unified-findings-and-grc-hub.md`](docs/modules/unified-findings-and-grc-hub.md)<br>[`modules/malware-and-threat-lab.md`](docs/modules/malware-and-threat-lab.md)<br>[`modules/ecommerce-crawler-and-secrets.md`](docs/modules/ecommerce-crawler-and-secrets.md)<br>[`modules/diagnostic-360-orchestrator.md`](docs/modules/diagnostic-360-orchestrator.md)<br>[`modules/attack-paths-and-quick-wins.md`](docs/modules/attack-paths-and-quick-wins.md)<br>[`modules/cspm-multicloud.md`](docs/modules/cspm-multicloud.md)<br>[`modules/risk-scoring-and-slas.md`](docs/modules/risk-scoring-and-slas.md)<br>[`modules/reports-and-alerts.md`](docs/modules/reports-and-alerts.md) | Detalle profundo de cada analizador, GRC Hub, Threat & Malware Lab, conectores cloud y PDFKit |
 | **Roadmap y Deuda** | [`roadmap/future-integrations.md`](docs/roadmap/future-integrations.md)<br>[`roadmap/technical-debt.md`](docs/roadmap/technical-debt.md) | Conectores GCP, Jira/ServiceNow, SIEM, WAF 1-clic, BullMQ + Redis y workers efímeros |
 | **Decisiones (ADRs)** | [`adr/`](docs/adr/) | Registros formales de decisiones arquitectónicas (ADR-0001 a ADR-0007) |
 | **Compendios** | [`sistema-completo-arquitectura-requerimientos-flujos.md`](docs/sistema-completo-arquitectura-requerimientos-flujos.md)<br>[`pendientes-backlog-futuras-integraciones.md`](docs/pendientes-backlog-futuras-integraciones.md) | Compendios integrales de arquitectura y pendientes para referencia unificada |
@@ -49,19 +52,22 @@ Toda la documentación técnica del sistema se encuentra estructurada temáticam
 - **Framework:** [NestJS 11](https://nestjs.com/) (Express)
 - **ORM / migraciones:** [Prisma 6](https://www.prisma.io/)
 - **Base de datos:** PostgreSQL 16
-- **Autenticación:** JWT (Bearer) con Passport, Refresh Tokens rotativos y 2FA TOTP (RFC 6238)
-- **Autorización:** RBAC por organización (roles `ADMIN`, `ANALYST`, `VIEWER`)
+- **Autenticación:** JWT (Bearer) con Passport, Refresh Tokens rotativos, 2FA TOTP (RFC 6238) y API Keys (`X-API-Key` con hash SHA-256)
+- **Autorización:** RBAC por organización (roles `ADMIN`, `ANALYST`, `VIEWER`) y scopes granulares para API Pública SIEM/SOAR
 - **Documentación de la API:** Swagger / OpenAPI en `/api/docs`
 - **Escaneo de Red:** Nmap ejecutado de forma asíncrona con `child_process.spawn` (sin shell) y cola de trabajos en PostgreSQL
 - **Parser XML:** `fast-xml-parser` para la salida `-oX` de Nmap
-- **Auditoría Web & E-Commerce:** `undici` (HTTP con conexión a IP validada), `node:tls` (certificados X.509), Mini-Crawler de checkout, validador Anti-Magecart SRI (PCI-DSS v4.0), Secret Hunter con regex y análisis CMS
+- **Auditoría Web & E-Commerce:** `undici` (HTTP con conexión a IP validada), `node:tls` (certificados X.509 y protocolos TLS 1.0–1.3), Mini-Crawler de checkout, validador Anti-Magecart SRI (PCI-DSS v4.0), Secret Hunter con regex, sonda OpenAPI/GraphQL y análisis CMS
+- **Seguridad DNS y Correo:** SPF (incluyendo detección preventiva de PermError > 8 lookups), DMARC, DKIM, BIMI, MTA-STS, TLS-RPT, CAA, DNSSEC, listas negras DNSBL y detección de Wildcard DNS (`DNS-WILDCARD-ENABLED`)
 - **Postura Cloud (CSPM):** Conectores agentless para AWS (SigV4) y Azure (OAuth2 REST API) con bóveda criptográfica AES-256-GCM (`CryptoVaultService`)
+- **Laboratorio Forense de Malware y Phishing (`ThreatLabModule`):** Motores estáticos y heurísticos sin ejecución para correos `.eml`/MIME (BEC, spoofing, saltos `Received`), archivos/hashes (Magic Bytes, entropía de Shannon, macros VBA/XLM, firmas PDF `/JS`/`/Launch`, PE headers) y URLs (anti-phishing, homógrafos IDN, redirecciones abiertas)
+- **Centro de Hallazgos y Cumplimiento Normativo (GRC Hub):** Enriquecimiento taxonómico con CWE, OWASP Top 10:2021, MITRE ATT&CK y mapeo bidireccional hacia 5 marcos regulatorios (`ISO_27001`, `PCI_DSS`, `SOC_2`, `NIST_CSF`, `CIS_CONTROLS`)
 - **Correlación de Amenazas:** Motor de Rutas de Ataque (Attack Paths con Kill Chains), Diff Temporal de Postura y catálogo de Esfuerzo de Remediación (Quick Wins 24h)
 - **Contenedores:** Docker multi-etapa (Ubuntu 24.04 LTS, Node 22, Nmap 7.94) y Docker Compose
-- **Reportes PDF:** [PDFKit](https://pdfkit.org/) vectorial en memoria (WinAnsi Latin-1 sanitizado, sin navegador headless)
+- **Reportes PDF:** [PDFKit](https://pdfkit.org/) vectorial en memoria (WinAnsi Latin-1 sanitizado, con Matriz GRC, telemetría Threat Lab y evolución 360°)
 - **Notificaciones:** [Nodemailer](https://nodemailer.com/) (SMTP) y webhooks con `undici` firmados con HMAC-SHA256 (`X-SSPM-Signature`)
-- **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4, Lucide Icons y Recharts, servido por Nginx en Docker
-- **CI/CD:** GitHub Actions (lint estricto, 81 suites de pruebas unitarias/e2e, build multi-etapa y despliegue federado OIDC a Azure)
+- **Frontend:** React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind CSS 4, Lucide Icons y Recharts, organizado en 5 Dominios de Seguridad y servido por Nginx en Docker
+- **CI/CD:** GitHub Actions (lint estricto, suites de pruebas unitarias/e2e, build multi-etapa y despliegue federado OIDC a Azure)
 
 ## Estructura de carpetas
 
@@ -71,20 +77,20 @@ Toda la documentación técnica del sistema se encuentra estructurada temáticam
 ├── docker-compose.dev.yml      # Modo desarrollo: código montado y recarga en caliente
 ├── docker-compose.db-access.yml # Opcional: publica PostgreSQL en tu equipo
 ├── .env.example                # Variables opcionales de docker compose
-├── frontend/                   # Dashboard web (React + Vite)
+├── frontend/                   # Dashboard web (React 19 + Vite + Tailwind CSS 4)
 │   ├── Dockerfile              # development (Vite) y production (Nginx + proxy /api)
 │   ├── nginx.conf              # Sirve la SPA y reenvía /api al backend
 │   └── src/
 │       ├── auth/               # Sesión JWT, contexto y rutas protegidas
-│       ├── components/         # Layout, componentes de interfaz y gráficas
+│       ├── components/         # Layout (AppShell 5 Dominios), modales, gráficas y tarjetas
 │       ├── hooks/queries.ts    # Acceso a la API con TanStack Query
 │       ├── lib/                # Cliente HTTP, tipos de la API y formato
-│       └── pages/              # Vista general, activos, detalle, hallazgos y escaneos
+│       └── pages/              # Dashboard, Activos, Cloud CSPM, Threat Lab, Hallazgos GRC, Cumplimiento, Escaneos, Alertas, Reportes y Ajustes
 └── backend/
     ├── Dockerfile              # Imagen multi-etapa: development y production
     ├── docker-entrypoint.sh    # Migraciones y datos de demostración al arrancar
     ├── prisma/
-    │   ├── schema.prisma       # Modelo de datos (users, organizations, assets, scans)
+    │   ├── schema.prisma       # Modelo de datos (organizations, users, assets, scans, findings, malware_analyses, cloud_accounts, etc.)
     │   ├── migrations/         # Migraciones SQL versionadas
     │   └── seed.ts             # Datos de demostración
     ├── src/
@@ -92,29 +98,31 @@ Toda la documentación técnica del sistema se encuentra estructurada temáticam
     │   ├── app.module.ts       # Módulo raíz y guards globales (JWT + roles)
     │   ├── config/             # Validación de variables de entorno
     │   ├── prisma/             # PrismaService (conexión a PostgreSQL)
-    │   ├── common/
-    │   │   ├── decorators/     # @Public, @Roles, @CurrentUser
-    │   │   ├── guards/         # JwtAuthGuard, RolesGuard (RBAC)
-    │   │   ├── filters/        # Traducción de errores Prisma a HTTP
-    │   │   └── utils/          # Validación/normalización de dominios e IPs
-    │   ├── auth/               # Registro de organización, login, estrategia JWT
+    │   ├── common/             # Decoradores, guards, filtros y utilidades criptográficas/red
+    │   ├── auth/               # Registro, login, estrategia JWT, MFA TOTP y recuperación
     │   ├── organizations/      # Datos de la organización del usuario
-    │   ├── users/              # Gestión de usuarios del tenant (solo ADMIN)
-    │   ├── assets/             # RF-01: inventario de activos
-    │   ├── scans/              # Escaneos asíncronos
-    │   │   ├── scanners/       # Un escáner por tipo: puertos, cabeceras, TLS, rutas
-    │   │   ├── analyzers/      # Funciones puras que convierten resultados en hallazgos
-    │   │   ├── web/            # Cliente HTTP seguro, sonda TLS y catálogo de rutas
-    │   │   ├── nmap/           # Ejecutor, argumentos, parser XML y tipos
-    │   │   ├── scan-worker.service.ts  # Cola y worker asíncrono
-    │   │   └── target-resolver.ts      # Resolución DNS segura del objetivo
-    │   ├── findings/           # RF-08: hallazgos, catálogo de reglas y severidad
-    │   ├── risk/               # RF-07/RF-11: motor de riesgo, Security Score e histórico
-    │   ├── dashboard/          # Datos agregados para el dashboard (sección 8)
-    │   ├── alerts/             # RF-10: reglas de alerta, canales, correo y webhooks
-    │   ├── monitoring/         # Sección 10.4: planificador del monitoreo continuo
-    │   ├── reports/            # RF-09: datos y renderizado de los reportes PDF
-    │   └── health/             # Endpoint de salud
+    │   ├── users/              # Gestión de usuarios e invitaciones del tenant
+    │   ├── assets/             # RF-01/RF-02: inventario y verificación de propiedad
+    │   ├── discovery/          # RF-03: subdominios Certificate Transparency y promoción 1-clic a 360°
+    │   ├── scans/              # Escaneos asíncronos y Orquestador de Diagnóstico 360°
+    │   │   ├── scanners/       # Escáneres: puertos, cabeceras, TLS, rutas, correo, subdominios
+    │   │   ├── analyzers/      # Analizadores web, Magecart, secretos JS, CMS, OpenAPI/GraphQL
+    │   │   ├── dns/            # Analizador DNS (CAA, DNSSEC, DNSBL, Wildcard DNS)
+    │   │   ├── email/          # Analizador de correo (SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT)
+    │   │   ├── nmap/           # Ejecutor Nmap, parser XML y correlación CVE/KEV/EPSS
+    │   │   └── diagnostic-orchestrator.service.ts # Orquestador 360° en 3 etapas y Diff de Postura
+    │   ├── cloud/              # RF-09: Conectores CSPM agentless para AWS y Microsoft Azure
+    │   ├── threat-lab/         # RF-20: Laboratorio Forense de Malware y Phishing (.eml, Archivos, URLs)
+    │   ├── findings/           # RF-12/RF-13/RF-14/RF-19: Centro Unificado de Hallazgos, GRC Taxonomy y Attack Paths
+    │   ├── compliance/         # Evaluación continua multi-marco (ISO 27001, PCI-DSS, SOC 2, NIST CSF, CIS)
+    │   ├── risk/               # RF-15: Motor determinista de Security Score e histórico
+    │   ├── dashboard/          # Datos agregados para Comando Ejecutivo 360°
+    │   ├── alerts/             # RF-17: Alertas tempranas, canales SMTP y webhooks firmados HMAC
+    │   ├── monitoring/         # RF-18: Planificador continuo (Diagnóstico 360° + CSPM Cloud)
+    │   ├── reports/            # RF-16: Generador PDFKit (Ejecutivo GRC/ThreatLab/360° y Técnico)
+    │   ├── api-keys/           # Gestión de API Keys con scopes para integraciones
+    │   ├── public-api/         # RF-21: API Pública SIEM/SOAR (JSON y NDJSON)
+    │   └── health/             # Endpoint de salud y retención de datos
     └── test/                   # Pruebas end-to-end (supertest)
 ```
 
@@ -864,6 +872,10 @@ Tablas creadas por las migraciones (sección 6.2 del documento, más `scan_ports
   correo), con `failures` y `locked_until`.
 - **reports**: registro de reportes generados: `type`, `asset_id` (nulo = organización),
   `generated_by_id`, `score`, `grade`, `open_findings`, `pages`, `size_bytes`.
+- **diagnostic_batches**: lotes de ejecución del Orquestador de Diagnóstico Profundo 360° (`profile`: `COMMERCE_360` | `PERIMETER_FAST` | `FULL_AUDIT`, `status`, `current_stage`, `total_stages` y `summary` en JSONB con el diff temporal de postura).
+- **cloud_accounts** y **cloud_resources**: cuentas AWS y Azure conectadas (credenciales cifradas con AES-256-GCM en `encrypted_credentials`) e inventario normalizado de recursos cloud auditados (S3, IAM, Security Groups, EC2, RDS, CloudTrail, Storage Accounts, NSGs, Azure SQL, Activity Logs).
+- **malware_analyses**: análisis forenses del Laboratorio de Malware y Phishing (`artifact_type`: `EMAIL` | `FILE` | `URL`, `artifact_name`, hashes `sha256`/`sha1`/`md5`, `verdict`: `CLEAN` | `SUSPICIOUS` | `MALICIOUS`, `risk_score`, `severity`, `static_analysis`, `threat_intel`, `indicators`, `recommendations` y `promoted_finding_id`).
+- **api_keys**: llaves de máquina con prefijo `sspm_live_`, hash `sha256` y `scopes` granulares para consumo de la API Pública SIEM/SOAR (`/api/v1/public/*`).
 
 Además, `organizations.monitoring_frequency`, `assets.last_scheduled_scan_at` y
 `scans.source` (`MANUAL` o `SCHEDULED`) soportan el monitoreo continuo, y

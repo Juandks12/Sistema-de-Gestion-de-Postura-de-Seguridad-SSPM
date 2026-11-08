@@ -1,21 +1,27 @@
 # Visión General de la Arquitectura del Sistema
 
-> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Versión: **2.0.0 (Sprint 13)**  
+> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)**  
+> Versión: **3.0.0 (Sprint 23 — 5 Dominios de Seguridad)**  
 > Estado: **Producción / Azure Ready**
 
-Este documento describe la arquitectura global del sistema, la descomposición de componentes, los límites de seguridad y el modelo de infraestructura utilizado para desplegar la plataforma.
+Este documento describe la arquitectura global del sistema, su organización modular en **5 Dominios de Seguridad**, la descomposición de componentes C4, los límites de seguridad multi-tenant y el modelo de infraestructura utilizado para desplegar la plataforma.
 
 ---
 
-## 1. Principios de Diseño y Filosofía Arquitectónica
+## 1. Principios de Diseño y Arquitectura en 5 Dominios
 
 La plataforma fue diseñada bajo los siguientes principios fundamentales:
 
-1. **Monorrepo Modular y Cohesivo:** Frontend y backend conviven en un único repositorio con interfaces fuertemente tipadas en TypeScript, facilitando el versionado sincronizado, refactorizaciones seguras y pipelines de integración unificados.
-2. **Arquitectura Agentless (Sin Agentes):** Ningún cliente o servidor auditado requiere instalar binarios propietarios o agentes residentes en sus sistemas. Toda la auditoría se efectúa mediante protocolos de red abiertos (HTTP, TLS, DNS, TCP) o APIs nativas de nube (AWS REST con SigV4, Azure ARM).
-3. **Desacoplamiento Asíncrono de Procesamiento:** Las tareas intensivas de auditoría (Nmap, sondeos web, escaneo multicloud) se desacoplan de la API REST mediante una cola transaccional en base de datos, garantizando tiempos de respuesta inmediatos (< 50 ms) para los usuarios web.
-4. **Seguridad por Diseño (Secure by Design):** Cifrado en reposo para credenciales de terceros (AES-256-GCM), sanitización automática de secretos detectados en código, tokens JWT de expiración corta, verificación de dos factores (TOTP) y registros de auditoría append-only.
+1. **Arquitectura Funcional en 5 Dominios Cohesivos:** Todas las vistas de usuario (`AppShell.tsx`) y módulos de backend están estructurados en 5 dominios interconectados:
+   - **Dominio 1 — Comando Ejecutivo:** Vista General 360°, Security Score determinista, Quick Wins 24h y Rutas de Ataque (*Kill-Chains*).
+   - **Dominio 2 — Superficie y Diagnóstico:** Inventario de Activos, Descubrimiento Certificate Transparency (con promoción 1-clic a 360°), Orquestador de Diagnóstico Profundo 360° y Conectores CSPM Multicloud (AWS & Azure).
+   - **Dominio 3 — Laboratorio de Amenazas (`Threat & Malware Lab`):** Estación forense sin ejecución para Correos `.eml` / Cabeceras MIME (BEC, spoofing), Archivos / Hashes (Magic Bytes, entropía de Shannon, macros VBA/XLM, firmas PDF) y URLs sospechosas, con promoción en 1 clic a hallazgo GRC.
+   - **Dominio 4 — Centro de Hallazgos y GRC (`GRC Hub`):** Centro Maestro de Hallazgos enriquecido con taxonomía CWE, OWASP Top 10:2021 y MITRE ATT&CK, triaje y SLA en lote, auditoría manual/pentest y evaluación continua sobre 5 marcos normativos (`ISO_27001`, `PCI_DSS`, `SOC_2`, `NIST_CSF`, `CIS_CONTROLS`).
+   - **Dominio 5 — Operaciones y Gobierno:** Alertas Tempranas multicanal (SMTP y Webhooks firmados HMAC-SHA256), Reportes PDF Ejecutivos y Técnicos con Matriz GRC y Threat Lab, Monitoreo Continuo (360° + CSPM), API Pública SIEM/SOAR (JSON y NDJSON) y Gobierno RBAC/MFA/Auditoría.
+2. **Monorrepo Modular y Cohesivo:** Frontend y backend conviven en un único repositorio con interfaces fuertemente tipadas en TypeScript.
+3. **Arquitectura Agentless y Análisis Estático Seguro:** Ningún activo auditado requiere agentes locales, y el análisis de artefactos maliciosos opera de forma 100% estática y heurística en memoria sin ejecutar binarios ni visitar URLs sospechosas.
+4. **Desacoplamiento Asíncrono de Procesamiento:** Las tareas intensivas de auditoría (Nmap, sondeos web, escaneo multicloud) se desacoplan de la API REST mediante una cola transaccional en PostgreSQL (`FOR UPDATE SKIP LOCKED`).
+5. **Seguridad por Diseño (Secure by Design):** Cifrado en reposo para credenciales cloud (AES-256-GCM), sanitización automática de secretos detectados en código, tokens JWT con versión de revocación, 2FA TOTP, API Keys con hash SHA-256 y bitácora `audit_log` inmutable.
 
 ---
 
@@ -27,35 +33,37 @@ El siguiente diagrama ilustra los usuarios principales, las fronteras del sistem
 
 ```mermaid
 graph TD
-    subgraph "Usuarios de la Plataforma"
+    subgraph "Usuarios y Sistemas Consumidores"
         Admin["Administrador de TI / CISO<br>[Persona]"]
-        Analyst["Analista DevSecOps / SOC<br>[Persona]"]
-        Auditor["Auditor Externo / C-Level<br>[Persona]"]
+        Analyst["Analista DevSecOps / SOC / Forense<br>[Persona]"]
+        Auditor["Auditor GRC / C-Level<br>[Persona]"]
+        SIEM_Ext["Plataformas SIEM / SOAR<br>(Splunk, Sentinel, Wazuh, Elastic)"]
     end
 
-    subgraph "Plataforma SSPM"
-        SSPM_System["Sistema de Gestión de Postura de Seguridad (SSPM)<br>[Software System]<br>Plataforma SaaS para auditoría perimetral, e-commerce y cloud"]
+    subgraph "Plataforma SSPM (5 Dominios de Seguridad)"
+        SSPM_System["Sistema de Gestión de Postura de Seguridad<br>(SSPM / EASM / CSPM / GRC & Threat Lab)<br>Auditoría 360°, Laboratorio de Malware y Gobierno Normativo"]
     end
 
     subgraph "Sistemas Externos y Perímetro Auditado"
-        Target_Ecom["Tiendas E-Commerce y Aplicaciones Web<br>[HTTPS / DNS / TLS]"]
-        Cloud_AWS["Amazon Web Services (AWS)<br>[API Cloud]"]
-        Cloud_Azure["Microsoft Azure<br>[API Cloud]"]
-        Threat_Feeds["Bases de Amenazas (CISA KEV / NVD)<br>[HTTPS REST]"]
-        CT_Logs["Logs de Certificate Transparency (crt.sh)<br>[HTTPS API]"]
-        Notif_Channels["Canales de Alerta (SMTP / Slack / Discord)<br>[Webhooks / Email]"]
+        Target_Ecom["Tiendas E-Commerce, APIs y Servidores<br>[HTTPS / DNS / TLS / TCP]"]
+        Cloud_AWS["Amazon Web Services (AWS)<br>[API Cloud SigV4]"]
+        Cloud_Azure["Microsoft Azure<br>[Azure ARM REST API]"]
+        Threat_Feeds["Inteligencia de Amenazas<br>(CISA KEV / NVD / EPSS / DNSBL)"]
+        CT_Logs["Certificate Transparency (crt.sh)<br>[HTTPS API]"]
+        Notif_Channels["Canales de Alerta (SMTP / Slack / Discord)<br>[Webhooks HMAC / Email]"]
     end
 
-    Admin -->|"Gestiona tenant, usuarios y cuentas cloud"| SSPM_System
-    Analyst -->|"Lanza diagnósticos 360°, remedia y re-testea"| SSPM_System
-    Auditor -->|"Descarga reportes ejecutivos en PDF y revisa SLAs"| SSPM_System
+    Admin -->|"Gestiona tenant, usuarios, canales, API Keys y cuentas cloud"| SSPM_System
+    Analyst -->|"Lanza diagnósticos 360°, analiza malware/phishing y gestiona hallazgos"| SSPM_System
+    Auditor -->|"Evalúa cumplimiento ISO/PCI/SOC2/NIST/CIS y descarga reportes PDF"| SSPM_System
+    SIEM_Ext -->|"Consume /api/v1/public/* (JSON y NDJSON) con X-API-Key"| SSPM_System
 
-    SSPM_System -->|"Audita puertos, cabeceras, Magecart y secretos"| Target_Ecom
-    SSPM_System -->|"Evalúa configuraciones IAM, S3, RDS, CloudTrail"| Cloud_AWS
-    SSPM_System -->|"Evalúa almacenamiento, NSGs, SQL, Activity Logs"| Cloud_Azure
-    SSPM_System -->|"Consulta vulnerabilidades explotadas conocidas"| Threat_Feeds
-    SSPM_System -->|"Descubre subdominios vivos no inventariados"| CT_Logs
-    SSPM_System -->|"Despacha alertas tempranas de riesgo"| Notif_Channels
+    SSPM_System -->|"Audita puertos, cabeceras, Magecart, secretos, DNS y correo"| Target_Ecom
+    SSPM_System -->|"Evalúa configuraciones IAM, S3, RDS, EC2, CloudTrail"| Cloud_AWS
+    SSPM_System -->|"Evalúa Storage, NSGs, VMs, Azure SQL, Activity Logs"| Cloud_Azure
+    SSPM_System -->|"Correlaciona CVEs, KEV, EPSS y reputación de IPs/hashes"| Threat_Feeds
+    SSPM_System -->|"Descubre subdominios y los promueve en 1 clic a 360°"| CT_Logs
+    SSPM_System -->|"Despacha alertas tempranas firmadas"| Notif_Channels
 ```
 
 ---
@@ -67,7 +75,7 @@ Desglose de los subsistemas y componentes de software desplegables:
 ```mermaid
 graph TD
     subgraph "Navegador Web del Cliente"
-        SPA["Frontend SPA<br>[React 19 + Vite + Tailwind CSS 4]<br>Dashboard reactivo, Stepper 360°, Matriz Quick Wins"]
+        SPA["Frontend SPA (5 Dominios)<br>[React 19 + Vite + Tailwind CSS 4]<br>Comando Ejecutivo, Superficie 360°/CSPM, Threat Lab, GRC Hub y Operaciones"]
     end
 
     subgraph "Capa de Servidor Perimetral (Ingress)"
@@ -75,53 +83,49 @@ graph TD
     end
 
     subgraph "Capa de Backend (NestJS 11 + Node.js 22)"
-        API_Gateway["API Gateway & Controllers<br>[NestJS / Express]<br>Validación DTO, Rate Limiting, RBAC"]
+        API_Gateway["API Gateway & Controllers<br>[NestJS / Express]<br>Validación DTO, Rate Limiting, RBAC y ApiKeyGuard"]
         
-        subgraph "Servicios de Negocio"
-            Auth_Svc["Auth & MFA Service"]
-            Assets_Svc["Assets & Verification Service"]
-            Orch_Svc["Diagnostic 360° Orchestrator"]
-            Worker_Svc["Scan Worker Engine"]
+        subgraph "Servicios de Negocio Core"
+            Auth_Svc["Auth, MFA & Users Service"]
+            Assets_Svc["Assets, Verification & CT Discovery"]
+            Orch_Svc["Diagnostic 360° Orchestrator & Posture Diff"]
+            Worker_Svc["Scan Worker & Monitoring Scheduler"]
+            ThreatLab_Svc["Threat & Malware Lab Service<br>(.eml, Archivos/Hashes, URLs)"]
+            Findings_Svc["Unified Findings & GRC Taxonomy Service"]
+            Compliance_Svc["Multi-Framework Compliance Engine<br>(ISO, PCI, SOC2, NIST, CIS)"]
             Attack_Svc["Attack Paths Correlation Engine"]
-            CSPM_Svc["Multicloud CSPM Connectors"]
+            CSPM_Svc["Multicloud CSPM Connectors (AWS & Azure)"]
             Risk_Svc["Deterministic Risk & Score Engine"]
-            Reports_Svc["PDFKit Reports Generator"]
-            Alerts_Svc["Alerts & Webhook Dispatcher"]
+            Reports_Svc["PDFKit Generator (GRC + ThreatLab + 360°)"]
+            Alerts_Svc["Alerts, Webhook HMAC & Public SIEM API"]
         end
 
         subgraph "Analizadores Especializados"
-            Nmap_Proc["Nmap Subprocess Executor"]
-            Crawler_Proc["Mini-Crawler & Magecart SRI Analyzer"]
-            Secret_Proc["JS Secret Hunter & SourceMap Sonda"]
-            TLS_Proc["TLS 1.0/1.1 Probe & X.509 Verifier"]
-            DNS_Proc["Email Security (SPF/DMARC/BIMI)"]
+            Nmap_Proc["Nmap Subprocess & CVE/KEV/EPSS"]
+            Crawler_Proc["E-Commerce Crawler & Magecart SRI"]
+            Secret_Proc["JS Secret Hunter, SourceMap & OpenAPI/GraphQL"]
+            TLS_Proc["TLS 1.0–1.3 Probe & X.509 Verifier"]
+            DNS_Proc["DNS & Email Security<br>(SPF, DMARC, DKIM, BIMI, CAA, DNSSEC, Wildcard)"]
+            Forensic_Proc["Static Malware Analyzers<br>(MIME/BEC, Magic Bytes/Entropy/VBA/PDF, Phishing URL)"]
         end
     end
 
     subgraph "Capa de Persistencia"
-        PostgreSQL[("Base de Datos Relacional<br>[PostgreSQL 16]<br>Esquema multi-tenant, auditoría y cola de escaneos")]
+        PostgreSQL[("Base de Datos Relacional<br>[PostgreSQL 16]<br>Esquema multi-tenant, hallazgos GRC, Threat Lab y cola de escaneos")]
     end
 
     SPA -->|"HTTPS / REST JSON"| Nginx
     Nginx -->|"Proxy Pass /api/v1"| API_Gateway
 
-    API_Gateway --> Auth_Svc
-    API_Gateway --> Assets_Svc
-    API_Gateway --> Orch_Svc
-    API_Gateway --> Attack_Svc
-    API_Gateway --> CSPM_Svc
-    API_Gateway --> Risk_Svc
-    API_Gateway --> Reports_Svc
-    API_Gateway --> Alerts_Svc
+    API_Gateway --> Auth_Svc & Assets_Svc & Orch_Svc & ThreatLab_Svc & Findings_Svc & Compliance_Svc & Attack_Svc & CSPM_Svc & Risk_Svc & Reports_Svc & Alerts_Svc
 
     Orch_Svc --> Worker_Svc
-    Worker_Svc --> Nmap_Proc
-    Worker_Svc --> Crawler_Proc
-    Worker_Svc --> Secret_Proc
-    Worker_Svc --> TLS_Proc
-    Worker_Svc --> DNS_Proc
+    Worker_Svc --> Nmap_Proc & Crawler_Proc & Secret_Proc & TLS_Proc & DNS_Proc
+    ThreatLab_Svc --> Forensic_Proc
+    ThreatLab_Svc -->|"Promueve IoC"| Findings_Svc
+    Findings_Svc <-->|"Sincroniza controles"| Compliance_Svc
 
-    Auth_Svc & Assets_Svc & Orch_Svc & Worker_Svc & Attack_Svc & CSPM_Svc & Risk_Svc & Reports_Svc & Alerts_Svc -->|"Prisma ORM (Conexiones Agrupadas)"| PostgreSQL
+    Auth_Svc & Assets_Svc & Orch_Svc & Worker_Svc & ThreatLab_Svc & Findings_Svc & Compliance_Svc & Attack_Svc & CSPM_Svc & Risk_Svc & Reports_Svc & Alerts_Svc -->|"Prisma ORM"| PostgreSQL
 ```
 
 ---
