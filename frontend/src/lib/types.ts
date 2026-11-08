@@ -1266,4 +1266,100 @@ export interface PostureDiffSummary {
   executiveSummary: string;
 }
 
+// ------------------------------------------------ Threat & Malware Lab (Sprint 21-22)
+
+export type MalwareArtifactType = 'EMAIL' | 'FILE' | 'URL';
+export type MalwareVerdict = 'CLEAN' | 'SUSPICIOUS' | 'MALICIOUS';
+
+export interface MalwareIndicator {
+  code: string;
+  title: string;
+  severity: Severity;
+  detail?: string;
+  description?: string;
+  scoreImpact?: number;
+  category?: string;
+  evidence?: string;
+  mitreTechnique?: string;
+}
+
+export interface MalwareThreatIntelSummary {
+  queriedSources: string[];
+  matchedSources: string[];
+  malwareFamily?: string | null;
+  confidence?: number;
+  tags?: string[];
+  referenceUrls?: string[];
+  lastSeen?: string | null;
+}
+
+export interface MalwareAnalysisItem {
+  id: string;
+  organizationId: string;
+  assetId: string | null;
+  requestedById: string | null;
+  artifactType: MalwareArtifactType;
+  artifactName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  sha1: string | null;
+  md5: string | null;
+  verdict: MalwareVerdict;
+  riskScore: number;
+  severity: Severity;
+  summary: string;
+  staticAnalysis: Record<string, unknown> | null;
+  threatIntel: MalwareThreatIntelSummary | Record<string, unknown> | null;
+  indicators: MalwareIndicator[];
+  recommendations: string[];
+  promotedFindingId: string | null;
+  createdAt: string;
+  asset?: { id: string; name: string | null; value: string; type: AssetType } | null;
+  requestedBy?: { id: string; fullName: string; email: string } | null;
+}
+
+export interface MalwareAnalysisSummary {
+  total: number;
+  byType: Record<MalwareArtifactType, number>;
+  byVerdict: Record<MalwareVerdict, number>;
+  promotedCount: number;
+}
+
+export interface AnalyzeEmailInput {
+  rawContent: string;
+  artifactName?: string;
+  assetId?: string;
+}
+
+export interface AnalyzeFileInput {
+  fileName: string;
+  mimeType?: string;
+  contentBase64?: string;
+  rawText?: string;
+  sha256?: string;
+  assetId?: string;
+}
+
+export interface AnalyzeUrlInput {
+  url: string;
+  assetId?: string;
+}
+
+export interface PromoteAnalysisToFindingInput {
+  assetId: string;
+  assignedToId?: string;
+  customTitle?: string;
+}
+
+export interface MalwareAnalysesFilter {
+  artifactType?: MalwareArtifactType | '';
+  verdict?: MalwareVerdict | '';
+  assetId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+
 
