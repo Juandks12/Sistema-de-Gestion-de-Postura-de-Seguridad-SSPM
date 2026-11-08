@@ -27,6 +27,7 @@ import { PublicApiModule } from './public-api/public-api.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { CryptoVaultModule } from './common/crypto/crypto-vault.module';
 import { CloudModule } from './cloud/cloud.module';
+import { ThreatLabModule } from './threat-lab/threat-lab.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { CloudModule } from './cloud/cloud.module';
     ComplianceModule,
     CryptoVaultModule,
     CloudModule,
+    ThreatLabModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).

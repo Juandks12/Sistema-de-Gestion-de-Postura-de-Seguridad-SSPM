@@ -77,6 +77,22 @@ enum FindingCategory {
   CLOUD_COMPUTE
   CLOUD_DATABASE
   CLOUD_LOGGING
+  /// Amenazas de malware, phishing, BEC y artefactos maliciosos detectados en el Laboratorio
+  MALWARE_THREAT
+}
+
+/// Tipo de artefacto analizado en el Laboratorio de Malware y Phishing.
+enum MalwareArtifactType {
+  EMAIL
+  FILE
+  URL
+}
+
+/// Veredicto forense del Laboratorio de Malware y Phishing.
+enum MalwareVerdict {
+  CLEAN
+  SUSPICIOUS
+  MALICIOUS
 }
 
 /// Proveedor de nube soportado para auditoría CSPM.
@@ -263,6 +279,7 @@ model Organization {
   cloudAccounts     CloudAccount[]
   cloudResources    CloudResource[]
   diagnosticBatches DiagnosticBatch[]
+  malwareAnalyses   MalwareAnalysis[]
 
   @@map("organizations")
 }
@@ -307,6 +324,7 @@ model User {
   createdTokens              AccountToken[]    @relation("AccountTokenCreatedBy")
   createdApiKeys             ApiKey[]          @relation("ApiKeyCreatedBy")
   requestedDiagnosticBatches DiagnosticBatch[] @relation("DiagnosticBatchRequestedBy")
+  requestedMalwareAnalyses   MalwareAnalysis[] @relation("MalwareAnalysisRequestedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -352,6 +370,7 @@ model Asset {
   discoveredHosts   DiscoveredHost[]
   cloudAccount      CloudAccount?
   diagnosticBatches DiagnosticBatch[]
+  malwareAnalyses   MalwareAnalysis[]
 
   @@unique([organizationId, value])
   @@index([organizationId])
@@ -853,4 +872,39 @@ model CloudResource {
   @@unique([cloudAccountId, nativeId])
   @@index([organizationId, provider, resourceType])
   @@map("cloud_resources")
+}
+
+/// Análisis forense de correo (.eml / cabeceras), archivo/hash o URL sospechosa
+/// ejecutado en el Laboratorio de Malware, Phishing y Amenazas (Threat & Malware Lab).
+model MalwareAnalysis {
+  id                String              @id @default(uuid()) @db.Uuid
+  organizationId    String              @map("organization_id") @db.Uuid
+  assetId           String?             @map("asset_id") @db.Uuid
+  requestedById     String?             @map("requested_by_id") @db.Uuid
+  artifactType      MalwareArtifactType @map("artifact_type")
+  artifactName      String              @map("artifact_name") @db.VarChar(500)
+  mimeType          String?             @map("mime_type") @db.VarChar(120)
+  sizeBytes         Int?                @map("size_bytes")
+  sha256            String?             @db.VarChar(64)
+  sha1              String?             @db.VarChar(40)
+  md5               String?             @db.VarChar(32)
+  verdict           MalwareVerdict
+  riskScore         Int                 @default(0) @map("risk_score")
+  severity          FindingSeverity     @default(INFO)
+  summary           String
+  staticAnalysis    Json                @map("static_analysis")
+  threatIntel       Json                @map("threat_intel")
+  indicators        Json
+  recommendations   Json                @default("[]")
+  promotedFindingId String?             @map("promoted_finding_id") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  requestedBy  User?        @relation("MalwareAnalysisRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, verdict])
+  @@index([sha256])
+  @@map("malware_analyses")
 }
