@@ -22,6 +22,11 @@ export interface DnsSecuritySummary {
     rrsigCount: number;
     error?: string;
   };
+  wildcard?: {
+    enabled: boolean;
+    probeHost: string;
+    addresses: string[];
+  };
 }
 
 export async function analyzeDnsSecurity(
@@ -31,11 +36,27 @@ export async function analyzeDnsSecurity(
   signal?: AbortSignal,
 ): Promise<{ findings: FindingDraft[]; summary: DnsSecuritySummary }> {
   const findings: FindingDraft[] = [];
+  const probeHost = `_sspm-wildcard-probe.${domain}`;
 
-  const [caa, dnssec] = await Promise.all([
+  const [caa, dnssec, wildcardAddresses] = await Promise.all([
     lookupCaa(domain, dns),
     lookupDnssec(domain, dohQuery, signal),
+    dns.addresses(probeHost).catch(() => [] as string[]),
   ]);
+
+  // ----------------------------------------------------------------- Wildcard DNS
+  if (wildcardAddresses.length > 0) {
+    findings.push({
+      ruleId: 'DNS-WILDCARD-ENABLED',
+      location: `dns:*.${domain}`,
+      title: `Resolución DNS Wildcard (*.${domain}) activa`,
+      evidence: {
+        domain,
+        probeHost,
+        resolvedAddresses: wildcardAddresses.slice(0, 10),
+      },
+    });
+  }
 
   // --------------------------------------------------------------------- CAA
   if (caa.status === 'missing') {
@@ -91,6 +112,11 @@ export async function analyzeDnsSecurity(
         dnskeyCount: dnssec.dnskeyRecords.length,
         rrsigCount: dnssec.rrsigCount,
         error: dnssec.error,
+      },
+      wildcard: {
+        enabled: wildcardAddresses.length > 0,
+        probeHost,
+        addresses: wildcardAddresses.slice(0, 10),
       },
     },
   };

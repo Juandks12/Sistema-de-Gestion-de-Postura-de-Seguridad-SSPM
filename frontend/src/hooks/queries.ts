@@ -661,8 +661,38 @@ export function useSetDiscoveredHostIgnored() {
 export function useImportDiscoveredHosts() {
   const invalidate = useInvalidateAll();
   return useMutation({
-    mutationFn: (ids: string[]) =>
-      api<ImportDiscoveredResult>('/discovered-hosts/import', { method: 'POST', json: { ids, authorizationConfirmed: true } }),
+    mutationFn: (
+      input: string[] | { ids: string[]; launchDiagnostic360?: boolean },
+    ) => {
+      const ids = Array.isArray(input) ? input : input.ids;
+      const launchDiagnostic360 = Array.isArray(input)
+        ? false
+        : Boolean(input.launchDiagnostic360);
+      return api<ImportDiscoveredResult>('/discovered-hosts/import', {
+        method: 'POST',
+        json: {
+          ids,
+          authorizationConfirmed: true,
+          launchDiagnostic360,
+        },
+      });
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function usePromoteAndScanDiscoveredHost() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{
+        assetId: string;
+        hostname: string;
+        verified: boolean;
+        diagnosticBatchId: string | null;
+      }>(`/discovered-hosts/${id}/promote-and-scan`, {
+        method: 'POST',
+      }),
     onSuccess: invalidate,
   });
 }

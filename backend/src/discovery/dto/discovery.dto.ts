@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, Equals, IsBoolean, IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, Equals, IsBoolean, IsOptional, IsUUID } from 'class-validator';
 
 export class UpdateDiscoveredHostDto {
   @ApiProperty({ description: 'true para descartarlo (no se incorporará al inventario), false para restaurarlo.' })
@@ -19,4 +19,12 @@ export class ImportDiscoveredHostsDto {
   @IsBoolean()
   @Equals(true, { message: 'Debes confirmar que tienes autorización para analizar estos activos' })
   authorizationConfirmed!: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Si es true, lanza automáticamente un lote de Diagnóstico 360° (COMMERCE_360) para cada subdominio que herede verificación.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  launchDiagnostic360?: boolean;
 }

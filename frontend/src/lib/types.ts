@@ -685,8 +685,20 @@ export interface DiscoveredHosts {
 }
 
 export interface ImportDiscoveredResult {
-  created: Array<{ hostname: string; assetId: string; verified: boolean }>;
+  created: Array<{
+    hostname: string;
+    assetId: string;
+    verified: boolean;
+    diagnosticBatchId?: string | null;
+  }>;
   failed: Array<{ hostname: string; reason: string }>;
+}
+
+export interface PromoteAndScanDiscoveredResult {
+  assetId: string;
+  hostname: string;
+  verified: boolean;
+  diagnosticBatchId: string | null;
 }
 
 /** Resumen del escaneo EMAIL_SECURITY. */

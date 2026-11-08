@@ -54,6 +54,24 @@ export interface ReportQuickWin {
   recommendation: string;
 }
 
+export interface ReportComplianceFrameworkItem {
+  id: string;
+  name: string;
+  version: string;
+  compliancePercentage: number;
+  passedControls: number;
+  failedControls: number;
+  totalControls: number;
+}
+
+export interface ReportThreatLabIncident {
+  artifactType: string;
+  artifactName: string;
+  verdict: string;
+  riskScore: number;
+  createdAt: Date;
+}
+
 export interface ReportData {
   type: ReportType;
   generatedAt: Date;
@@ -76,6 +94,26 @@ export interface ReportData {
   executiveSummary?: ExecutiveBusinessSummary;
   attackPaths?: AttackPathSummary[];
   quickWins?: ReportQuickWin[];
+  complianceSummary?: {
+    averageScore: number;
+    frameworks: ReportComplianceFrameworkItem[];
+  };
+  threatLabSummary?: {
+    total: number;
+    malicious: number;
+    suspicious: number;
+    clean: number;
+    promotedCount: number;
+    recentIncidents: ReportThreatLabIncident[];
+  };
+  diagnostic360Summary?: {
+    totalBatches: number;
+    latestBatchStatus: string | null;
+    latestProfile: string | null;
+    deltaScore: number | null;
+    remediatedCount: number;
+    regressionsCount: number;
+  };
 }
 
 export const SEVERITY_LABEL: Record<FindingSeverity, string> = {

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createDnsClient, DNS_CLIENT } from '../common/dns/dns-client';
 import { CT_SOURCE, CtLogClient } from '../discovery/ct-log.client';
@@ -25,7 +25,7 @@ import { DiagnosticOrchestratorService } from './diagnostic-orchestrator.service
 import { DiagnosticController } from './diagnostic.controller';
 
 @Module({
-  imports: [FindingsModule, RiskModule, AlertsModule, VulnerabilitiesModule, DiscoveryModule],
+  imports: [FindingsModule, RiskModule, AlertsModule, VulnerabilitiesModule, forwardRef(() => DiscoveryModule)],
   controllers: [ScansController, DiagnosticController],
   providers: [
     ScansService,
