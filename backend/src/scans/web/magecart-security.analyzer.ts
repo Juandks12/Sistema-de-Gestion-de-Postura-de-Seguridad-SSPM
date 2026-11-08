@@ -1,3 +1,4 @@
+import { FindingSeverity } from '@prisma/client';
 import { FindingDraft } from '../scanner.interface';
 import { CrawledPage } from './ecommerce-crawler';
 
@@ -14,6 +15,9 @@ const CHECKOUT_PAYMENT_URL_RE = /checkout|finalizar-compra|pagar|pago|payment|on
 /**
  * Evalúa riesgos de Magecart, E-Skimming, falta de Subresource Integrity (SRI)
  * y manipulación de formularios de pago según PCI-DSS v4.0 (Req. 6.4.3 y 11.6.1).
+ *
+ * Consolida los scripts externos sin SRI por página auditada (diferenciando severidad HIGH en
+ * páginas transaccionales/checkout y MEDIUM en páginas informativas) para evitar ruido repetitivo.
  */
 export function analyzeMagecartAndFormSecurity(pages: CrawledPage[]): MagecartAnalysisResult {
   const findings: FindingDraft[] = [];
@@ -26,6 +30,7 @@ export function analyzeMagecartAndFormSecurity(pages: CrawledPage[]): MagecartAn
     const pageUrl = new URL(page.url);
     const isHttps = pageUrl.protocol === 'https:';
     const isCheckoutOrPayment = CHECKOUT_PAYMENT_URL_RE.test(page.url) || page.forms.some((f) => f.hasCardInput);
+    const pageScriptsMissingSri: string[] = [];
 
     // 1. Análisis de Subresource Integrity (SRI) en scripts externos
     for (const script of page.scripts) {
@@ -40,22 +45,30 @@ export function analyzeMagecartAndFormSecurity(pages: CrawledPage[]): MagecartAn
 
       if (!hasValidSri) {
         scriptsMissingSri.add(script.src);
-
-        findings.push({
-          ruleId: 'WEB-SRI-MISSING-EXTERNAL-SCRIPT',
-          location: `${page.url}#script:${script.src}`,
-          title: isCheckoutOrPayment
-            ? `Script externo sin integridad SRI en página de pago/checkout (Riesgo Magecart/Skimming - PCI-DSS v4.0)`
-            : `Script externo de terceros cargado sin Subresource Integrity (SRI)`,
-          evidence: {
-            pageUrl: page.url,
-            scriptUrl: script.src,
-            isCheckoutOrPayment,
-            integrityAttribute: script.integrity ?? null,
-            standard: 'PCI-DSS v4.0 Req. 6.4.3 & 11.6.1 / OWASP Top 10 A08:2021',
-          },
-        });
+        if (!pageScriptsMissingSri.includes(script.src)) {
+          pageScriptsMissingSri.push(script.src);
+        }
       }
+    }
+
+    if (pageScriptsMissingSri.length > 0) {
+      findings.push({
+        ruleId: 'WEB-SRI-MISSING-EXTERNAL-SCRIPT',
+        location: page.url,
+        severity: isCheckoutOrPayment ? FindingSeverity.HIGH : FindingSeverity.MEDIUM,
+        cvss: isCheckoutOrPayment ? 7.5 : 5.3,
+        title: isCheckoutOrPayment
+          ? `Script externo sin integridad SRI en página de pago/checkout (Riesgo Magecart/Skimming - PCI-DSS v4.0)`
+          : `Scripts externos de terceros cargados sin Subresource Integrity (SRI) (${pageScriptsMissingSri.length})`,
+        evidence: {
+          pageUrl: page.url,
+          scriptUrl: pageScriptsMissingSri[0],
+          scriptUrls: pageScriptsMissingSri,
+          scriptsCount: pageScriptsMissingSri.length,
+          isCheckoutOrPayment,
+          standard: 'PCI-DSS v4.0 Req. 6.4.3 & 11.6.1 / OWASP Top 10 A08:2021',
+        },
+      });
     }
 
     // 2. Análisis de Mixed Content (recursos HTTP dentro de HTTPS)
@@ -63,10 +76,13 @@ export function analyzeMagecartAndFormSecurity(pages: CrawledPage[]): MagecartAn
       // Buscar scripts, stylesheets, iframes sobre http://
       const activeMixedRegex = /<(?:script|iframe)\s+[^>]*?src=["'](http:\/\/[^"']+)["']/gi;
       let activeMatch: RegExpExecArray | null;
+      const seenPageMixed = new Set<string>();
 
       while ((activeMatch = activeMixedRegex.exec(page.html)) !== null) {
         const insecureResource = activeMatch[1];
         mixedContentUrls.add(insecureResource);
+        if (seenPageMixed.has(insecureResource)) continue;
+        seenPageMixed.add(insecureResource);
 
         findings.push({
           ruleId: 'WEB-MIXED-CONTENT',

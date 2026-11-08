@@ -93,6 +93,12 @@ describe('scoring', () => {
       expect(res.score).toBe(92);
       expect(res.grade).toBe('A');
     });
+
+    it('diferencia gradualmente volúmenes medios y bajos en activos CRITICAL sin saturar en 5 hallazgos', () => {
+      const moderate = computeScore({ CRITICAL: 1, HIGH: 1, MEDIUM: 5, LOW: 5 }, AssetCriticality.CRITICAL);
+      const heavier = computeScore({ CRITICAL: 1, HIGH: 1, MEDIUM: 10, LOW: 9 }, AssetCriticality.CRITICAL);
+      expect(moderate.score).toBeGreaterThan(heavier.score);
+    });
   });
 
   describe('fórmula de riesgo híbrida: Riesgo = CVSS * (1 + EPSS) * FactorCriticidad', () => {

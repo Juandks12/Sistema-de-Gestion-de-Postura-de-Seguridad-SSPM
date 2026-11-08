@@ -20,7 +20,7 @@ import { AssetCriticality, FindingSeverity } from '@prisma/client';
  * caso de estudio (sección 13.4) sin tocar el resto del sistema.
  */
 
-export const SCORING_MODEL_VERSION = '1.1';
+export const SCORING_MODEL_VERSION = '1.2';
 
 /** Penalización por cada hallazgo abierto de la severidad (línea base). */
 export const SEVERITY_WEIGHTS: Record<FindingSeverity, number> = {
@@ -130,9 +130,18 @@ export function computeScore(
   const penalties: SeverityPenalty[] = SEVERITY_ORDER.map((severity) => {
     const count = Math.max(0, Math.floor(full[severity] ?? 0));
     const baseWeight = SEVERITY_WEIGHTS[severity];
-    const weight = Math.round(baseWeight * criticalityFactor * 100) / 100;
+    // Para severidades MEDIUM y LOW en activos de alta criticidad (> 1.0), se amortigua el
+    // multiplicador de criticidad (factor 0.4 sobre el excedente) y se aplica rendimiento
+    // decreciente a partir del 5º hallazgo para evitar saturación prematura del tope.
+    const isLowerSeverity = severity === 'MEDIUM' || severity === 'LOW';
+    const effectiveCritFactor =
+      isLowerSeverity && criticalityFactor > 1.0
+        ? 1 + (criticalityFactor - 1) * 0.4
+        : criticalityFactor;
+    const weight = Math.round(baseWeight * effectiveCritFactor * 100) / 100;
     const cap = SEVERITY_CAPS[severity];
-    const raw = Math.round(weight * count * 100) / 100;
+    const effectiveCount = count <= 4 ? count : 4 + (count - 4) * 0.5;
+    const raw = Math.round(weight * effectiveCount * 100) / 100;
     return { severity, count, weight, cap, penalty: Math.min(cap, raw), capped: raw > cap };
   });
 

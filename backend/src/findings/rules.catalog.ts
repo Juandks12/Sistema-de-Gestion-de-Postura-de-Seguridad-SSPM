@@ -1009,6 +1009,19 @@ const rawRules: RawRule[] = [
       'Configure registros DNS CAA restringiendo la emisión a las CAs autorizadas (p. ej. issue "letsencrypt.org") y declare una dirección "iodef" para recibir notificaciones ante intentos no autorizados.',
   },
   {
+    id: 'DNS-INTERNAL-IP-LEAK',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Subdominio público resuelve a dirección IP privada o interna (Fuga Split-Horizon DNS)',
+    description:
+      'Uno o más subdominios descubiertos en registros públicos resuelven en el DNS externo hacia direcciones IP privadas (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) o de loopback. Esto revela la topología y direccionamiento de la red interna a atacantes externos y facilita ataques de Server-Side Request Forgery (SSRF) o DNS Rebinding.',
+    recommendation:
+      'Implemente vistas separadas de DNS (Split-Horizon DNS) para que los registros de infraestructura interna solo se resuelvan dentro de la VPN o red corporativa, y elimine registros A/AAAA privados de la zona DNS pública.',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 30,
+  },
+  {
     id: 'DNS-CAA-INVALID',
     category: C.EMAIL_SECURITY,
     severity: S.MEDIUM,

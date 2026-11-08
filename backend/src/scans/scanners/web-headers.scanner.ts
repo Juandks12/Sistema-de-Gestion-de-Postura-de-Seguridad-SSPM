@@ -59,20 +59,30 @@ export class WebHeadersScanner implements Scanner {
         audited.push({ url: target.url, reachable: false, error: outcome.error, code: outcome.code ?? null });
         continue;
       }
-      const drafts = analyzeHeaders({
+      const isPlainHttpWhenHttpsAvailable =
+        httpsAvailable && new URL(outcome.finalUrl).protocol === 'http:';
+      const rawDrafts = analyzeHeaders({
         finalUrl: outcome.finalUrl,
         status: outcome.status,
         headers: outcome.headers,
         httpsAvailable,
       });
+      // Cuando HTTPS está activo y accesible, la sonda HTTP en texto plano solo debe reportar
+      // la ausencia de redirección a HTTPS (HDR-HTTP-NO-REDIRECT), evitando duplicar todas las
+      // cabeceras faltantes (CSP, XFO, XCTO, Referrer, Permissions) en http:// y https://.
+      const drafts = isPlainHttpWhenHttpsAvailable
+        ? rawDrafts.filter((d) => d.ruleId === 'HDR-HTTP-NO-REDIRECT')
+        : rawDrafts;
+
       const techResult = fingerprintTechnologies({
         finalUrl: outcome.finalUrl,
         status: outcome.status,
         headers: outcome.headers,
         bodyText: outcome.body.toString('utf8'),
       });
+      const techFindings = isPlainHttpWhenHttpsAvailable ? [] : techResult.findings;
 
-      findings.push(...drafts, ...techResult.findings);
+      findings.push(...drafts, ...techFindings);
       allTechnologies.push(...techResult.technologies);
 
       audited.push({
@@ -81,7 +91,7 @@ export class WebHeadersScanner implements Scanner {
         finalUrl: outcome.finalUrl,
         status: outcome.status,
         redirects: outcome.hops.length - 1,
-        findings: drafts.length + techResult.findings.length,
+        findings: drafts.length + techFindings.length,
         technologies: techResult.technologies,
         headers: Object.fromEntries(
           Object.entries(outcome.headers).filter(([k]) => k !== 'set-cookie'),
@@ -167,6 +177,16 @@ export class WebHeadersScanner implements Scanner {
     }
     const technologies = Array.from(uniqueTechMap.values()).sort((a, b) => b.confidence - a.confidence);
 
+    // Deduplicar hallazgos por (ruleId, location) para evitar inflación por redirecciones o sondas redundantes
+    const uniqueFindingsMap = new Map<string, FindingDraft>();
+    for (const f of findings) {
+      const key = `${f.ruleId}::${f.location}`;
+      if (!uniqueFindingsMap.has(key)) {
+        uniqueFindingsMap.set(key, f);
+      }
+    }
+    const deduplicatedFindings = Array.from(uniqueFindingsMap.values());
+
     return {
       parameters: { targets: targets.map((t) => t.url), timeoutMs, userAgentPinnedAddress: requireTarget(ctx).address },
       rawResult: {
@@ -225,12 +245,12 @@ export class WebHeadersScanner implements Scanner {
             : null,
         },
       },
-      findings,
+      findings: deduplicatedFindings,
       summary: {
         targetsChecked: targets.length,
         targetsReachable: reachable.length,
         httpsAvailable,
-        findingsCount: findings.length,
+        findingsCount: deduplicatedFindings.length,
         technologies,
         urls: audited.map((a) => ({ url: a.url, reachable: a.reachable, finalUrl: a.finalUrl ?? null, status: a.status ?? null })),
         pagesCrawled: crawlResult?.pages.length ?? 0,
