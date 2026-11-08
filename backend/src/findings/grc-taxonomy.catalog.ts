@@ -84,6 +84,11 @@ const CATEGORY_TAXONOMY_DEFAULTS: Record<FindingCategory, FindingSecurityTaxonom
     owaspCategory: 'A09:2021 - Security Logging and Monitoring Failures',
     mitreAttackTechnique: 'T1562.008 - Disable or Modify Cloud Logs',
   },
+  [FindingCategory.MALWARE_THREAT]: {
+    cweId: 'CWE-506 / CWE-451: Código Malicioso Embebido o Suplantación de Interfaz (Phishing)',
+    owaspCategory: 'A08:2021 - Software and Data Integrity Failures / A07:2021 - Auth Failures',
+    mitreAttackTechnique: 'T1566 - Phishing / T1204 - User Execution',
+  },
 };
 
 const RULE_SPECIFIC_TAXONOMY: Record<string, Partial<FindingSecurityTaxonomy>> = {
@@ -146,6 +151,26 @@ const RULE_SPECIFIC_TAXONOMY: Record<string, Partial<FindingSecurityTaxonomy>> =
     cweId: 'CWE-298: Vigencia Excesiva de Certificado TLS (> 398 días CA/B Forum)',
     owaspCategory: 'A02:2021 - Cryptographic Failures',
     mitreAttackTechnique: 'T1588.004 - Digital Certificates',
+  },
+  'THREAT-EMAIL-PHISHING-BEC': {
+    cweId: 'CWE-290 / CWE-451: Suplantación de Identidad en Correo (Phishing / BEC)',
+    owaspCategory: 'A07:2021 - Identification and Authentication Failures',
+    mitreAttackTechnique: 'T1566.001 / T1566.002 - Spearphishing Attachment & Link',
+  },
+  'THREAT-FILE-MALICIOUS-HASH': {
+    cweId: 'CWE-506: Malware Confirmado por Inteligencia de Amenazas o Firma Ejecutable',
+    owaspCategory: 'A08:2021 - Software and Data Integrity Failures',
+    mitreAttackTechnique: 'T1204.002 - User Execution: Malicious File',
+  },
+  'THREAT-FILE-SUSPICIOUS-MACRO-PDF': {
+    cweId: 'CWE-829 / CWE-506: Documento con Macros Activas VBA/XLM o Acciones PDF Peligrosas (/JS, /Launch)',
+    owaspCategory: 'A08:2021 - Software and Data Integrity Failures',
+    mitreAttackTechnique: 'T1059.005 - Command and Scripting Interpreter: Visual Basic',
+  },
+  'THREAT-URL-MALICIOUS-PHISHING': {
+    cweId: 'CWE-601 / CWE-451: URL Maliciosa de Captura de Credenciales o Distribución de Payload',
+    owaspCategory: 'A07:2021 - Identification and Authentication Failures',
+    mitreAttackTechnique: 'T1566.002 - Phishing: Spearphishing Link',
   },
 };
 

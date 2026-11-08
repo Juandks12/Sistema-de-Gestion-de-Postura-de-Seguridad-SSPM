@@ -25,7 +25,8 @@ export type FindingCategory =
   | 'CLOUD_NETWORK'
   | 'CLOUD_COMPUTE'
   | 'CLOUD_DATABASE'
-  | 'CLOUD_LOGGING';
+  | 'CLOUD_LOGGING'
+  | 'MALWARE_THREAT';
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
 export type ScanSource = 'MANUAL' | 'SCHEDULED';
 export type AlertType = 'NEW_OPEN_PORT' | 'CERT_EXPIRING' | 'CRITICAL_FINDING' | 'NEW_SUBDOMAIN' | 'SCORE_ANOMALY';
