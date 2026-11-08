@@ -363,4 +363,43 @@ describe('DiagnosticOrchestratorService', () => {
       expect(res.batchId).toBe('batch-1');
     });
   });
+
+  describe('startScheduledBatch', () => {
+    it('crea un lote 360° programado y encola todos los tipos de escaneo aplicables vinculados al lote', async () => {
+      prismaMock.asset.findFirst.mockResolvedValue({
+        id: 'asset-sched-1',
+        type: AssetType.DOMAIN,
+        isActive: true,
+        authorizationConfirmed: true,
+      });
+      prismaMock.diagnosticBatch.findFirst.mockResolvedValue(null);
+      prismaMock.diagnosticBatch.create.mockResolvedValue({ id: 'batch-sched-1' });
+      scansServiceMock.enqueue.mockImplementation(
+        async (input: { type: string; stage: number; batchId: string }) => ({
+          id: `scan-${input.type}`,
+          type: input.type,
+          stage: input.stage,
+          batchId: input.batchId,
+        }),
+      );
+
+      const res = await service.startScheduledBatch('org-1', 'asset-sched-1');
+
+      expect(res.batchId).toBe('batch-sched-1');
+      expect(res.queued).toHaveLength(6);
+      expect(res.skipped).toHaveLength(0);
+      expect(prismaMock.diagnosticBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: 'org-1',
+          assetId: 'asset-sched-1',
+          requestedById: null,
+          profile: DiagnosticProfile.COMMERCE_360,
+          status: DiagnosticBatchStatus.IN_PROGRESS,
+          currentStage: 3,
+          totalStages: 3,
+        }),
+        select: { id: true },
+      });
+    });
+  });
 });

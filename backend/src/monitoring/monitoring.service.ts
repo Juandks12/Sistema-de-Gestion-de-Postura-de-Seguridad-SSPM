@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MonitoringFrequency, ScanSource } from '@prisma/client';
+import { AssetType, CloudAccountStatus, MonitoringFrequency, ScanSource } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,15 +14,15 @@ export class MonitoringService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Configuración del monitoreo continuo y próxima auditoría de cada activo. */
+  /** Configuración del monitoreo continuo y próxima auditoría de cada activo y cuenta Cloud. */
   async status(organizationId: string) {
     const org = await this.prisma.organization.findUniqueOrThrow({
       where: { id: organizationId },
       select: { monitoringFrequency: true },
     });
-    const [assets, lastScheduled] = await Promise.all([
+    const [assets, lastScheduled, cloudAccounts] = await Promise.all([
       this.prisma.asset.findMany({
-        where: { organizationId },
+        where: { organizationId, type: { in: [AssetType.DOMAIN, AssetType.IP] } },
         orderBy: { createdAt: 'asc' },
         select: {
           id: true,
@@ -40,6 +40,20 @@ export class MonitoringService {
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       }),
+      this.prisma.cloudAccount
+        ? this.prisma.cloudAccount.findMany({
+            where: { organizationId },
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              provider: true,
+              name: true,
+              accountOrSubscriptionId: true,
+              status: true,
+              lastAuditedAt: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
     const frequency = org.monitoringFrequency;
     const now = new Date();
@@ -61,6 +75,17 @@ export class MonitoringService {
           monitored,
           nextRunAt: next,
           /** Vencido: el planificador lo tomará en su próxima revisión. */
+          due: next !== null && next.getTime() <= now.getTime(),
+        };
+      }),
+      cloudAccounts: cloudAccounts.map((acc) => {
+        const monitored =
+          frequency !== MonitoringFrequency.OFF && acc.status === CloudAccountStatus.CONNECTED;
+        const next = monitored ? nextRunAt(acc.lastAuditedAt, frequency, now) : null;
+        return {
+          ...acc,
+          monitored,
+          nextRunAt: next,
           due: next !== null && next.getTime() <= now.getTime(),
         };
       }),

@@ -26,6 +26,8 @@ docs/
 │   └── data-model.md                        # Modelo de datos relacional, esquemas Prisma y ERD
 │
 ├── modules/                                 # Documentación Detallada de Módulos Core
+│   ├── unified-findings-and-grc-hub.md      # Centro Maestro de Hallazgos, Normativa y GRC
+│   ├── malware-and-threat-lab.md            # Laboratorio de Análisis de Malware (Correo, Archivos, URL)
 │   ├── ecommerce-crawler-and-secrets.md     # Mini-crawler, SRI Magecart, Secret Hunter y CMS
 │   ├── diagnostic-360-orchestrator.md       # Orquestador 3-etapas y Diff Temporal de Postura
 │   ├── attack-paths-and-quick-wins.md       # Motor de 6 Rutas de Ataque y Matriz Quick Wins 24h
@@ -76,6 +78,10 @@ docs/
 
 ## 3. Módulos Especializados (`modules/`)
 
+- [**Centro Maestro de Hallazgos, Cumplimiento y Gobierno Normativo (GRC Hub)**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/unified-findings-and-grc-hub.md):
+  Arquitectura de los 5 dominios funcionales, ficha técnica integral del hallazgo (CWE, OWASP, MITRE ATT&CK, controles ISO 27001/PCI-DSS/NIST/CIS/SOC 2 embebidos), ingesta multi-origen (escáneres, Cloud CSPM, Malware Lab y hallazgos manuales), Bulk Triage y ciclo de vida con SLAs.
+- [**Laboratorio de Análisis de Malware, Phishing y Amenazas (Threat & Malware Lab)**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/malware-and-threat-lab.md):
+  Triaje forense bajo demanda para correos electrónicos (`.eml`/cabeceras SMTP, detección BEC y homógrafos), archivos y hashes (Magic Bytes, entropía de Shannon, macros VBA/XLM, PDF `/JS` y consulta a MalwareBazaar/ThreatFox/VirusTotal) y URLs sospechosas (URLhaus/Phishing), con promoción en 1 clic al Centro de Hallazgos.
 - [**Auditoría E-Commerce, Mini-Crawler y Secret Hunter**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/ecommerce-crawler-and-secrets.md):
   Inspección de pasarelas de pago, análisis de Subresource Integrity (Magecart), búsqueda de credenciales expuestas en frontend con regex, introspección CMS (WordPress, WooCommerce, PrestaShop, Magento, Shopify), divulgación RFC 9116 y verificación de marca BIMI.
 - [**Orquestador de Diagnóstico 360° y Diff Temporal**](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/docs/modules/diagnostic-360-orchestrator.md):

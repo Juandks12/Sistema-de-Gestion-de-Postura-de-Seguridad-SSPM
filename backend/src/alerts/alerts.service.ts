@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AlertChannelType, FindingSeverity, Prisma, RiskScoreScope, ScanStatus, ScanType } from '@prisma/client';
+import { AlertChannelType, CloudProvider, FindingSeverity, Prisma, RiskScoreScope, ScanStatus, ScanType } from '@prisma/client';
 import { isEmail } from 'class-validator';
 import { randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
@@ -67,6 +67,15 @@ export interface ScanCompletedEvent {
   opened: OpenedFinding[];
   /** Solo SUBDOMAIN_DISCOVERY: subdominios nuevos fuera del inventario (null = línea base). */
   newHosts?: string[] | null;
+}
+
+export interface CloudAuditCompletedEvent {
+  organizationId: string;
+  assetId: string;
+  cloudAccountId: string;
+  provider: CloudProvider;
+  accountName: string;
+  opened: OpenedFinding[];
 }
 
 /**
@@ -219,6 +228,65 @@ export class AlertsService implements OnApplicationShutdown {
       return created.length;
     } catch (err) {
       this.logger.error(`No se pudieron evaluar las alertas del escaneo ${event.scanId}: ${(err as Error).message}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Evalúa y despacha alertas tempranas tras una auditoría CSPM Cloud (AWS o Azure).
+   * Dispara alertas CRITICAL_FINDING y SCORE_ANOMALY por correo y webhooks firmados HMAC.
+   */
+  async handleCloudAuditCompleted(event: CloudAuditCompletedEvent): Promise<number> {
+    try {
+      const asset = await this.prisma.asset.findFirst({
+        where: { id: event.assetId, organizationId: event.organizationId },
+        select: { id: true, value: true, name: true },
+      });
+      if (!asset) return 0;
+
+      const scoreChange = await this.scoreChange(event.organizationId, asset.id);
+      const drafts = detectAlerts({
+        asset,
+        scan: null,
+        opened: event.opened,
+        newOpenPorts: null,
+        newHosts: null,
+        scoreChange,
+      });
+      if (drafts.length === 0) return 0;
+
+      const created = await this.prisma.$transaction(
+        drafts.map((d) =>
+          this.prisma.alert.create({
+            data: {
+              organizationId: event.organizationId,
+              assetId: asset.id,
+              scanId: null,
+              type: d.type,
+              severity: d.severity,
+              title: d.title.slice(0, 200),
+              message: d.message,
+              data: {
+                ...d.data,
+                source: 'CLOUD_CSPM',
+                cloudAccountId: event.cloudAccountId,
+                provider: event.provider,
+                accountName: event.accountName,
+              } as Prisma.InputJsonValue,
+            },
+            select: { id: true },
+          }),
+        ),
+      );
+      this.logger.log(
+        `Auditoría Cloud ${event.provider} (${event.accountName}): ${created.length} alerta(s) generada(s)`,
+      );
+      this.track(this.deliver(created.map((a) => a.id)));
+      return created.length;
+    } catch (err) {
+      this.logger.error(
+        `No se pudieron evaluar las alertas de la cuenta cloud ${event.cloudAccountId}: ${(err as Error).message}`,
+      );
       return 0;
     }
   }
