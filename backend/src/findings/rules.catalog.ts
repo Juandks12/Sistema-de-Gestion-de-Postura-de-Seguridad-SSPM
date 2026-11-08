@@ -875,7 +875,7 @@ const rawRules: RawRule[] = [
     id: 'DNS-WILDCARD-ENABLED',
     category: C.EMAIL_SECURITY,
     severity: S.LOW,
-    cvss: 4.3,
+    cvss: 3.7,
     title: 'Resolución DNS Wildcard (*.dominio) habilitada en la zona autoritativa',
     description:
       'La zona DNS responde positivamente a cualquier subdominio arbitrario inexistente (*.dominio). Esto amplía la superficie de ataque facilitando el abuso de cookies compartidas entre subdominios, suplantación de subdominios en campañas de phishing y enmascaramiento de servicios huérfanos.',

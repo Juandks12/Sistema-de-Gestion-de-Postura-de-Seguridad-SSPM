@@ -620,6 +620,17 @@ export interface MonitoringStatus {
     nextRunAt: string | null;
     due: boolean;
   }>;
+  cloudAccounts?: Array<{
+    id: string;
+    provider: CloudProvider;
+    name: string;
+    accountOrSubscriptionId: string;
+    status: CloudAccountStatus;
+    lastAuditedAt: string | null;
+    monitored: boolean;
+    nextRunAt: string | null;
+    due: boolean;
+  }>;
 }
 
 export interface ReportRecord {
@@ -837,6 +848,8 @@ export interface RetentionResult {
   loginAttemptsPurged: number;
   auditLogsPurged: number;
   reportsPurged: number;
+  diagnosticBatchesPurged?: number;
+  malwareAnalysesPurged?: number;
 }
 
 export interface RetentionStatus {

@@ -67,12 +67,17 @@ function MonitoringCard() {
 
   const data = q.data;
   const monitored = data?.assets.filter((a) => a.monitored) ?? [];
+  const cloudAccounts = data?.cloudAccounts ?? [];
+  const monitoredCloud = cloudAccounts.filter((c) => c.monitored);
   // Selección optimista: se marca al instante mientras se guarda.
   const selected = pending ?? data?.frequency;
 
   return (
     <Card>
-      <CardHeader title="Monitoreo continuo" subtitle="Reaudita automáticamente todos los activos activos: puertos, cabeceras, certificado y rutas sensibles." />
+      <CardHeader
+        title="Monitoreo continuo 360° y Multi-Cloud CSPM"
+        subtitle="Reaudita automáticamente todos los activos perimetrales verificados (Diagnóstico 360° de 5 etapas) y las cuentas Cloud conectadas (AWS y Azure)."
+      />
       <CardBody>
         {q.isPending || !data ? (
           <Skeleton className="h-24" />
@@ -104,28 +109,57 @@ function MonitoringCard() {
             ) : null}
 
             {data.frequency !== 'OFF' ? (
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">
-                  {monitored.length} activo(s) monitoreado(s){data.lastScheduledScanAt ? ` · última auditoría programada ${timeAgo(data.lastScheduledScanAt)}` : ''}
-                </p>
-                <ul className="divide-y divide-line rounded-lg border border-border">
-                  {data.assets.map((a) => (
-                    <li key={a.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                      <span className="min-w-0 flex-1 truncate text-ink">{a.name ?? a.value}</span>
-                      <span className="shrink-0 text-xs text-ink-2">
-                        {!a.monitored
-                          ? !a.isActive
-                            ? 'Inactivo: excluido'
-                            : !a.verifiedAt
-                              ? 'Sin verificar: excluido hasta verificar su propiedad'
-                              : 'Sin autorización de escaneo'
-                          : a.due
-                            ? 'Pendiente: se auditará en breve'
-                            : `Próxima: ${formatDateTime(a.nextRunAt)}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">
+                    {monitored.length} activo(s) perimetral(es) monitoreado(s){data.lastScheduledScanAt ? ` · última auditoría programada ${timeAgo(data.lastScheduledScanAt)}` : ''}
+                  </p>
+                  <ul className="divide-y divide-line rounded-lg border border-border">
+                    {data.assets.map((a) => (
+                      <li key={a.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                        <span className="min-w-0 flex-1 truncate text-ink">{a.name ?? a.value}</span>
+                        <span className="shrink-0 text-xs text-ink-2">
+                          {!a.monitored
+                            ? !a.isActive
+                              ? 'Inactivo: excluido'
+                              : !a.verifiedAt
+                                ? 'Sin verificar: excluido hasta verificar su propiedad'
+                                : 'Sin autorización de escaneo'
+                            : a.due
+                              ? 'Pendiente: se auditará en breve (Diagnóstico 360°)'
+                              : `Próxima: ${formatDateTime(a.nextRunAt)}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {cloudAccounts.length > 0 ? (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">
+                      {monitoredCloud.length} cuenta(s) Cloud CSPM monitoreada(s) (AWS / Azure)
+                    </p>
+                    <ul className="divide-y divide-line rounded-lg border border-border">
+                      {cloudAccounts.map((c) => (
+                        <li key={c.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                          <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-2">
+                            {c.provider}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-ink">
+                            {c.name} <span className="font-mono text-xs text-muted">({c.accountOrSubscriptionId})</span>
+                          </span>
+                          <span className="shrink-0 text-xs text-ink-2">
+                            {!c.monitored
+                              ? `Estado ${c.status}: excluida hasta conectar`
+                              : c.due
+                                ? 'Pendiente: auditoría CSPM en breve'
+                                : `Próxima: ${formatDateTime(c.nextRunAt)}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </>
@@ -415,9 +449,19 @@ function DataRetentionCard() {
     setSuccessMsg(null);
     try {
       const res = await run.mutateAsync();
-      const total = res.scansPurged + res.scanPortsPurged + res.tokensPurged + res.loginAttemptsPurged + res.auditLogsPurged + res.reportsPurged;
+      const batchesPurged = res.diagnosticBatchesPurged ?? 0;
+      const malwarePurged = res.malwareAnalysesPurged ?? 0;
+      const total =
+        res.scansPurged +
+        res.scanPortsPurged +
+        res.tokensPurged +
+        res.loginAttemptsPurged +
+        res.auditLogsPurged +
+        res.reportsPurged +
+        batchesPurged +
+        malwarePurged;
       setSuccessMsg(
-        `Limpieza completada con éxito. Se depuraron ${total} registro(s) expirados (${res.scansPurged} escaneos, ${res.scanPortsPurged} puertos, ${res.tokensPurged} tokens, ${res.loginAttemptsPurged} intentos de login, ${res.auditLogsPurged} logs de auditoría, ${res.reportsPurged} reportes).`,
+        `Limpieza completada con éxito. Se depuraron ${total} registro(s) expirados (${res.scansPurged} escaneos, ${batchesPurged} lotes 360°, ${malwarePurged} análisis Threat Lab, ${res.scanPortsPurged} puertos, ${res.tokensPurged} tokens, ${res.loginAttemptsPurged} intentos de login, ${res.auditLogsPurged} logs de auditoría, ${res.reportsPurged} reportes).`,
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo ejecutar la limpieza de datos.');
@@ -430,7 +474,7 @@ function DataRetentionCard() {
     <Card>
       <CardHeader
         title="Política de retención de datos"
-        subtitle="Control automático de ciclo de vida de escaneos históricos, logs de auditoría, reportes y sesiones para optimizar almacenamiento y resiliencia."
+        subtitle="Control automático de ciclo de vida de escaneos históricos, lotes 360°, Threat Lab, logs de auditoría, reportes y sesiones para optimizar almacenamiento y resiliencia."
         action={
           <Button
             size="sm"
@@ -451,9 +495,9 @@ function DataRetentionCard() {
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border border-border bg-surface-2/40 p-3">
-                <span className="text-xs text-muted">Escaneos históricos</span>
+                <span className="text-xs text-muted">Escaneos, Lotes 360° y Threat Lab</span>
                 <p className="mt-1 text-base font-semibold text-ink">{data.scansRetentionDays} días</p>
-                <p className="mt-0.5 text-xs text-ink-2">Se conserva siempre el último escaneo de cada activo.</p>
+                <p className="mt-0.5 text-xs text-ink-2">Conserva el último escaneo, 2 lotes 360° (Posture Diff) y análisis promovidos.</p>
               </div>
               <div className="rounded-lg border border-border bg-surface-2/40 p-3">
                 <span className="text-xs text-muted">Auditoría de eventos</span>
