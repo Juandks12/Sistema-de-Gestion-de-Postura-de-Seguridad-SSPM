@@ -9,6 +9,7 @@ import {
   Clock,
   Cloud,
   Download,
+  ExternalLink,
   FlaskConical,
   Layers,
   Plus,
@@ -20,6 +21,7 @@ import {
   Sparkles,
   Terminal,
   UserX,
+  Workflow,
   X,
   Zap,
 } from 'lucide-react';
@@ -42,7 +44,9 @@ import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
 import {
   useAssignees,
+  useBulkCreateFindingTickets,
   useBulkReviewFindings,
+  useCreateFindingTicket,
   useCreateManualFinding,
   useDashboardAssets,
   useFindings,
@@ -50,6 +54,8 @@ import {
   useGrcCatalog,
   useRetestFinding,
   useReviewFinding,
+  useSyncFindingTicket,
+  useTicketingConfig,
 } from '@/hooks/queries';
 import { ApiError, downloadFile } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -104,6 +110,29 @@ export function FindingsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchInput, setSearchInput] = useState(filter.search);
   const [downloading, setDownloading] = useState(false);
+
+  const { data: ticketingConfig } = useTicketingConfig();
+  const bulkTicket = useBulkCreateFindingTickets();
+  const [bulkTicketMsg, setBulkTicketMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleBulkCreateTickets = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkTicketMsg(null);
+    try {
+      const res = await bulkTicket.mutateAsync({ findingIds: selectedIds });
+      setBulkTicketMsg({
+        ok: true,
+        text: `Se crearon ${res.created} ticket(s) exitosamente en ${
+          ticketingConfig?.provider === 'JIRA' ? 'Atlassian Jira' : 'Azure Boards'
+        }${res.failed > 0 ? ` (${res.failed} no creados o ya vinculados)` : ''}.`,
+      });
+    } catch (err) {
+      setBulkTicketMsg({
+        ok: false,
+        text: err instanceof ApiError ? err.message : 'Error al crear tickets masivos.',
+      });
+    }
+  };
 
   const handleExport = async () => {
     setDownloading(true);
@@ -631,6 +660,18 @@ export function FindingsPage() {
             >
               Triaje y SLA en Lote
             </Button>
+            {ticketingConfig?.enabled ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<Workflow className="size-3.5 text-cyan-400" />}
+                loading={bulkTicket.isPending}
+                onClick={handleBulkCreateTickets}
+                title={`Crear tickets de remediación masivos en ${ticketingConfig.provider === 'JIRA' ? 'Jira' : 'Azure Boards'}`}
+              >
+                Crear Tickets ({ticketingConfig.provider === 'JIRA' ? 'Jira' : 'Azure'})
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="secondary"
@@ -640,6 +681,24 @@ export function FindingsPage() {
             </Button>
           </div>
         </div>
+      ) : null}
+
+      {bulkTicketMsg ? (
+        <Alert
+          kind={bulkTicketMsg.ok ? 'success' : 'error'}
+          className="mb-4"
+        >
+          <div className="flex items-center justify-between">
+            <span>{bulkTicketMsg.text}</span>
+            <button
+              type="button"
+              className="text-xs font-semibold underline ml-2"
+              onClick={() => setBulkTicketMsg(null)}
+            >
+              Cerrar
+            </button>
+          </div>
+        </Alert>
       ) : null}
 
       <Card>
@@ -765,6 +824,26 @@ export function FindingsPage() {
                               <Scale className="size-2.5 text-accent" />
                               {f.complianceControls.length} GRC
                             </span>
+                          ) : null}
+                          {f.ticketKey ? (
+                            <a
+                              href={f.ticketUrl ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold tracking-wide transition-colors',
+                                f.ticketProvider === 'JIRA'
+                                  ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20'
+                                  : 'border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20',
+                              )}
+                              title={`Ticket en ${f.ticketProvider === 'JIRA' ? 'Atlassian Jira' : 'Azure Boards'} (${f.ticketStatus ?? 'Abierto'})`}
+                            >
+                              <Workflow className="size-2.5" />
+                              <span>{f.ticketKey}</span>
+                              {f.ticketStatus ? <span className="opacity-70 font-normal">({f.ticketStatus})</span> : null}
+                              <ExternalLink className="size-2 opacity-60" />
+                            </a>
                           ) : null}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 md:hidden">
@@ -892,6 +971,43 @@ function FindingDetail({
 }) {
   const retest = useRetestFinding();
   const [retestResult, setRetestResult] = useState<{ stillReproducible: boolean; message: string } | null>(null);
+
+  const { data: ticketingConfig } = useTicketingConfig();
+  const createTicket = useCreateFindingTicket();
+  const syncTicket = useSyncFindingTicket();
+  const [ticketActionMsg, setTicketActionMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleCreateTicket = async () => {
+    setTicketActionMsg(null);
+    try {
+      const res = await createTicket.mutateAsync({ findingId: f.id });
+      setTicketActionMsg({
+        ok: true,
+        msg: `Ticket ${res.key} creado exitosamente en ${ticketingConfig?.provider === 'JIRA' ? 'Atlassian Jira' : 'Azure Boards'}.`,
+      });
+    } catch (err) {
+      setTicketActionMsg({
+        ok: false,
+        msg: err instanceof ApiError ? err.message : 'No se pudo crear el ticket.',
+      });
+    }
+  };
+
+  const handleSyncTicket = async () => {
+    setTicketActionMsg(null);
+    try {
+      const res = await syncTicket.mutateAsync(f.id);
+      setTicketActionMsg({
+        ok: true,
+        msg: `Ticket sincronizado. Estado remoto: ${res.status}${res.isClosed ? ' (Cerrado en ingeniería)' : ''}.`,
+      });
+    } catch (err) {
+      setTicketActionMsg({
+        ok: false,
+        msg: err instanceof ApiError ? err.message : 'No se pudo sincronizar el ticket.',
+      });
+    }
+  };
 
   const handleRetest = async () => {
     setRetestResult(null);
@@ -1101,6 +1217,97 @@ function FindingDetail({
             <Alert kind={retestResult.stillReproducible ? 'error' : 'success'}>
               {retestResult.message}
             </Alert>
+          </div>
+        ) : null}
+
+        {/* Bloque de Ticketing Jira Software / Azure Boards */}
+        {ticketingConfig?.enabled || f.ticketKey ? (
+          <div className="mt-3 rounded-lg border border-border bg-surface p-3">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
+                <Workflow className="size-3.5 text-cyan-500" />
+                Ticket de Remediación en Ingeniería
+              </span>
+              {f.ticketKey ? (
+                <span
+                  className={cn(
+                    'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                    f.ticketProvider === 'JIRA'
+                      ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+                  )}
+                >
+                  {f.ticketProvider === 'JIRA' ? 'Atlassian Jira' : 'Azure Boards'}
+                </span>
+              ) : null}
+            </div>
+
+            {f.ticketKey ? (
+              <div className="mt-2 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <span className="text-muted">Ticket:</span>
+                    <a
+                      href={f.ticketUrl ?? undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-bold text-accent hover:underline flex items-center gap-1"
+                    >
+                      {f.ticketKey}
+                      <ExternalLink className="size-3" />
+                    </a>
+                  </div>
+                  {f.ticketStatus ? (
+                    <span className="rounded bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-ink-2">
+                      Estado: {f.ticketStatus}
+                    </span>
+                  ) : null}
+                </div>
+                {f.ticketSyncedAt ? (
+                  <p className="text-[11px] text-muted">
+                    Última sincronización: {formatDateTime(f.ticketSyncedAt)}
+                  </p>
+                ) : null}
+                {canEdit ? (
+                  <div className="pt-1">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full text-xs"
+                      icon={<RefreshCw className={cn('size-3', syncTicket.isPending && 'animate-spin')} />}
+                      loading={syncTicket.isPending}
+                      onClick={handleSyncTicket}
+                    >
+                      Sincronizar Estado ({f.ticketProvider === 'JIRA' ? 'Jira' : 'Azure'})
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : canEdit && ticketingConfig?.enabled ? (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-muted">
+                  Aún no se ha creado un ticket para este hallazgo en {ticketingConfig.provider === 'JIRA' ? 'Atlassian Jira' : 'Azure Boards'}.
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full text-xs"
+                  icon={<Plus className="size-3 text-cyan-400" />}
+                  loading={createTicket.isPending}
+                  onClick={handleCreateTicket}
+                >
+                  Crear Ticket en {ticketingConfig.provider === 'JIRA' ? 'Jira' : 'Azure Boards'} (1-Clic)
+                </Button>
+              </div>
+            ) : null}
+
+            {ticketActionMsg ? (
+              <div className="mt-2">
+                <Alert kind={ticketActionMsg.ok ? 'success' : 'error'}>
+                  {ticketActionMsg.msg}
+                </Alert>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -1400,12 +1607,15 @@ function BulkReviewModal({
 }) {
   const bulkReview = useBulkReviewFindings();
   const assigneesQ = useAssignees();
+  const { data: ticketingConfig } = useTicketingConfig();
+  const bulkTicket = useBulkCreateFindingTickets();
 
   const [status, setStatus] = useState<FindingStatus | ''>('');
   const [assignedToId, setAssignedToId] = useState<string>('__UNCHANGED__');
   const [dueDate, setDueDate] = useState<string>('');
   const [remediationNote, setRemediationNote] = useState<string>('');
   const [note, setNote] = useState<string>('');
+  const [createTickets, setCreateTickets] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
@@ -1421,6 +1631,14 @@ function BulkReviewModal({
         ...(remediationNote.trim() ? { remediationNote: remediationNote.trim() } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       });
+
+      if (createTickets && ticketingConfig?.enabled) {
+        await bulkTicket.mutateAsync({
+          findingIds: selectedIds,
+          notes: remediationNote.trim() || note.trim() || undefined,
+        });
+      }
+
       onSuccess();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo aplicar el triaje en lote.');
@@ -1519,6 +1737,28 @@ function BulkReviewModal({
             placeholder="Ej.: Aprobado en comité de seguridad."
           />
         </div>
+
+        {ticketingConfig?.enabled ? (
+          <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createTickets}
+                onChange={(e) => setCreateTickets(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-border accent-cyan-500"
+              />
+              <div className="text-xs">
+                <span className="font-semibold text-ink">
+                  Crear tickets de remediación en {ticketingConfig.provider === 'JIRA' ? 'Atlassian Jira' : 'Azure Boards'}
+                </span>
+                <p className="mt-0.5 text-ink-2">
+                  Genera un ticket en el proyecto{' '}
+                  <span className="font-semibold text-cyan-400">{ticketingConfig.projectKey}</span> con toda la evidencia técnica, vector CVSS y mapeos GRC para cada hallazgo seleccionado que no tenga ticket vinculado.
+                </p>
+              </div>
+            </label>
+          </div>
+        ) : null}
 
         {error ? <Alert kind="error">{error}</Alert> : null}
       </div>

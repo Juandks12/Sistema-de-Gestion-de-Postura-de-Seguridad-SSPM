@@ -260,6 +260,11 @@ export interface Finding {
   complianceControls?: FindingComplianceControlRef[];
   remediationCli?: string | null;
   remediationIac?: string | null;
+  ticketProvider?: 'JIRA' | 'AZURE_BOARDS' | null;
+  ticketKey?: string | null;
+  ticketUrl?: string | null;
+  ticketStatus?: string | null;
+  ticketSyncedAt?: string | null;
 }
 
 export type SlaStatus = 'OVERDUE' | 'APPROACHING' | 'ON_TRACK' | 'RESOLVED' | 'NO_SLA';
@@ -1385,6 +1390,76 @@ export interface MalwareAnalysesFilter {
   page?: number;
   pageSize?: number;
 }
+
+// -----------------------------------------------------------------------------
+// Ticketing Integrations (Jira Software & Azure Boards)
+// -----------------------------------------------------------------------------
+
+export type TicketingProvider = 'JIRA' | 'AZURE_BOARDS';
+export type TicketingAutoCreateThreshold = 'DISABLED' | 'CRITICAL' | 'HIGH' | 'MEDIUM';
+
+export interface TicketingConfigSummary {
+  id: string;
+  provider: TicketingProvider;
+  enabled: boolean;
+  instanceUrl: string;
+  projectKey: string;
+  issueType: string;
+  autoCreateThreshold: TicketingAutoCreateThreshold;
+  lastTestedAt: string | null;
+  lastTestStatus: 'SUCCESS' | 'FAILED' | null;
+  lastTestError: string | null;
+  hasStoredCredentials: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConfigureTicketingInput {
+  provider: TicketingProvider;
+  enabled?: boolean;
+  instanceUrl: string;
+  projectKey: string;
+  issueType?: string;
+  autoCreateThreshold?: TicketingAutoCreateThreshold;
+  credentials: Record<string, string>;
+  config?: Record<string, unknown>;
+}
+
+export interface TestTicketingInput {
+  provider: TicketingProvider;
+  instanceUrl: string;
+  projectKey: string;
+  credentials?: Record<string, string>;
+}
+
+export interface TestConnectionResult {
+  ok: boolean;
+  provider: TicketingProvider;
+  projectName?: string;
+  projectKey?: string;
+  issueTypes?: string[];
+  error?: string;
+}
+
+export interface CreatedTicketResult {
+  key: string;
+  url: string;
+  status: string;
+}
+
+export interface BulkTicketFindingsInput {
+  findingIds: string[];
+  notes?: string;
+}
+
+export interface BulkTicketFindingsResult {
+  total: number;
+  created: number;
+  failed: number;
+  results: Array<{ findingId: string; ticketKey: string; ticketUrl: string }>;
+  errors: Array<{ findingId: string; reason: string }>;
+}
+
 
 
 

@@ -44,10 +44,17 @@ import type {
   DashboardAsset,
   AttackPathSummary,
   AuthResponse,
+  BulkTicketFindingsInput,
+  BulkTicketFindingsResult,
+  ConfigureTicketingInput,
+  CreatedTicketResult,
   Finding,
   FindingSourceType,
   FindingTriageAnalysis,
   RetestFindingResult,
+  TestConnectionResult,
+  TestTicketingInput,
+  TicketingConfigSummary,
   FindingsSummary,
   FindingCategory,
   FindingStatus,
@@ -1122,5 +1129,100 @@ export function usePromoteAnalysisToFinding() {
     },
   });
 }
+
+// -----------------------------------------------------------------------------
+// Hooks de Ticketing (Jira Software & Azure Boards)
+// -----------------------------------------------------------------------------
+
+export function useTicketingConfig() {
+  return useQuery({
+    queryKey: ['ticketing', 'config'],
+    queryFn: () => api<TicketingConfigSummary | null>('/ticketing/config'),
+  });
+}
+
+export function useConfigureTicketing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ConfigureTicketingInput) =>
+      api<TicketingConfigSummary>('/ticketing/config', {
+        method: 'PUT',
+        json: body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ticketing'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function useTestTicketing() {
+  return useMutation({
+    mutationFn: (body: TestTicketingInput) =>
+      api<TestConnectionResult>('/ticketing/test', {
+        method: 'POST',
+        json: body,
+      }),
+  });
+}
+
+export function useDeleteTicketing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean }>('/ticketing/config', {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ticketing'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function useCreateFindingTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ findingId, notes }: { findingId: string; notes?: string }) =>
+      api<CreatedTicketResult>(`/ticketing/findings/${findingId}/ticket`, {
+        method: 'POST',
+        json: { notes },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['findings'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function useBulkCreateFindingTickets() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BulkTicketFindingsInput) =>
+      api<BulkTicketFindingsResult>('/ticketing/findings/bulk-ticket', {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['findings'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function useSyncFindingTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (findingId: string) =>
+      api<{ status: string; isClosed: boolean; findingStatus?: string }>(`/ticketing/findings/${findingId}/sync`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['findings'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
 
 
