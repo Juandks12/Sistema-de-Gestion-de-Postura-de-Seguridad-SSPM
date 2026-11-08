@@ -9,6 +9,7 @@ import {
   Clock,
   Cloud,
   Download,
+  FlaskConical,
   Layers,
   Plus,
   RefreshCw,
@@ -277,6 +278,24 @@ export function FindingsPage() {
             {bySource?.MANUAL_AUDIT !== undefined ? (
               <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[10px] font-bold text-ink-2">
                 {bySource.MANUAL_AUDIT}
+              </span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('domain', filter.domain === 'threat' ? '' : 'threat')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+              filter.domain === 'threat'
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+            )}
+          >
+            <FlaskConical className="size-3.5" />
+            Laboratorio de Malware
+            {bySource?.THREAT_MALWARE_LAB !== undefined ? (
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[10px] font-bold text-ink-2">
+                {bySource.THREAT_MALWARE_LAB}
               </span>
             ) : null}
           </button>
@@ -694,6 +713,15 @@ export function FindingsPage() {
                             <span className="inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">
                               Auditoría / Pentest
                             </span>
+                          ) : null}
+                          {f.sourceType === 'THREAT_MALWARE_LAB' || f.category === 'MALWARE_THREAT' ? (
+                            <Link
+                              to="/threat-lab"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400 hover:bg-rose-500/25"
+                            >
+                              <FlaskConical className="size-2.5" /> Threat Lab
+                            </Link>
                           ) : null}
                           {f.cloudAccount ? (
                             <span

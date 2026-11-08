@@ -57,6 +57,13 @@ import type {
   CreateManualFindingInput,
   BulkReviewFindingsInput,
   BulkReviewFindingsResult,
+  MalwareAnalysisItem,
+  MalwareAnalysisSummary,
+  MalwareAnalysesFilter,
+  AnalyzeEmailInput,
+  AnalyzeFileInput,
+  AnalyzeUrlInput,
+  PromoteAnalysisToFindingInput,
   OrgHistory,
   OrgUser,
   Organization,
@@ -109,6 +116,9 @@ export const keys = {
   diagnosticLatest: (assetId: string) => ['assets', assetId, 'diagnostic-360', 'latest'] as const,
   diagnosticBatch: (assetId: string, batchId: string) => ['assets', assetId, 'diagnostic-360', batchId] as const,
   postureDiff: (assetId: string, from?: string, to?: string) => ['assets', assetId, 'posture-diff', { from, to }] as const,
+  threatLabSummary: ['threat-lab', 'summary'] as const,
+  threatLabList: (f: MalwareAnalysesFilter) => ['threat-lab', 'list', f] as const,
+  threatLabDetail: (id: string) => ['threat-lab', 'detail', id] as const,
 };
 
 export interface CloudResourcesFilter {
@@ -984,4 +994,103 @@ export function useScanCloudAccount() {
     },
   });
 }
+
+// ------------------------------------------------ Laboratorio de Malware y Phishing (Threat Lab)
+
+export function useThreatLabSummary() {
+  return useQuery({
+    queryKey: keys.threatLabSummary,
+    queryFn: () => api<MalwareAnalysisSummary>('/threat-lab/summary'),
+  });
+}
+
+export function useThreatLabAnalyses(filter: MalwareAnalysesFilter) {
+  return useQuery({
+    queryKey: keys.threatLabList(filter),
+    queryFn: () =>
+      api<Paginated<MalwareAnalysisItem>>(
+        `/threat-lab${qs({
+          artifactType: filter.artifactType || undefined,
+          verdict: filter.verdict || undefined,
+          assetId: filter.assetId || undefined,
+          search: filter.search || undefined,
+          page: filter.page ?? 1,
+          pageSize: filter.pageSize ?? 15,
+        })}`,
+      ),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useThreatLabAnalysis(id: string | null) {
+  return useQuery({
+    queryKey: keys.threatLabDetail(id ?? ''),
+    queryFn: () => api<MalwareAnalysisItem>(`/threat-lab/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useAnalyzeEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AnalyzeEmailInput) =>
+      api<MalwareAnalysisItem>('/threat-lab/analyze/email', {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['threat-lab'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function useAnalyzeFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AnalyzeFileInput) =>
+      api<MalwareAnalysisItem>('/threat-lab/analyze/file', {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['threat-lab'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function useAnalyzeUrl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AnalyzeUrlInput) =>
+      api<MalwareAnalysisItem>('/threat-lab/analyze/url', {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['threat-lab'] });
+      qc.invalidateQueries({ queryKey: ['audit'] });
+    },
+  });
+}
+
+export function usePromoteAnalysisToFinding() {
+  const invalidateAll = useInvalidateAll();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: PromoteAnalysisToFindingInput & { id: string }) =>
+      api<{ analysis: MalwareAnalysisItem; finding: Finding }>(`/threat-lab/${id}/promote-finding`, {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['threat-lab'] });
+      qc.invalidateQueries({ queryKey: ['findings'] });
+      qc.invalidateQueries({ queryKey: keys.complianceOverview });
+      invalidateAll();
+    },
+  });
+}
+
 

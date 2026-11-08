@@ -1,4 +1,4 @@
-import { Activity, Cloud, Radar, Server, ShieldAlert } from 'lucide-react';
+import { Activity, ClipboardCheck, Cloud, FlaskConical, Radar, Server, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ReportButtons } from '@/components/ReportButtons';
 import { ScoreHistoryChart } from '@/components/charts/ScoreHistoryChart';
@@ -11,7 +11,7 @@ import { ScoreHero } from '@/components/ui/ScoreHero';
 import { SeverityBars } from '@/components/ui/SeverityBars';
 import { Skeleton } from '@/components/ui/Spinner';
 import { StatTile } from '@/components/ui/StatTile';
-import { useDashboardAssets, useOrgHistory, useOverview } from '@/hooks/queries';
+import { useDashboardAssets, useOrgHistory, useOverview, useThreatLabSummary } from '@/hooks/queries';
 import { SCAN_TYPE_LABEL, timeAgo, timeAgoShort } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +20,7 @@ export function DashboardPage() {
   const overview = useOverview();
   const history = useOrgHistory(30);
   const assets = useDashboardAssets();
+  const threatSummary = useThreatLabSummary();
   const navigate = useNavigate();
 
   if (overview.isPending) return <DashboardSkeleton />;
@@ -42,22 +43,33 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
-            title="Security Score Unificado (Híbrido)"
-            subtitle="Postura ponderada entre perímetro externo e infraestructura Cloud (AWS & Azure)"
+            title="Security Score Unificado 360° (Perímetro, Cloud & Amenazas)"
+            subtitle="Postura ponderada entre superficie externa, cuentas Cloud (AWS & Azure) e incidentes del Laboratorio de Malware"
             action={
-              <Link to="/cloud" className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">
-                <Cloud className="size-3.5" /> Gestionar Cloud CSPM
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link to="/compliance" className="inline-flex items-center gap-1 text-xs font-medium text-ink-2 hover:text-accent">
+                  <ClipboardCheck className="size-3.5 text-accent" /> Matriz GRC
+                </Link>
+                <Link to="/threat-lab" className="inline-flex items-center gap-1 text-xs font-medium text-ink-2 hover:text-accent">
+                  <FlaskConical className="size-3.5 text-accent" /> Threat Lab
+                </Link>
+                <Link to="/cloud" className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+                  <Cloud className="size-3.5" /> Cloud CSPM
+                </Link>
+              </div>
             }
           />
           <CardBody>
             <ScoreHero score={s.score} grade={s.grade} label={s.label} description={s.description} delta={s.trend.sinceLastWeek} deltaLabel="frente a hace 7 días" />
-            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-4 sm:grid-cols-2">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-surface-2/40 px-3.5 py-2.5">
+            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-4 sm:grid-cols-3">
+              <Link
+                to="/assets"
+                className="flex items-center justify-between rounded-lg border border-border bg-surface-2/40 px-3.5 py-2.5 transition hover:border-accent/50 hover:bg-surface-2"
+              >
                 <div className="flex items-center gap-2.5">
                   <Server className="size-4 text-accent" />
                   <div>
-                    <p className="text-xs font-semibold text-ink">Postura Perimetral Externa</p>
+                    <p className="text-xs font-semibold text-ink">Superficie Perimetral</p>
                     <p className="text-[11px] text-muted">{s.scoredPerimeterAssets ?? s.scoredAssets} activos evaluados</p>
                   </div>
                 </div>
@@ -65,7 +77,7 @@ export function DashboardPage() {
                   <span className="tabular text-base font-bold text-ink">{s.perimeterScore ?? s.score ?? '—'}</span>
                   <GradeBadge grade={s.perimeterGrade ?? s.grade} size="sm" />
                 </div>
-              </div>
+              </Link>
 
               <Link
                 to="/cloud"
@@ -74,17 +86,40 @@ export function DashboardPage() {
                 <div className="flex items-center gap-2.5">
                   <Cloud className="size-4 text-accent" />
                   <div>
-                    <p className="text-xs font-semibold text-ink">Postura Cloud (CSPM)</p>
+                    <p className="text-xs font-semibold text-ink">Seguridad Cloud (CSPM)</p>
                     <p className="text-[11px] text-muted">
                       {(s.scoredCloudAssets ?? 0) > 0
-                        ? `${s.scoredCloudAssets} cuentas AWS/Azure auditadas`
-                        : 'Conectar cuentas AWS o Azure'}
+                        ? `${s.scoredCloudAssets} cuentas AWS/Azure`
+                        : 'Conectar AWS o Azure'}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="tabular text-base font-bold text-ink">{s.cloudScore ?? '—'}</span>
                   <GradeBadge grade={s.cloudGrade ?? null} size="sm" />
+                </div>
+              </Link>
+
+              <Link
+                to="/threat-lab"
+                className="flex items-center justify-between rounded-lg border border-border bg-surface-2/40 px-3.5 py-2.5 transition hover:border-accent/50 hover:bg-surface-2"
+              >
+                <div className="flex items-center gap-2.5">
+                  <FlaskConical className="size-4 text-accent" />
+                  <div>
+                    <p className="text-xs font-semibold text-ink">Malware &amp; Phishing Lab</p>
+                    <p className="text-[11px] text-muted">
+                      {(threatSummary.data?.total ?? 0) > 0
+                        ? `${threatSummary.data?.total} artefactos · ${threatSummary.data?.byVerdict.MALICIOUS ?? 0} maliciosos`
+                        : 'Analizar .eml, archivos o URLs'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="tabular text-sm font-bold text-critical">
+                    {threatSummary.data?.byVerdict.MALICIOUS ?? 0}
+                  </span>
+                  <span className="text-[10px] font-medium text-muted">mal.</span>
                 </div>
               </Link>
             </div>
