@@ -593,6 +593,188 @@ describe('FindingsService - findAll and summary with SLAs', () => {
       effort: 'QUICK_WIN',
       estimatedMinutes: expect.any(Number),
       businessImpact: expect.any(String),
+      sourceType: 'PERIMETER_SCAN',
+      cweId: 'CWE-693: Fallo de Mecanismo de Protección',
+      owaspCategory: 'A05:2021 - Security Misconfiguration',
     });
+  });
+
+  it('filtra por framework normativo (ISO_27001) y enriquece controles GRC', async () => {
+    prismaMock.finding.findMany.mockResolvedValueOnce([
+      {
+        id: 'f-grc-1',
+        ruleId: 'HDR-HSTS-MISSING',
+        category: FindingCategory.HTTP_HEADERS,
+        severity: FindingSeverity.HIGH,
+        status: FindingStatus.OPEN,
+        dueDate: null,
+        recommendation: 'Configurar HSTS',
+        evidence: {},
+      },
+    ]);
+    prismaMock.finding.count.mockResolvedValueOnce(1);
+
+    const res = await service.findAll('org-1', {
+      framework: 'ISO_27001' as any,
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(prismaMock.finding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: 'org-1',
+          ruleId: { in: expect.arrayContaining(['HDR-HSTS-MISSING']) },
+        }),
+      }),
+    );
+    expect(res.items[0].complianceControls.length).toBeGreaterThan(0);
+    expect(res.items[0].complianceControls.some((c: any) => c.framework === 'ISO_27001')).toBe(true);
+  });
+});
+
+describe('FindingsService - createManual & bulkReview (GRC Hub)', () => {
+  let service: FindingsService;
+  let prismaMock: {
+    asset: { findFirst: jest.Mock };
+    user: { findFirst: jest.Mock };
+    finding: {
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      findMany: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    $transaction: jest.Mock;
+  };
+  let riskScoresMock: { snapshot: jest.Mock };
+  let auditMock: { record: jest.Mock };
+
+  const actor: AuthUser = {
+    id: 'u-admin',
+    organizationId: 'org-1',
+    role: 'ADMIN',
+    fullName: 'Sec Lead',
+    email: 'seclead@org.local',
+  };
+
+  beforeEach(() => {
+    prismaMock = {
+      asset: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn() },
+      finding: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        findMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      $transaction: jest.fn(async (cb) => cb(prismaMock)),
+    };
+    riskScoresMock = { snapshot: jest.fn().mockResolvedValue(undefined) };
+    auditMock = { record: jest.fn() };
+    service = new FindingsService(
+      prismaMock as unknown as PrismaService,
+      riskScoresMock as unknown as RiskScoresService,
+      auditMock as unknown as AuditService,
+    );
+  });
+
+  it('crea un hallazgo manual de auditoría/pentest con taxonomía CWE/OWASP y controles GRC', async () => {
+    prismaMock.asset.findFirst.mockResolvedValueOnce({
+      id: 'asset-1',
+      name: 'Portal Pagos',
+      value: 'pagos.comercio.co',
+    });
+    prismaMock.finding.findUnique.mockResolvedValueOnce(null);
+    prismaMock.finding.create.mockImplementationOnce(async ({ data }: any) => ({
+      id: 'f-manual-1',
+      ...data,
+      asset: { id: 'asset-1', name: 'Portal Pagos', value: 'pagos.comercio.co', type: 'DOMAIN' },
+      reviewedBy: null,
+      assignedTo: null,
+      cloudAccount: null,
+      cloudResource: null,
+    }));
+
+    const created = await service.createManual(actor, {
+      assetId: 'asset-1',
+      category: FindingCategory.VULNERABLE_SOFTWARE,
+      severity: FindingSeverity.CRITICAL,
+      title: 'Inyección SQL en endpoint de consulta de facturas',
+      description: 'Se evidenció SQLi basado en tiempo durante pentest trimestral.',
+      recommendation: 'Parametrizar consultas con Prepared Statements.',
+      location: 'https://pagos.comercio.co/api/v1/invoices?id=1',
+      cweId: 'CWE-89',
+      owaspCategory: 'A03:2021 — Injection',
+      mitreAttackTechnique: 'T1190 — Exploit Public-Facing Application',
+      complianceControlIds: ['PCI_DSS:Req 2.2', 'ISO_27001:A.8.8'],
+      businessImpact: 'Exfiltración masiva de datos transaccionales de clientes.',
+      effort: 'MODERATE',
+    });
+
+    expect(created.sourceType).toBe('MANUAL_AUDIT');
+    expect(created.cweId).toBe('CWE-89');
+    expect(created.owaspCategory).toBe('A03:2021 — Injection');
+    expect(created.complianceControls.map((c: any) => `${c.framework}:${c.code}`)).toEqual(
+      expect.arrayContaining(['PCI_DSS:Req 2.2', 'ISO_27001:A.8.8']),
+    );
+    expect(riskScoresMock.snapshot).toHaveBeenCalledTimes(1);
+    expect(auditMock.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'finding.create_manual',
+        organizationId: 'org-1',
+      }),
+    );
+  });
+
+  it('ejecuta triaje masivo (bulkReview) sobre múltiples hallazgos y recalcula riesgo de activos afectados', async () => {
+    prismaMock.finding.findMany
+      .mockResolvedValueOnce([
+        { id: 'f-1', assetId: 'asset-1', status: FindingStatus.OPEN, ruleId: 'HDR-HSTS-MISSING' },
+        { id: 'f-2', assetId: 'asset-2', status: FindingStatus.OPEN, ruleId: 'TLS-CERT-EXPIRED' },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'f-1',
+          assetId: 'asset-1',
+          status: FindingStatus.IN_PROGRESS,
+          ruleId: 'HDR-HSTS-MISSING',
+          category: FindingCategory.HTTP_HEADERS,
+          dueDate: new Date('2026-12-01T00:00:00Z'),
+          recommendation: 'HSTS',
+          evidence: {},
+        },
+        {
+          id: 'f-2',
+          assetId: 'asset-2',
+          status: FindingStatus.IN_PROGRESS,
+          ruleId: 'TLS-CERT-EXPIRED',
+          category: FindingCategory.TLS_CERTIFICATE,
+          dueDate: new Date('2026-12-01T00:00:00Z'),
+          recommendation: 'Renovar TLS',
+          evidence: {},
+        },
+      ]);
+    prismaMock.user.findFirst.mockResolvedValueOnce({ id: 'u-dev' });
+    prismaMock.finding.updateMany.mockResolvedValueOnce({ count: 2 });
+
+    const res = await service.bulkReview(actor, {
+      findingIds: ['f-1', 'f-2'],
+      status: FindingStatus.IN_PROGRESS,
+      assignedToId: 'u-dev',
+      note: 'Asignado al sprint de remediación DevSecOps',
+    });
+
+    expect(res.updatedCount).toBe(2);
+    expect(res.affectedAssetsCount).toBe(2);
+    expect(prismaMock.finding.updateMany).toHaveBeenCalledTimes(1);
+    expect(riskScoresMock.snapshot).toHaveBeenCalledTimes(2);
+    expect(auditMock.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'finding.bulk_review',
+        organizationId: 'org-1',
+      }),
+    );
   });
 });

@@ -21,8 +21,21 @@ import { tcpPortOpen, tlsProbe } from '../scans/web/tls-probe';
 import { ExportFindingsQuery } from './dto/export-findings.query';
 import { ListFindingsQuery } from './dto/list-findings.query';
 import { ReviewFindingDto } from './dto/review-finding.dto';
-import { FINDING_RULES, getRule } from './rules.catalog';
+import { CreateManualFindingDto } from './dto/create-manual-finding.dto';
+import { BulkReviewFindingsDto } from './dto/bulk-review-findings.dto';
+import { FINDING_RULES, getRule, RemediationEffort } from './rules.catalog';
 import { getRemediationGuide, RemediationGuide } from './remediation.catalog';
+import { CSPM_RULES_MAP } from '../cloud/cspm.catalog';
+import { ComplianceFramework } from '../compliance/compliance.catalog';
+import {
+  computeDefaultFindingDueDate,
+  FindingComplianceControlRef,
+  FindingSourceType,
+  getRuleIdsForFramework,
+  resolveComplianceControls,
+  resolveFindingSource,
+  resolveSecurityTaxonomy,
+} from './grc-taxonomy.catalog';
 
 /** Categorías de hallazgo que produce cada tipo de escaneo. */
 export const CATEGORIES_BY_SCAN_TYPE: Record<ScanType, FindingCategory[]> = {
@@ -318,6 +331,109 @@ export class FindingsService {
     return { result, opened };
   }
 
+  /**
+   * Enriquece una fila de hallazgo con metadatos de SLA, esfuerzo, impacto de negocio,
+   * taxonomía técnica (CWE, OWASP Top 10, MITRE ATT&CK), origen unificado y controles GRC.
+   */
+  public enrichFinding(f: FindingRow) {
+    const rule = FINDING_RULES.get(f.ruleId);
+    const cspmRule = CSPM_RULES_MAP.get(f.ruleId);
+    const ev =
+      f.evidence && typeof f.evidence === 'object' && !Array.isArray(f.evidence)
+        ? (f.evidence as Record<string, unknown>)
+        : {};
+
+    const taxonomy = resolveSecurityTaxonomy(f.ruleId, f.category, f.evidence);
+    const complianceControls: FindingComplianceControlRef[] = resolveComplianceControls(f.ruleId, f.evidence);
+    const sourceType: FindingSourceType = resolveFindingSource({
+      ruleId: f.ruleId,
+      category: f.category,
+      cloudAccountId: f.cloudAccountId,
+      evidence: f.evidence,
+    });
+
+    const customEffort = typeof ev.effort === 'string' ? (ev.effort as RemediationEffort) : undefined;
+    const customImpact = typeof ev.businessImpact === 'string' ? ev.businessImpact : undefined;
+    const customCli = typeof ev.remediationCli === 'string' ? ev.remediationCli : undefined;
+    const customIac = typeof ev.remediationIac === 'string' ? ev.remediationIac : undefined;
+
+    return {
+      ...f,
+      sla: computeSla(f.dueDate, f.status),
+      remediationGuide: getRemediationGuide(f.ruleId, f.recommendation),
+      effort: customEffort ?? rule?.effort ?? 'MODERATE',
+      estimatedMinutes: rule?.estimatedMinutes ?? 60,
+      businessImpact: customImpact ?? rule?.businessImpact ?? null,
+      sourceType,
+      cweId: taxonomy.cweId,
+      owaspCategory: taxonomy.owaspCategory,
+      mitreAttackTechnique: taxonomy.mitreAttackTechnique,
+      complianceControls,
+      remediationCli: customCli ?? cspmRule?.remediationCli ?? null,
+      remediationIac: customIac ?? cspmRule?.remediationIac ?? null,
+    };
+  }
+
+  private applyAdvancedWhere(
+    where: Prisma.FindingWhereInput,
+    query: {
+      domain?: 'perimeter' | 'cloud' | 'manual' | 'threat';
+      sourceType?: FindingSourceType;
+      framework?: ComplianceFramework;
+      controlCode?: string;
+      search?: string;
+      category?: FindingCategory;
+    },
+  ): void {
+    const effectiveSource =
+      query.sourceType ??
+      (query.domain === 'cloud'
+        ? 'CLOUD_CSPM'
+        : query.domain === 'perimeter'
+          ? 'PERIMETER_SCAN'
+          : query.domain === 'manual'
+            ? 'MANUAL_AUDIT'
+            : query.domain === 'threat'
+              ? 'THREAT_MALWARE_LAB'
+              : undefined);
+
+    if (!query.category && effectiveSource) {
+      if (effectiveSource === 'CLOUD_CSPM') {
+        where.category = { in: CLOUD_FINDING_CATEGORIES };
+      } else if (effectiveSource === 'PERIMETER_SCAN') {
+        where.category = { in: PERIMETER_FINDING_CATEGORIES };
+        where.NOT = { ruleId: { startsWith: 'MANUAL-' } };
+      } else if (effectiveSource === 'MANUAL_AUDIT') {
+        where.ruleId = { startsWith: 'MANUAL-' };
+      } else if (effectiveSource === 'THREAT_MALWARE_LAB') {
+        where.OR = [
+          { ruleId: { startsWith: 'THREAT-' } },
+          { ruleId: { startsWith: 'MALWARE-' } },
+        ];
+      }
+    }
+
+    if (query.framework) {
+      const frameworkRuleIds = getRuleIdsForFramework(query.framework, query.controlCode);
+      where.ruleId = { in: frameworkRuleIds };
+    }
+
+    if (query.search && query.search.trim().length > 0) {
+      const q = query.search.trim();
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          OR: [
+            { title: { contains: q, mode: 'insensitive' } },
+            { ruleId: { contains: q, mode: 'insensitive' } },
+            { location: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+  }
+
   async findAll(organizationId: string, query: ListFindingsQuery) {
     const where: Prisma.FindingWhereInput = {
       organizationId,
@@ -328,14 +444,7 @@ export class FindingsService {
       category: query.category,
     };
 
-    if (!query.category && query.domain) {
-      where.category = {
-        in:
-          query.domain === 'cloud'
-            ? CLOUD_FINDING_CATEGORIES
-            : PERIMETER_FINDING_CATEGORIES,
-      };
-    }
+    this.applyAdvancedWhere(where, query);
 
     if (query.assignedToId) {
       if (query.assignedToId === 'unassigned') {
@@ -386,17 +495,7 @@ export class FindingsService {
       }),
       this.prisma.finding.count({ where }),
     ]);
-    const enrichedItems = items.map((f) => {
-      const rule = FINDING_RULES.get(f.ruleId);
-      return {
-        ...f,
-        sla: computeSla(f.dueDate, f.status),
-        remediationGuide: getRemediationGuide(f.ruleId, f.recommendation),
-        effort: rule?.effort ?? 'MODERATE',
-        estimatedMinutes: rule?.estimatedMinutes ?? 60,
-        businessImpact: rule?.businessImpact ?? null,
-      };
-    });
+    const enrichedItems = items.map((f) => this.enrichFinding(f));
     return {
       items: enrichedItems,
       meta: { total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) },
@@ -408,20 +507,237 @@ export class FindingsService {
     if (!finding) {
       throw new NotFoundException('Hallazgo no encontrado');
     }
-    const rule = FINDING_RULES.get(finding.ruleId);
-    return {
-      ...finding,
-      sla: computeSla(finding.dueDate, finding.status),
-      remediationGuide: getRemediationGuide(finding.ruleId, finding.recommendation),
-      effort: rule?.effort ?? 'MODERATE',
-      estimatedMinutes: rule?.estimatedMinutes ?? 60,
-      businessImpact: rule?.businessImpact ?? null,
-    };
+    return this.enrichFinding(finding);
   }
 
   async getRemediation(organizationId: string, id: string): Promise<RemediationGuide> {
     const finding = await this.findOne(organizationId, id);
     return finding.remediationGuide;
+  }
+
+  /**
+   * Registro unificado de hallazgos manuales, pentesting externo, auditorías normativas o laboratorio.
+   */
+  async createManual(actor: AuthUser, dto: CreateManualFindingDto) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: dto.assetId, organizationId: actor.organizationId },
+      select: { id: true, name: true, value: true },
+    });
+    if (!asset) {
+      throw new NotFoundException('El activo seleccionado no existe en la organización');
+    }
+
+    if (dto.assignedToId) {
+      const assignedUser = await this.prisma.user.findFirst({
+        where: { id: dto.assignedToId, organizationId: actor.organizationId },
+        select: { id: true },
+      });
+      if (!assignedUser) {
+        throw new BadRequestException('El usuario asignado no pertenece a la organización');
+      }
+    }
+
+    const defaultCvssBySeverity: Record<FindingSeverity, number> = {
+      CRITICAL: 9.5,
+      HIGH: 7.8,
+      MEDIUM: 5.5,
+      LOW: 3.1,
+      INFO: 0.0,
+    };
+
+    const normalizedRuleId = dto.ruleId?.trim()
+      ? dto.ruleId.trim().toUpperCase().startsWith('MANUAL-')
+        ? dto.ruleId.trim().toUpperCase()
+        : `MANUAL-${dto.ruleId.trim().toUpperCase()}`
+      : `MANUAL-${dto.category}-${createHash('sha1').update(`${dto.title}|${dto.location}`).digest('hex').slice(0, 6).toUpperCase()}`;
+
+    const fingerprint = fingerprintOf(normalizedRuleId, dto.location.trim());
+    const now = new Date();
+    const dueDate = dto.dueDate ? new Date(dto.dueDate) : computeDefaultFindingDueDate(dto.severity, now);
+    const cvss = dto.cvssScore ?? defaultCvssBySeverity[dto.severity];
+
+    const evidencePayload: Record<string, unknown> = {
+      ...(dto.evidence ?? {}),
+      sourceType: 'MANUAL_AUDIT',
+      manualAudit: true,
+      createdByEmail: actor.email,
+      createdByName: actor.fullName,
+      ...(dto.cweId ? { cweId: dto.cweId.trim() } : {}),
+      ...(dto.owaspCategory ? { owaspCategory: dto.owaspCategory.trim() } : {}),
+      ...(dto.mitreAttackTechnique ? { mitreAttackTechnique: dto.mitreAttackTechnique.trim() } : {}),
+      ...(dto.complianceControlIds?.length ? { complianceControlIds: dto.complianceControlIds } : {}),
+      ...(dto.businessImpact ? { businessImpact: dto.businessImpact.trim() } : {}),
+      ...(dto.effort ? { effort: dto.effort } : {}),
+      ...(dto.remediationCli ? { remediationCli: dto.remediationCli } : {}),
+    };
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.finding.findUnique({
+        where: { assetId_fingerprint: { assetId: asset.id, fingerprint } },
+        select: { id: true },
+      });
+
+      const baseData = {
+        category: dto.category,
+        ruleId: normalizedRuleId,
+        severity: dto.severity,
+        cvssScore: new Prisma.Decimal(cvss),
+        status: FindingStatus.OPEN,
+        title: dto.title.trim().slice(0, 200),
+        description: dto.description.trim(),
+        recommendation: dto.recommendation.trim(),
+        location: dto.location.trim().slice(0, 500),
+        evidence: evidencePayload as Prisma.InputJsonValue,
+        lastSeenAt: now,
+        resolvedAt: null,
+        dueDate,
+        assignedToId: dto.assignedToId ?? null,
+      };
+
+      const saved = existing
+        ? await tx.finding.update({
+            where: { id: existing.id },
+            data: baseData,
+            select: findingSelect,
+          })
+        : await tx.finding.create({
+            data: {
+              ...baseData,
+              organizationId: actor.organizationId,
+              assetId: asset.id,
+              fingerprint,
+              firstSeenAt: now,
+            },
+            select: findingSelect,
+          });
+
+      await this.riskScores.snapshot(tx, {
+        organizationId: actor.organizationId,
+        assetId: asset.id,
+        trigger: RiskScoreTrigger.FINDING_REVIEWED,
+      });
+
+      return saved;
+    });
+
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'finding.create_manual',
+      actor,
+      target: { type: 'finding', id: created.id, label: `${created.ruleId} · ${created.location}` },
+      detail: {
+        assetId: asset.id,
+        severity: created.severity,
+        category: created.category,
+        complianceControlIds: dto.complianceControlIds ?? [],
+      },
+    });
+
+    return this.enrichFinding(created);
+  }
+
+  /**
+   * Triaje y gobierno por lotes (Bulk Operations) sobre múltiples hallazgos.
+   */
+  async bulkReview(actor: AuthUser, dto: BulkReviewFindingsDto) {
+    const existingFindings = await this.prisma.finding.findMany({
+      where: {
+        id: { in: dto.findingIds },
+        organizationId: actor.organizationId,
+      },
+      select: { id: true, assetId: true, status: true, ruleId: true },
+    });
+
+    if (existingFindings.length === 0) {
+      throw new NotFoundException('Ninguno de los hallazgos seleccionados pertenece a la organización');
+    }
+
+    if (dto.assignedToId) {
+      const assignedUser = await this.prisma.user.findFirst({
+        where: { id: dto.assignedToId, organizationId: actor.organizationId },
+        select: { id: true },
+      });
+      if (!assignedUser) {
+        throw new BadRequestException('El usuario asignado no pertenece a la organización');
+      }
+    }
+
+    const now = new Date();
+    const validIds = existingFindings.map((f) => f.id);
+    const affectedAssetIds = new Set<string>();
+
+    if (dto.status !== undefined) {
+      for (const f of existingFindings) {
+        if (f.status !== dto.status) {
+          affectedAssetIds.add(f.assetId);
+        }
+      }
+    }
+
+    const updatedItems = await this.prisma.$transaction(async (tx) => {
+      const data: Prisma.FindingUncheckedUpdateManyInput = {};
+
+      if (dto.status !== undefined) {
+        data.status = dto.status;
+        data.resolvedAt = (dto.status as FindingStatus) === FindingStatus.RESOLVED ? now : null;
+        data.reviewedById = actor.id;
+      }
+
+      if (dto.note !== undefined) {
+        data.reviewNote = dto.note ? dto.note.trim() : null;
+        data.reviewedById = actor.id;
+      }
+
+      if (dto.assignedToId !== undefined) {
+        data.assignedToId = dto.assignedToId ? dto.assignedToId : null;
+      }
+
+      if (dto.dueDate !== undefined) {
+        data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
+      }
+
+      if (dto.remediationNote !== undefined) {
+        data.remediationNote = dto.remediationNote ? dto.remediationNote.trim() : null;
+      }
+
+      await tx.finding.updateMany({
+        where: { id: { in: validIds }, organizationId: actor.organizationId },
+        data,
+      });
+
+      for (const assetId of affectedAssetIds) {
+        await this.riskScores.snapshot(tx, {
+          organizationId: actor.organizationId,
+          assetId,
+          trigger: RiskScoreTrigger.FINDING_REVIEWED,
+        });
+      }
+
+      return tx.finding.findMany({
+        where: { id: { in: validIds }, organizationId: actor.organizationId },
+        select: findingSelect,
+      });
+    });
+
+    this.audit.record({
+      organizationId: actor.organizationId,
+      action: 'finding.bulk_review',
+      actor,
+      target: { type: 'finding_batch', id: validIds[0], label: `${validIds.length} hallazgos actualizados` },
+      detail: {
+        updatedCount: validIds.length,
+        findingIds: validIds,
+        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.assignedToId !== undefined ? { assignedToId: dto.assignedToId } : {}),
+        ...(dto.dueDate !== undefined ? { dueDate: dto.dueDate } : {}),
+      },
+    });
+
+    return {
+      updatedCount: validIds.length,
+      affectedAssetsCount: affectedAssetIds.size,
+      items: updatedItems.map((f) => this.enrichFinding(f)),
+    };
   }
 
   async review(actor: AuthUser, id: string, dto: ReviewFindingDto) {
@@ -497,11 +813,7 @@ export class FindingsService {
       },
     });
 
-    return {
-      ...reviewed,
-      sla: computeSla(reviewed.dueDate, reviewed.status),
-      remediationGuide: getRemediationGuide(reviewed.ruleId, reviewed.recommendation),
-    };
+    return this.enrichFinding(reviewed);
   }
 
   /**
@@ -831,10 +1143,53 @@ export class FindingsService {
     for (const row of bySeverityRows) bySeverity[row.severity] = row._count.id;
     const byCategory: Record<string, number> = {};
     for (const row of byCategoryRows) byCategory[row.category] = row._count.id;
+
+    const bySource: Record<FindingSourceType, number> = {
+      PERIMETER_SCAN: 0,
+      CLOUD_CSPM: 0,
+      THREAT_MALWARE_LAB: 0,
+      MANUAL_AUDIT: 0,
+    };
+    const byFramework: Record<ComplianceFramework, number> = {
+      ISO_27001: 0,
+      PCI_DSS: 0,
+      NIST_CSF: 0,
+      CIS_CONTROLS: 0,
+      SOC_2: 0,
+    };
+
+    const activeSample =
+      (await this.prisma.finding.findMany?.({
+        where,
+        select: { ruleId: true, category: true, cloudAccountId: true, evidence: true },
+      })) ?? [];
+
+    if (activeSample.length > 0) {
+      for (const row of activeSample) {
+        const src = resolveFindingSource(row);
+        bySource[src] = (bySource[src] ?? 0) + 1;
+        const controls = resolveComplianceControls(row.ruleId, row.evidence);
+        const frameworksTouched = new Set<ComplianceFramework>(controls.map((c) => c.framework));
+        for (const fw of frameworksTouched) {
+          byFramework[fw] = (byFramework[fw] ?? 0) + 1;
+        }
+      }
+    } else {
+      for (const row of byCategoryRows) {
+        if ((CLOUD_FINDING_CATEGORIES as string[]).includes(row.category)) {
+          bySource.CLOUD_CSPM += row._count.id;
+        } else {
+          bySource.PERIMETER_SCAN += row._count.id;
+        }
+      }
+    }
+
     return {
       total,
       bySeverity,
       byCategory,
+      bySource,
+      byFramework,
       severityOrder: SEVERITY_ORDER,
       sla: {
         overdue: overdueCount,
@@ -872,14 +1227,7 @@ export class FindingsService {
         : {}),
     };
 
-    if (!query.category && query.domain) {
-      where.category = {
-        in:
-          query.domain === 'cloud'
-            ? CLOUD_FINDING_CATEGORIES
-            : PERIMETER_FINDING_CATEGORIES,
-      };
-    }
+    this.applyAdvancedWhere(where, query);
 
     if (query.assignedToId) {
       if (query.assignedToId === 'unassigned') {
