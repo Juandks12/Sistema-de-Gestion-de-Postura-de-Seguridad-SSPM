@@ -3,7 +3,14 @@ import { ApiHeader, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nes
 import { CurrentOrgId, RequireApiKeyScope } from '../api-keys/api-key-auth.decorator';
 import { PublicApiKeyGuard } from '../api-keys/public-api-key.guard';
 import { Public } from '../common/decorators/public.decorator';
-import { PublicAlertsQueryDto, PublicAssetsQueryDto, PublicFindingsQueryDto } from './dto/public-query.dto';
+import {
+  PublicAlertsQueryDto,
+  PublicAssetsQueryDto,
+  PublicAttackPathsQueryDto,
+  PublicComplianceQueryDto,
+  PublicFindingsQueryDto,
+  PublicThreatLabQueryDto,
+} from './dto/public-query.dto';
 import { toNdjsonStream } from './ndjson.util';
 import { PublicApiService } from './public-api.service';
 
@@ -84,6 +91,60 @@ export class PublicApiController {
     @Headers('accept') acceptHeader?: string,
   ) {
     const result = await this.publicApi.getAssets(orgId, query);
+    if (query.format === 'ndjson' || acceptHeader?.includes('application/x-ndjson')) {
+      return toNdjsonStream(result.items);
+    }
+    return result;
+  }
+
+  @Get('attack-paths')
+  @RequireApiKeyScope('findings:read')
+  @ApiOperation({
+    summary: 'Exportar rutas de ataque correlacionadas (Kill-Chains) para sistemas SIEM/SOAR',
+    description: 'Retorna escenarios activos de compromiso correlacionados entre vectores perimetrales, e-commerce y cloud.',
+  })
+  @ApiProduces('application/json', 'application/x-ndjson')
+  @ApiResponse({ status: 200, description: 'Rutas de ataque activas en formato JSON o NDJSON' })
+  async getAttackPaths(
+    @CurrentOrgId() orgId: string,
+    @Query() query: PublicAttackPathsQueryDto,
+    @Headers('accept') acceptHeader?: string,
+  ) {
+    const result = await this.publicApi.getAttackPaths(orgId, query);
+    if (query.format === 'ndjson' || acceptHeader?.includes('application/x-ndjson')) {
+      return toNdjsonStream(result.items);
+    }
+    return result;
+  }
+
+  @Get('compliance')
+  @RequireApiKeyScope('posture:read')
+  @ApiOperation({
+    summary: 'Exportar matriz de cumplimiento normativo GRC (ISO 27001, PCI-DSS v4.0, NIST CSF 2.0, CIS v8, SOC 2)',
+    description: 'Retorna el resumen global de cumplimiento normativo y, opcionalmente, el desglose de controles de un estándar.',
+  })
+  @ApiResponse({ status: 200, description: 'Postura de cumplimiento normativo GRC' })
+  async getCompliance(
+    @CurrentOrgId() orgId: string,
+    @Query() query: PublicComplianceQueryDto,
+  ) {
+    return this.publicApi.getCompliance(orgId, query);
+  }
+
+  @Get('threat-lab')
+  @RequireApiKeyScope('findings:read')
+  @ApiOperation({
+    summary: 'Exportar análisis forenses e IoCs del Laboratorio de Malware y Phishing',
+    description: 'Retorna correos .eml, archivos/hashes SHA-256 y URLs analizadas junto con sus indicadores MITRE ATT&CK y veredictos.',
+  })
+  @ApiProduces('application/json', 'application/x-ndjson')
+  @ApiResponse({ status: 200, description: 'Listado de análisis del Threat Lab en formato JSON o NDJSON' })
+  async getThreatLab(
+    @CurrentOrgId() orgId: string,
+    @Query() query: PublicThreatLabQueryDto,
+    @Headers('accept') acceptHeader?: string,
+  ) {
+    const result = await this.publicApi.getThreatLab(orgId, query);
     if (query.format === 'ndjson' || acceptHeader?.includes('application/x-ndjson')) {
       return toNdjsonStream(result.items);
     }

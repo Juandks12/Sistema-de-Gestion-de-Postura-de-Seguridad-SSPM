@@ -172,6 +172,16 @@ const RULE_SPECIFIC_TAXONOMY: Record<string, Partial<FindingSecurityTaxonomy>> =
     owaspCategory: 'A07:2021 - Identification and Authentication Failures',
     mitreAttackTechnique: 'T1566.002 - Phishing: Spearphishing Link',
   },
+  'MAIL-SPF-PERMERROR-RISK': {
+    cweId: 'CWE-290: Riesgo de Fallo Permanente SPF (>8 consultas DNS, RFC 7208)',
+    owaspCategory: 'A05:2021 - Security Misconfiguration',
+    mitreAttackTechnique: 'T1566 - Phishing',
+  },
+  'DNS-WILDCARD-ENABLED': {
+    cweId: 'CWE-350: Resolución DNS Comodín (*.dominio) Expuesta',
+    owaspCategory: 'A05:2021 - Security Misconfiguration',
+    mitreAttackTechnique: 'T1583.001 - Acquire Infrastructure: Domains',
+  },
 };
 
 const CONTROLS_BY_RULE_ID = new Map<string, FindingComplianceControlRef[]>();

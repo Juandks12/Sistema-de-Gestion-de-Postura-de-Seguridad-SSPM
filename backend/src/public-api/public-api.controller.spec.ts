@@ -13,6 +13,9 @@ describe('PublicApiController', () => {
     getAlerts: jest.Mock;
     getPosture: jest.Mock;
     getAssets: jest.Mock;
+    getAttackPaths: jest.Mock;
+    getCompliance: jest.Mock;
+    getThreatLab: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -21,6 +24,9 @@ describe('PublicApiController', () => {
       getAlerts: jest.fn(),
       getPosture: jest.fn(),
       getAssets: jest.fn(),
+      getAttackPaths: jest.fn(),
+      getCompliance: jest.fn(),
+      getThreatLab: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -99,6 +105,31 @@ describe('PublicApiController', () => {
 
       const res = await controller.getAssets('org-1', { limit: 100, format: 'ndjson' });
       expect(res).toBeInstanceOf(StreamableFile);
+    });
+  });
+
+  describe('getAttackPaths, getCompliance & getThreatLab', () => {
+    it('debe exportar rutas de ataque en JSON y NDJSON', async () => {
+      const mockResult = { organizationId: 'org-1', total: 1, assetId: null, items: [{ id: 'ap-1' }] };
+      service.getAttackPaths.mockResolvedValue(mockResult);
+
+      expect(await controller.getAttackPaths('org-1', {})).toBe(mockResult);
+      expect(await controller.getAttackPaths('org-1', { format: 'ndjson' })).toBeInstanceOf(StreamableFile);
+    });
+
+    it('debe exportar postura de cumplimiento GRC', async () => {
+      const mockResult = { organizationId: 'org-1', overview: { averageScore: 92 }, frameworkDetails: null };
+      service.getCompliance.mockResolvedValue(mockResult);
+
+      expect(await controller.getCompliance('org-1', {})).toBe(mockResult);
+    });
+
+    it('debe exportar análisis del Threat Lab en JSON y NDJSON', async () => {
+      const mockResult = { total: 1, since: null, items: [{ id: 'tl-1', verdict: 'MALICIOUS' }] };
+      service.getThreatLab.mockResolvedValue(mockResult);
+
+      expect(await controller.getThreatLab('org-1', { limit: 50 })).toBe(mockResult);
+      expect(await controller.getThreatLab('org-1', { limit: 50, format: 'ndjson' })).toBeInstanceOf(StreamableFile);
     });
   });
 });

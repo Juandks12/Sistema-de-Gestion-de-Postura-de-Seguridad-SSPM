@@ -1,4 +1,4 @@
-import { EyeOff, Globe, Plus, Radar, RotateCcw, ShieldCheck } from 'lucide-react';
+import { EyeOff, Globe, Plus, Radar, Rocket, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert } from '@/components/ui/Alert';
@@ -7,7 +7,12 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Spinner';
-import { useDiscoveredHosts, useImportDiscoveredHosts, useSetDiscoveredHostIgnored } from '@/hooks/queries';
+import {
+  useDiscoveredHosts,
+  useImportDiscoveredHosts,
+  usePromoteAndScanDiscoveredHost,
+  useSetDiscoveredHostIgnored,
+} from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatDateTime, timeAgo } from '@/lib/format';
@@ -56,10 +61,13 @@ export function DiscoveredHostsCard({
   }, [lastRunAt, refetch]);
   const setIgnored = useSetDiscoveredHostIgnored();
   const importHosts = useImportDiscoveredHosts();
+  const promoteHost = usePromoteAndScanDiscoveredHost();
+  const [promotingId, setPromotingId] = useState<string | null>(null);
   const [view, setView] = useState<View>('pending');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [launchDiagnostic360, setLaunchDiagnostic360] = useState(true);
   const [result, setResult] = useState<ImportDiscoveredResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,13 +90,41 @@ export function DiscoveredHostsCard({
   const doImport = async () => {
     setError(null);
     try {
-      const res = await importHosts.mutateAsync(selectedInView.map((h) => h.id));
+      const res = await importHosts.mutateAsync({
+        ids: selectedInView.map((h) => h.id),
+        launchDiagnostic360,
+      });
       setResult(res);
       setSelected(new Set());
       setConfirming(false);
       setAuthorized(false);
+      void refetch();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudieron registrar los subdominios.');
+    }
+  };
+
+  const handlePromoteOne = async (hostId: string) => {
+    setError(null);
+    setPromotingId(hostId);
+    try {
+      const res = await promoteHost.mutateAsync(hostId);
+      setResult({
+        created: [
+          {
+            hostname: res.hostname,
+            assetId: res.assetId,
+            verified: res.verified,
+            diagnosticBatchId: res.diagnosticBatchId,
+          },
+        ],
+        failed: [],
+      });
+      void refetch();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo promover e iniciar el diagnóstico 360°.');
+    } finally {
+      setPromotingId(null);
     }
   };
 
@@ -122,7 +158,19 @@ export function DiscoveredHostsCard({
             {result.created.length > 0 ? (
               <Alert kind="success">
                 {result.created.length === 1 ? 'Se registró 1 activo' : `Se registraron ${result.created.length} activos`}
-                {result.created.some((c) => !c.verified) ? '; los que no heredan la verificación del dominio deben verificarse antes de auditarlos.' : ' y ya se pueden auditar.'}
+                {result.created.some((c) => c.diagnosticBatchId)
+                  ? ` y se inició automáticamente el Diagnóstico Profundo 360°.`
+                  : result.created.some((c) => !c.verified)
+                    ? '; los que no heredan la verificación del dominio deben verificarse antes de auditarlos.'
+                    : ' y ya se pueden auditar.'}{' '}
+                {result.created.length === 1 ? (
+                  <Link
+                    to={`/assets/${result.created[0].assetId}`}
+                    className="ml-1 font-semibold underline hover:opacity-80"
+                  >
+                    Ver {result.created[0].hostname}
+                  </Link>
+                ) : null}
               </Alert>
             ) : null}
             {result.failed.length > 0 ? (
@@ -130,6 +178,11 @@ export function DiscoveredHostsCard({
                 {result.failed.map((f) => `${f.hostname}: ${f.reason}`).join(' · ')}
               </Alert>
             ) : null}
+          </div>
+        ) : null}
+        {error && !confirming ? (
+          <div className="px-5 pb-3">
+            <Alert kind="error">{error}</Alert>
           </div>
         ) : null}
 
@@ -193,15 +246,30 @@ export function DiscoveredHostsCard({
                         Ver activo
                       </Link>
                     ) : canEdit ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={h.ignored ? <RotateCcw className="size-4" /> : <EyeOff className="size-4" />}
-                        onClick={() => setIgnored.mutate({ id: h.id, assetId, ignored: !h.ignored })}
-                        disabled={setIgnored.isPending}
-                      >
-                        {h.ignored ? 'Restaurar' : 'Descartar'}
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {!h.ignored && canScan ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            icon={<Rocket className="size-3.5" />}
+                            onClick={() => void handlePromoteOne(h.id)}
+                            loading={promotingId === h.id}
+                            disabled={promoteHost.isPending}
+                            title="Promover al inventario e iniciar Diagnóstico Profundo 360° en 1 clic"
+                          >
+                            Promover + 360°
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={h.ignored ? <RotateCcw className="size-4" /> : <EyeOff className="size-4" />}
+                          onClick={() => setIgnored.mutate({ id: h.id, assetId, ignored: !h.ignored })}
+                          disabled={setIgnored.isPending}
+                        >
+                          {h.ignored ? 'Restaurar' : 'Descartar'}
+                        </Button>
+                      </div>
                     ) : null}
                   </li>
                 ))}
@@ -219,7 +287,7 @@ export function DiscoveredHostsCard({
           <>
             <Button variant="secondary" onClick={() => setConfirming(false)}>Cancelar</Button>
             <Button onClick={doImport} loading={importHosts.isPending} disabled={!authorized}>
-              Añadir {selectedInView.length}
+              {launchDiagnostic360 ? `Añadir y Auditar 360° (${selectedInView.length})` : `Añadir ${selectedInView.length}`}
             </Button>
           </>
         }
@@ -231,13 +299,29 @@ export function DiscoveredHostsCard({
             </li>
           ))}
         </ul>
-        <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-2/60 p-3 text-sm">
-          <input type="checkbox" className="mt-0.5 size-4 accent-accent" checked={authorized} onChange={(e) => setAuthorized(e.target.checked)} />
-          <span className="text-ink-2">
-            <ShieldCheck className="mr-1 inline size-4 text-accent" aria-hidden />
-            Confirmo que estos subdominios son de mi organización o que está expresamente autorizada a analizarlos.
-          </span>
-        </label>
+        <div className="space-y-2.5">
+          <label className="flex items-start gap-3 rounded-lg border border-border bg-surface-2/60 p-3 text-sm">
+            <input type="checkbox" className="mt-0.5 size-4 accent-accent" checked={authorized} onChange={(e) => setAuthorized(e.target.checked)} />
+            <span className="text-ink-2">
+              <ShieldCheck className="mr-1 inline size-4 text-accent" aria-hidden />
+              Confirmo que estos subdominios son de mi organización o que está expresamente autorizada a analizarlos.
+            </span>
+          </label>
+          {canScan ? (
+            <label className="flex items-start gap-3 rounded-lg border border-accent/25 bg-accent/5 p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-accent"
+                checked={launchDiagnostic360}
+                onChange={(e) => setLaunchDiagnostic360(e.target.checked)}
+              />
+              <span className="text-ink-2">
+                <Rocket className="mr-1 inline size-4 text-accent" aria-hidden />
+                <strong className="font-medium text-ink">Iniciar Diagnóstico Profundo 360° automáticamente</strong> al registrar los subdominios verificados.
+              </span>
+            </label>
+          ) : null}
+        </div>
         {error ? <Alert kind="error" className="mt-3">{error}</Alert> : null}
       </Modal>
     </Card>

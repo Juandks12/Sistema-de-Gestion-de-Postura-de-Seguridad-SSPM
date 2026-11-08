@@ -1,5 +1,6 @@
 import { FindingSeverity, ReportType, ScanType } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import { resolveComplianceControls, resolveSecurityTaxonomy } from '../findings/grc-taxonomy.catalog';
 import { GRADE_BANDS, SCORING_MODEL_VERSION, SEVERITY_CAPS, SEVERITY_ORDER, SEVERITY_WEIGHTS } from '../risk/scoring';
 import {
   assetLabel,
@@ -471,6 +472,92 @@ function renderExecutive(doc: Doc, data: ReportData): void {
     paragraph(doc, data.executiveSummary.technicalDebtSummary, { color: COLOR.ink2 });
   }
 
+  if (data.complianceSummary && data.complianceSummary.frameworks.length > 0) {
+    heading(
+      doc,
+      `Matriz de Cumplimiento Normativo (GRC) — Promedio Global: ${data.complianceSummary.averageScore}%`,
+    );
+    paragraph(
+      doc,
+      'Estado de adherencia en tiempo real frente a los 5 marcos regulatorios e industriales evaluados automáticamente por el motor GRC:',
+      { color: COLOR.muted, size: 9 },
+    );
+    table(
+      doc,
+      [
+        { header: 'Marco Normativo / Estándar', width: 3.5 },
+        { header: 'Versión', width: 1.5 },
+        { header: 'Cumplimiento', width: 1.3, align: 'right' },
+        { header: 'Controles OK', width: 1.3, align: 'right' },
+        { header: 'Con Brecha', width: 1.3, align: 'right' },
+      ],
+      data.complianceSummary.frameworks.map((fw) => [
+        { text: fw.name, bold: true },
+        fw.version,
+        {
+          text: `${fw.compliancePercentage}%`,
+          bold: true,
+          color: fw.compliancePercentage >= 80 ? '#15803d' : fw.compliancePercentage >= 60 ? '#a16207' : '#b91c1c',
+        },
+        `${fw.passedControls}/${fw.totalControls}`,
+        {
+          text: String(fw.failedControls),
+          bold: fw.failedControls > 0,
+          color: fw.failedControls > 0 ? '#b91c1c' : COLOR.muted,
+        },
+      ]),
+    );
+  }
+
+  if (data.threatLabSummary && data.threatLabSummary.total > 0) {
+    heading(doc, 'Laboratorio Forense de Malware, Phishing y Amenazas (Threat Lab)');
+    paragraph(
+      doc,
+      `Se han inspeccionado ${data.threatLabSummary.total} artefacto(s) sospechosos (correos .eml, archivos/hashes y URLs): ` +
+        `${data.threatLabSummary.malicious} malicioso(s), ${data.threatLabSummary.suspicious} sospechoso(s), ` +
+        `${data.threatLabSummary.clean} limpio(s) y ${data.threatLabSummary.promotedCount} promovido(s) a hallazgos formales GRC.`,
+    );
+    if (data.threatLabSummary.recentIncidents.length > 0) {
+      table(
+        doc,
+        [
+          { header: 'Tipo', width: 1.2 },
+          { header: 'Artefacto Analizado', width: 4.2 },
+          { header: 'Veredicto', width: 1.5 },
+          { header: 'Riesgo', width: 1.1, align: 'right' },
+          { header: 'Fecha', width: 1.5 },
+        ],
+        data.threatLabSummary.recentIncidents.map((inc) => [
+          inc.artifactType,
+          inc.artifactName,
+          {
+            text: inc.verdict,
+            bold: true,
+            color: inc.verdict === 'MALICIOUS' ? '#b91c1c' : '#c2410c',
+          },
+          `${inc.riskScore}/100`,
+          fmtDate(inc.createdAt),
+        ]),
+      );
+    }
+  }
+
+  if (data.diagnostic360Summary && data.diagnostic360Summary.totalBatches > 0) {
+    heading(doc, 'Orquestación de Diagnóstico Profundo 360° y Evolución');
+    const d360 = data.diagnostic360Summary;
+    const deltaStr =
+      d360.deltaScore === null
+        ? 'Sin línea base previa'
+        : d360.deltaScore >= 0
+          ? `+${d360.deltaScore} pts`
+          : `${d360.deltaScore} pts`;
+    paragraph(
+      doc,
+      `Lotes 360° ejecutados: ${d360.totalBatches} (último perfil: ${d360.latestProfile ?? 'COMMERCE_360'}, estado: ${d360.latestBatchStatus ?? 'COMPLETED'}). ` +
+        `Variación de postura en último lote: ${deltaStr} · Hallazgos remediados: ${d360.remediatedCount} · Nuevas regresiones: ${d360.regressionsCount}.`,
+    );
+  }
+
   heading(doc, 'Alertas');
   paragraph(
     doc,
@@ -541,7 +628,10 @@ function assetSection(doc: Doc, a: ReportAsset): void {
       width: contentWidth(doc) - 12,
     });
     doc.fillColor(COLOR.ink).text(t(`${f.title}${f.cvssScore !== null ? ` — CVSS ${f.cvssScore.toFixed(1)}` : ''}`));
-    const meta = `${f.ruleId} · ${f.location} · detectado ${fmtDate(f.firstSeenAt)}, visto por última vez ${fmtDate(f.lastSeenAt)}`;
+    const tax = resolveSecurityTaxonomy(f.ruleId, f.category, f.evidence);
+    const controls = resolveComplianceControls(f.ruleId, f.evidence);
+    const grcCodes = controls.slice(0, 4).map((c) => `${c.framework}:${c.code}`).join(', ');
+    const meta = `${f.ruleId} · ${f.location} · ${tax.cweId.split(':')[0]} · MITRE ${tax.mitreAttackTechnique.split(' ')[0]}${grcCodes ? ` · GRC [${grcCodes}]` : ''} · detectado ${fmtDate(f.firstSeenAt)}`;
     doc.font(FONT).fontSize(8.5).fillColor(COLOR.muted).text(t(meta), MARGIN + 10, doc.y + 1, { width: contentWidth(doc) - 12 });
     doc.font(FONT).fontSize(9.5).fillColor(COLOR.ink2).text(t(f.description), MARGIN + 10, doc.y + 3, { width: contentWidth(doc) - 12, lineGap: 1.5 });
     doc.font(FONT_BOLD).text(t('Recomendación: '), MARGIN + 10, doc.y + 3, { continued: true, width: contentWidth(doc) - 12 });

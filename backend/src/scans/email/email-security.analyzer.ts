@@ -152,6 +152,16 @@ export async function analyzeEmailSecurity(
     const evidence = { record: spfRecords[0], lookups: evaluation.lookups, all: spfSummary.all };
     if (evaluation.errors.length > 0) {
       findings.push({ ruleId: 'MAIL-SPF-INVALID', location: spfLocation, evidence: { ...evidence, errors: evaluation.errors } });
+    } else if (evaluation.lookups >= 8 && evaluation.lookups <= 10) {
+      findings.push({
+        ruleId: 'MAIL-SPF-PERMERROR-RISK',
+        location: spfLocation,
+        evidence: {
+          ...evidence,
+          maxAllowedLookups: 10,
+          remainingLookups: 10 - evaluation.lookups,
+        },
+      });
     }
     if (evaluation.all === '+') {
       findings.push({ ruleId: 'MAIL-SPF-PASS-ALL', location: spfLocation, evidence });
