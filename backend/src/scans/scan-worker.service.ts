@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, Prisma, RiskScoreTrigger, ScanStatus, ScanType } from '@prisma/client';
 import { AlertsService } from '../alerts/alerts.service';
@@ -54,6 +54,7 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     private readonly findings: FindingsService,
     private readonly riskScores: RiskScoresService,
     private readonly alerts: AlertsService,
+    @Inject(forwardRef(() => DiscoveryService))
     private readonly discovery: DiscoveryService,
     @Inject(SCANNERS) scanners: Scanner[],
   ) {
