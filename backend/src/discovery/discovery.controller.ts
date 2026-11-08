@@ -29,9 +29,17 @@ export class DiscoveryController {
 
   @Post('discovered-hosts/import')
   @Roles(UserRole.ADMIN, UserRole.ANALYST)
-  @ApiOperation({ summary: 'Registrar subdominios descubiertos como activos del inventario' })
+  @ApiOperation({ summary: 'Registrar subdominios descubiertos como activos del inventario (con opción de Diagnóstico 360°)' })
   @ApiResponse({ status: 201, description: 'Resultado por subdominio (creados y fallidos).' })
   import(@CurrentUser() user: AuthUser, @Body() dto: ImportDiscoveredHostsDto) {
-    return this.discovery.importAsAssets(user, dto.ids);
+    return this.discovery.importAsAssets(user, dto.ids, dto.launchDiagnostic360 ?? false);
+  }
+
+  @Post('discovered-hosts/:id/promote-and-scan')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @ApiOperation({ summary: 'Promover en 1 clic un subdominio descubierto a Activo y lanzar Diagnóstico 360°' })
+  @ApiResponse({ status: 201, description: 'Subdominio promovido y lote 360° encolado.' })
+  promoteAndScan(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.discovery.promoteAndScanOne(user, id);
   }
 }

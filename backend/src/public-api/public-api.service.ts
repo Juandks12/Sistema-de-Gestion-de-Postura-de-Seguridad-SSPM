@@ -1,8 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { ComplianceService } from '../compliance/compliance.service';
+import { AttackPathsService } from '../findings/attack-paths.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
-import { PublicAlertsQueryDto, PublicAssetsQueryDto, PublicFindingsQueryDto } from './dto/public-query.dto';
+import {
+  PublicAlertsQueryDto,
+  PublicAssetsQueryDto,
+  PublicAttackPathsQueryDto,
+  PublicComplianceQueryDto,
+  PublicFindingsQueryDto,
+  PublicThreatLabQueryDto,
+} from './dto/public-query.dto';
 
 const publicFindingSelect = {
   id: true,
@@ -57,6 +66,8 @@ export class PublicApiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly riskScoresService: RiskScoresService,
+    @Optional() private readonly attackPathsService?: AttackPathsService,
+    @Optional() private readonly complianceService?: ComplianceService,
   ) {}
 
   /** Obtiene hallazgos con soporte de cursor temporal para sincronización incremental */
@@ -196,6 +207,77 @@ export class PublicApiService {
 
     return {
       total: items.length,
+      items,
+    };
+  }
+
+  /** Exporta rutas de ataque correlacionadas (Kill-Chains) para SIEM/SOAR */
+  async getAttackPaths(organizationId: string, query: PublicAttackPathsQueryDto) {
+    const items = this.attackPathsService
+      ? await this.attackPathsService.analyzeAttackPaths(organizationId, query.assetId)
+      : [];
+    return {
+      organizationId,
+      total: items.length,
+      assetId: query.assetId ?? null,
+      items,
+    };
+  }
+
+  /** Exporta matriz de cumplimiento normativo GRC (ISO 27001, PCI-DSS, NIST CSF, CIS Controls, SOC 2) */
+  async getCompliance(organizationId: string, query: PublicComplianceQueryDto) {
+    if (!this.complianceService) {
+      return { organizationId, overview: null, frameworkDetails: null };
+    }
+    const overview = await this.complianceService.getOverview(organizationId);
+    const frameworkDetails = query.framework
+      ? await this.complianceService.getFrameworkDetails(organizationId, query.framework)
+      : null;
+
+    return {
+      organizationId,
+      overview,
+      frameworkDetails,
+    };
+  }
+
+  /** Exporta análisis forenses del Laboratorio de Malware y Phishing (IoCs, hashes SHA-256, veredictos) */
+  async getThreatLab(organizationId: string, query: PublicThreatLabQueryDto) {
+    const where: Prisma.MalwareAnalysisWhereInput = {
+      organizationId,
+      ...(query.since ? { createdAt: { gte: new Date(query.since) } } : {}),
+      ...(query.artifactType ? { artifactType: query.artifactType } : {}),
+      ...(query.verdict ? { verdict: query.verdict } : {}),
+    };
+
+    const items = await this.prisma.malwareAnalysis.findMany({
+      where,
+      select: {
+        id: true,
+        artifactType: true,
+        artifactName: true,
+        mimeType: true,
+        sizeBytes: true,
+        sha256: true,
+        sha1: true,
+        md5: true,
+        verdict: true,
+        riskScore: true,
+        severity: true,
+        summary: true,
+        indicators: true,
+        threatIntel: true,
+        promotedFindingId: true,
+        createdAt: true,
+        asset: { select: { id: true, type: true, value: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+    });
+
+    return {
+      total: items.length,
+      since: query.since ?? null,
       items,
     };
   }

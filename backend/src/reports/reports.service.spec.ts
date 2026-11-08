@@ -69,6 +69,26 @@ describe('ReportsService', () => {
       report: {
         create: jest.fn().mockResolvedValue({ id: 'rep-1' }),
       },
+      malwareAnalysis: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            artifactType: 'EMAIL',
+            artifactName: 'phishing_factura.eml',
+            verdict: 'MALICIOUS',
+            riskScore: 92,
+            promotedFindingId: 'f-2',
+            createdAt: new Date(),
+          },
+        ]),
+      },
+      diagnosticBatch: {
+        count: jest.fn().mockResolvedValue(2),
+        findFirst: jest.fn().mockResolvedValue({
+          status: 'COMPLETED',
+          profile: 'COMMERCE_360',
+          summary: { deltaScore: 8, remediatedFindingsCount: 3, regressionsCount: 0 },
+        }),
+      },
     };
 
     riskScoresMock = {
@@ -117,6 +137,16 @@ describe('ReportsService', () => {
     expect(reportData.quickWins).toBeDefined();
     expect(reportData.quickWins?.length).toBeGreaterThanOrEqual(1);
     expect(reportData.quickWins?.some((qw) => qw.ruleId === 'MAIL-DMARC-MISSING')).toBe(true);
+    expect(reportData.threatLabSummary).toMatchObject({
+      total: 1,
+      malicious: 1,
+      promotedCount: 1,
+    });
+    expect(reportData.diagnostic360Summary).toMatchObject({
+      totalBatches: 2,
+      latestProfile: 'COMMERCE_360',
+      deltaScore: 8,
+    });
   });
 
   it('generate produces a valid PDF buffer including attack paths and quick wins', async () => {

@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { FindingStatus, Prisma, ReportType, ScanStatus, ScanType } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { ComplianceService } from '../compliance/compliance.service';
 import { AttackPathsService } from '../findings/attack-paths.service';
 import { FINDING_RULES } from '../findings/rules.catalog';
 import { PrismaService } from '../prisma/prisma.service';
@@ -56,6 +57,7 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly riskScores: RiskScoresService,
     private readonly attackPathsService: AttackPathsService,
+    @Optional() private readonly complianceService?: ComplianceService,
   ) {}
 
   async gather(actor: AuthUser, type: ReportType, assetId?: string): Promise<ReportData> {
@@ -209,6 +211,93 @@ export class ReportsService {
 
     if (type === ReportType.EXECUTIVE) {
       reportData.executiveSummary = generateHeuristicSummary(reportData);
+    }
+
+    if (this.complianceService) {
+      try {
+        const compOverview = await this.complianceService.getOverview(organizationId);
+        reportData.complianceSummary = {
+          averageScore: compOverview.globalCompliancePercentage,
+          frameworks: compOverview.frameworks.map((fw) => ({
+            id: fw.metadata.id,
+            name: fw.metadata.name,
+            version: fw.metadata.version,
+            compliancePercentage: fw.compliancePercentage,
+            passedControls: fw.passedControls,
+            failedControls: fw.failedControls,
+            totalControls: fw.totalControls,
+          })),
+        };
+      } catch {
+        // Ignore if compliance overview cannot be computed in partial environments
+      }
+    }
+
+    if (this.prisma.malwareAnalysis) {
+      try {
+        const maWhere: Prisma.MalwareAnalysisWhereInput = {
+          organizationId,
+          ...(assetId ? { assetId } : {}),
+        };
+        const [allAnalyses, recentIncidents] = await Promise.all([
+          this.prisma.malwareAnalysis.findMany({
+            where: maWhere,
+            select: { verdict: true, promotedFindingId: true },
+          }),
+          this.prisma.malwareAnalysis.findMany({
+            where: { ...maWhere, verdict: { in: ['MALICIOUS', 'SUSPICIOUS'] } },
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+            select: {
+              artifactType: true,
+              artifactName: true,
+              verdict: true,
+              riskScore: true,
+              createdAt: true,
+            },
+          }),
+        ]);
+
+        reportData.threatLabSummary = {
+          total: allAnalyses.length,
+          malicious: allAnalyses.filter((a) => a.verdict === 'MALICIOUS').length,
+          suspicious: allAnalyses.filter((a) => a.verdict === 'SUSPICIOUS').length,
+          clean: allAnalyses.filter((a) => a.verdict === 'CLEAN').length,
+          promotedCount: allAnalyses.filter((a) => a.promotedFindingId !== null).length,
+          recentIncidents,
+        };
+      } catch {
+        // Ignore in partial test mocks
+      }
+    }
+
+    if (this.prisma.diagnosticBatch) {
+      try {
+        const dbWhere: Prisma.DiagnosticBatchWhereInput = {
+          organizationId,
+          ...(assetId ? { assetId } : {}),
+        };
+        const [totalBatches, latestBatch] = await Promise.all([
+          this.prisma.diagnosticBatch.count({ where: dbWhere }),
+          this.prisma.diagnosticBatch.findFirst({
+            where: dbWhere,
+            orderBy: { createdAt: 'desc' },
+            select: { status: true, profile: true, summary: true },
+          }),
+        ]);
+        const batchSum = (latestBatch?.summary ?? {}) as Record<string, unknown>;
+        reportData.diagnostic360Summary = {
+          totalBatches,
+          latestBatchStatus: latestBatch?.status ?? null,
+          latestProfile: latestBatch?.profile ?? null,
+          deltaScore: typeof batchSum.deltaScore === 'number' ? batchSum.deltaScore : null,
+          remediatedCount:
+            typeof batchSum.remediatedFindingsCount === 'number' ? batchSum.remediatedFindingsCount : 0,
+          regressionsCount: typeof batchSum.regressionsCount === 'number' ? batchSum.regressionsCount : 0,
+        };
+      } catch {
+        // Ignore in partial test mocks
+      }
     }
 
     return reportData;

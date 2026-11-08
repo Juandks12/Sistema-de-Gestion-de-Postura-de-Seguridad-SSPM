@@ -857,6 +857,36 @@ const rawRules: RawRule[] = [
     recommendation: 'Publique DMARC con p=quarantine o p=reject, o cambie ~all por -all.',
   },
   {
+    id: 'MAIL-SPF-PERMERROR-RISK',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 3.7,
+    title: 'Registro SPF al borde del límite máximo de 10 consultas DNS (riesgo de PermError, RFC 7208)',
+    description:
+      'El registro SPF actual requiere entre 8 y 10 consultas DNS recursivas (mecanismos include, a, mx, ptr, exists o redirect). Según el RFC 7208 (sección 4.6.4), superar las 10 consultas provoca un fallo permanente (PermError), haciendo que los servidores receptores descarten la protección SPF o rechacen correos legítimos.',
+    recommendation:
+      'Optimice y aplane (SPF flattening) los mecanismos include redundantes, elimine proveedores de correo en desuso o delegue el envío masivo en subdominios dedicados.',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 20,
+    businessImpact:
+      'Riesgo operativo de interrupción en la entregabilidad de correos transaccionales y debilitamiento de la validación anti-spoofing si un proveedor externo añade un include adicional.',
+  },
+  {
+    id: 'DNS-WILDCARD-ENABLED',
+    category: C.EMAIL_SECURITY,
+    severity: S.LOW,
+    cvss: 4.3,
+    title: 'Resolución DNS Wildcard (*.dominio) habilitada en la zona autoritativa',
+    description:
+      'La zona DNS responde positivamente a cualquier subdominio arbitrario inexistente (*.dominio). Esto amplía la superficie de ataque facilitando el abuso de cookies compartidas entre subdominios, suplantación de subdominios en campañas de phishing y enmascaramiento de servicios huérfanos.',
+    recommendation:
+      'Reemplace el registro comodín (*.dominio) en su zona DNS por registros explícitos (A, AAAA o CNAME) únicamente para los subdominios productivos autorizados.',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 15,
+    businessImpact:
+      'Cualquier nombre de subdominio aleatorio resuelve hacia infraestructura activa, aumentando la exposición ante ataques de phishing, secuestro de sesión y enumeración evasiva.',
+  },
+  {
     id: 'MAIL-DMARC-MISSING',
     category: C.EMAIL_SECURITY,
     severity: S.MEDIUM,

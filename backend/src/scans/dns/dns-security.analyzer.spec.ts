@@ -69,4 +69,35 @@ describe('analyzeDnsSecurity', () => {
     expect(summary.caa.status).toBe('invalid');
     expect(summary.dnssec.status).toBe('bogus');
   });
+
+  it('detecta resolución DNS Wildcard activa (DNS-WILDCARD-ENABLED)', async () => {
+    const dns = fakeDns({
+      caa: {
+        'example.com': [{ critical: 0, issue: 'letsencrypt.org' }],
+      },
+      addresses: {
+        '_sspm-wildcard-probe.example.com': ['203.0.113.50'],
+      },
+    });
+    const fakeDoh: DohQueryFn = async (_name, type) => ({
+      Status: 0,
+      AD: true,
+      Answer: [
+        {
+          name: 'example.com',
+          type: type === 'DS' ? 43 : 48,
+          TTL: 3600,
+          data: type === 'DS' ? '2371 13 2 32996839A6D808AF' : '257 3 13 pubkey123',
+        },
+      ],
+    });
+
+    const { findings, summary } = await analyzeDnsSecurity('example.com', dns, fakeDoh);
+    expect(findings.map((f) => f.ruleId)).toEqual(['DNS-WILDCARD-ENABLED']);
+    expect(summary.wildcard).toEqual({
+      enabled: true,
+      probeHost: '_sspm-wildcard-probe.example.com',
+      addresses: ['203.0.113.50'],
+    });
+  });
 });

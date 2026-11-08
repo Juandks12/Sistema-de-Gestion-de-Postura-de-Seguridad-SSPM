@@ -1,9 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AssetType, Prisma, ScanStatus, ScanType } from '@prisma/client';
+import { BadRequestException, ConflictException, forwardRef, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { AssetType, DiagnosticProfile, Prisma, ScanStatus, ScanType } from '@prisma/client';
 import { AssetsService } from '../assets/assets.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { isPrivateOrReservedIp } from '../common/utils/network.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { DiagnosticOrchestratorService } from '../scans/diagnostic-orchestrator.service';
 import { DiscoveredHostDraft } from '../scans/scanner.interface';
 
 export interface SyncDiscoveryInput {
@@ -29,6 +30,9 @@ export class DiscoveryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assets: AssetsService,
+    @Optional()
+    @Inject(forwardRef(() => DiagnosticOrchestratorService))
+    private readonly diagnosticOrchestrator?: DiagnosticOrchestratorService,
   ) {}
 
   /** Guarda los subdominios del escaneo (dentro de su transacción) en una única sentencia. */
@@ -157,14 +161,19 @@ export class DiscoveryService {
    * Incorpora subdominios descubiertos al inventario. Los que cuelgan de un
    * dominio verificado por DNS heredan la verificación y se pueden auditar ya.
    */
-  async importAsAssets(actor: AuthUser, ids: string[]) {
+  async importAsAssets(actor: AuthUser, ids: string[], launchDiagnostic360 = false) {
     const hosts = await this.prisma.discoveredHost.findMany({
       where: { id: { in: ids }, organizationId: actor.organizationId },
       select: { id: true, hostname: true },
     });
     if (hosts.length !== new Set(ids).size) throw new NotFoundException('Algún subdominio no existe en tu organización');
 
-    const created: Array<{ hostname: string; assetId: string; verified: boolean }> = [];
+    const created: Array<{
+      hostname: string;
+      assetId: string;
+      verified: boolean;
+      diagnosticBatchId?: string | null;
+    }> = [];
     const failed: Array<{ hostname: string; reason: string }> = [];
     for (const host of hosts) {
       try {
@@ -173,7 +182,26 @@ export class DiscoveryService {
           type: AssetType.DOMAIN,
           authorizationConfirmed: true,
         });
-        created.push({ hostname: host.hostname, assetId: asset.id, verified: asset.verifiedAt !== null });
+        const verified = asset.verifiedAt !== null;
+        let diagnosticBatchId: string | null = null;
+        if (launchDiagnostic360 && verified && this.diagnosticOrchestrator) {
+          try {
+            const batch = await this.diagnosticOrchestrator.start(
+              actor,
+              asset.id,
+              DiagnosticProfile.COMMERCE_360,
+            );
+            diagnosticBatchId = batch.id;
+          } catch {
+            // Si ya hay un diagnóstico en curso o límite alcanzado, el activo igualmente queda registrado
+          }
+        }
+        created.push({
+          hostname: host.hostname,
+          assetId: asset.id,
+          verified,
+          ...(launchDiagnostic360 ? { diagnosticBatchId } : {}),
+        });
       } catch (err) {
         const reason =
           err instanceof ConflictException || (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
@@ -185,5 +213,12 @@ export class DiscoveryService {
       }
     }
     return { created, failed };
+  }
+
+  /**
+   * Promueve en 1 clic un subdominio descubierto a Activo del inventario y lanza un Diagnóstico 360°.
+   */
+  async promoteAndScanOne(actor: AuthUser, id: string) {
+    return this.importAsAssets(actor, [id], true);
   }
 }

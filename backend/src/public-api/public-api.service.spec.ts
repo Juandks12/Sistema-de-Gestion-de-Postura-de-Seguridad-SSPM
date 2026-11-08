@@ -10,6 +10,7 @@ describe('PublicApiService', () => {
     finding: { findMany: jest.Mock };
     alert: { findMany: jest.Mock };
     asset: { count: jest.Mock; findMany: jest.Mock };
+    malwareAnalysis: { findMany: jest.Mock };
   };
   let riskScores: { latest: jest.Mock };
 
@@ -18,6 +19,7 @@ describe('PublicApiService', () => {
       finding: { findMany: jest.fn() },
       alert: { findMany: jest.fn() },
       asset: { count: jest.fn(), findMany: jest.fn() },
+      malwareAnalysis: { findMany: jest.fn() },
     };
     riskScores = {
       latest: jest.fn(),
@@ -148,6 +150,30 @@ describe('PublicApiService', () => {
         info: 0,
         total: 2,
       });
+    });
+  });
+
+  describe('getThreatLab', () => {
+    it('debe consultar análisis de malware filtrados por organización y veredicto', async () => {
+      const mockAnalyses = [{ id: 'ma-1', artifactType: 'EMAIL', verdict: 'MALICIOUS', riskScore: 90 }];
+      prisma.malwareAnalysis.findMany.mockResolvedValue(mockAnalyses);
+
+      const res = await service.getThreatLab('org-1', {
+        verdict: 'MALICIOUS',
+        limit: 25,
+      });
+
+      expect(res.total).toBe(1);
+      expect(res.items).toBe(mockAnalyses);
+      expect(prisma.malwareAnalysis.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            verdict: 'MALICIOUS',
+          }),
+          take: 25,
+        }),
+      );
     });
   });
 });

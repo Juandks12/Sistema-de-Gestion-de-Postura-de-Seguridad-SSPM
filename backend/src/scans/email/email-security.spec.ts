@@ -257,4 +257,23 @@ describe('analyzeEmailSecurity', () => {
   it('un fallo del DNS se propaga (no es "sin registro")', async () => {
     await expect(analyzeEmailSecurity('example.com', fakeDns({ mx: { 'example.com': 'SERVFAIL' } }))).rejects.toThrow(/ESERVFAIL/);
   });
+
+  it('advierte con MAIL-SPF-PERMERROR-RISK cuando el SPF consume entre 8 y 10 consultas DNS', async () => {
+    const dns = fakeDns({
+      mx: { 'example.com': [{ exchange: 'mx.example.com', priority: 10 }] },
+      txt: {
+        'example.com': ['v=spf1 a mx include:p1.example include:p2.example -all'],
+        'p1.example': ['v=spf1 a mx ip4:192.0.2.1 -all'],
+        'p2.example': ['v=spf1 a mx ip4:192.0.2.2 -all'],
+        '_dmarc.example.com': ['v=DMARC1; p=reject; rua=mailto:d@example.com'],
+        'default._domainkey.example.com': [`p=${key2048}`],
+        '_mta-sts.example.com': ['v=STSv1; id=20260101'],
+        '_smtp._tls.example.com': ['v=TLSRPTv1; rua=mailto:d@example.com'],
+      },
+    });
+    const fetchPolicy = fakeFetchPolicy('version: STSv1\nmode: enforce\nmx: mx.example.com\nmax_age: 86400');
+    const { findings, summary } = await analyzeEmailSecurity('example.com', dns, fetchPolicy);
+    expect(ids(findings)).toEqual(['MAIL-SPF-PERMERROR-RISK']);
+    expect(summary.spf.lookups).toBe(8);
+  });
 });
