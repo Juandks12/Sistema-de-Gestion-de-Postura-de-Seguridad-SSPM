@@ -182,6 +182,11 @@ const RULE_SPECIFIC_TAXONOMY: Record<string, Partial<FindingSecurityTaxonomy>> =
     owaspCategory: 'A05:2021 - Security Misconfiguration',
     mitreAttackTechnique: 'T1583.001 - Acquire Infrastructure: Domains',
   },
+  'DNS-INTERNAL-IP-LEAK': {
+    cweId: 'CWE-200: Exposición de Topología de Red Interna en Registros DNS Públicos (RFC 1918)',
+    owaspCategory: 'A05:2021 - Security Misconfiguration',
+    mitreAttackTechnique: 'T1590.002 - Gather Victim Network Information: DNS',
+  },
 };
 
 const CONTROLS_BY_RULE_ID = new Map<string, FindingComplianceControlRef[]>();

@@ -42,4 +42,21 @@ describe('analyzePorts', () => {
     expect(finding.title).toBe('mysql (MySQL 5.7.33) expuesto en el puerto 3306/tcp');
     expect(finding.evidence).toMatchObject({ port: 3306, product: 'MySQL', version: '5.7.33' });
   });
+
+  it('omite SVC-OPEN-PORT en 80/tcp y 443/tcp cuando skipStandardWebPorts está activo', () => {
+    const findings = analyzePorts(
+      [
+        port(80, 'open', 'http', 'Apache'),
+        port(443, 'open', 'https', 'Apache'),
+        port(8080, 'open', 'http-proxy', 'nginx'),
+        port(3306, 'open', 'mysql', 'MySQL', '8.0'),
+      ],
+      { skipStandardWebPorts: true },
+    );
+    const byPort = Object.fromEntries(findings.map((f) => [f.location, f.ruleId]));
+    expect(byPort).toEqual({
+      'tcp/8080': 'SVC-OPEN-PORT',
+      'tcp/3306': 'SVC-DATABASE-EXPOSED',
+    });
+  });
 });

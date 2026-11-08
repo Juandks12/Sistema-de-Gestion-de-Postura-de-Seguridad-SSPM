@@ -2,11 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, ScanType } from '@prisma/client';
 import { DNS_CLIENT, DnsClient } from '../../common/dns/dns-client';
+import { isPrivateOrReservedIp } from '../../common/utils/network.util';
 import { CT_SOURCE, CtSource, CtSourceError } from '../../discovery/ct-log.client';
 import { subdomainsFromCt } from '../../discovery/hostnames';
 import { analyzeSubdomainTakeover, SubdomainCnameInfo } from '../dns/subdomain-takeover.analyzer';
 import { ScanExecutionError } from '../scan.errors';
-import { abortReason, DiscoveredHostDraft, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
+import { abortReason, DiscoveredHostDraft, FindingDraft, ScanContext, Scanner, ScanOutcome } from '../scanner.interface';
 
 const RESOLVE_CONCURRENCY = 10;
 
@@ -68,10 +69,36 @@ export class SubdomainDiscoveryScanner implements Scanner {
       timeoutMs: 6000,
     });
 
+    const findings: FindingDraft[] = [...takeoverFindings];
+
+    // Detectar subdominios que exponen direccionamiento IP interno/privado (RFC 1918) en DNS público
+    if (!ctx.allowPrivate) {
+      const internalLeaks = discovered
+        .filter((h) => h && h.resolves)
+        .map((h) => ({
+          hostname: h.hostname,
+          privateAddresses: h.addresses.filter((addr) => isPrivateOrReservedIp(addr)),
+        }))
+        .filter((item) => item.privateAddresses.length > 0);
+
+      if (internalLeaks.length > 0) {
+        findings.push({
+          ruleId: 'DNS-INTERNAL-IP-LEAK',
+          location: domain,
+          title: `Subdominios en DNS público resuelven a direcciones IP privadas/internas (${internalLeaks.length} detectados)`,
+          evidence: {
+            domain,
+            count: internalLeaks.length,
+            subdomains: internalLeaks.slice(0, 25),
+          },
+        });
+      }
+    }
+
     return {
       parameters: { source: result.source, maxHosts: max },
       rawResult: { source: result.source, certificateNames: result.names.length, candidateCnamesCount: candidateCnames.length },
-      findings: takeoverFindings,
+      findings,
       discoveredHosts: discovered,
       summary: {
         source: result.source,
