@@ -279,8 +279,8 @@ export function AssetDetailPage() {
       </div>
 
       {isDomain ? (
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className={emailScan ? 'min-w-0 lg:col-span-1' : 'min-w-0 lg:col-span-3'}>
+        <>
+          <div className="mt-4">
             <DiscoveredHostsCard
               assetId={asset.id}
               canEdit={canEdit}
@@ -291,12 +291,12 @@ export function AssetDetailPage() {
             />
           </div>
           {emailScan ? (
-            <>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
               <EmailSecurityCard summary={emailScan.summary as unknown as EmailSecuritySummary} finishedAt={emailScan.finishedAt} />
               <DnsSecurityCard summary={emailScan.summary as unknown as EmailSecuritySummary} finishedAt={emailScan.finishedAt} />
-            </>
+            </div>
           ) : null}
-        </div>
+        </>
       ) : null}
 
       <div className="mt-4">
