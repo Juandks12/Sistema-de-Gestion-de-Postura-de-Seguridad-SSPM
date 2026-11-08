@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ScanStatus } from '@prisma/client';
+import { DiagnosticBatchStatus, ScanStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +10,8 @@ export interface RetentionResult {
   triggeredBy: string;
   scansPurged: number;
   scanPortsPurged: number;
+  diagnosticBatchesPurged?: number;
+  malwareAnalysesPurged?: number;
   tokensPurged: number;
   loginAttemptsPurged: number;
   auditLogsPurged: number;
@@ -84,6 +86,8 @@ export class RetentionService {
       triggeredBy,
       scansPurged: 0,
       scanPortsPurged: 0,
+      diagnosticBatchesPurged: 0,
+      malwareAnalysesPurged: 0,
       tokensPurged: 0,
       loginAttemptsPurged: 0,
       auditLogsPurged: 0,
@@ -125,6 +129,51 @@ export class RetentionService {
           });
           result.scansPurged = deleteResult.count;
           result.scanPortsPurged = portsCount;
+        }
+
+        // 1b. Lotes de Diagnóstico 360° antiguos (protegiendo los últimos 2 lotes de cada activo para Posture Diff)
+        if (this.prisma.diagnosticBatch) {
+          const allBatches = await this.prisma.diagnosticBatch.findMany({
+            where: {
+              status: {
+                in: [
+                  DiagnosticBatchStatus.COMPLETED,
+                  DiagnosticBatchStatus.FAILED,
+                  DiagnosticBatchStatus.CANCELLED,
+                ],
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, assetId: true, createdAt: true },
+          });
+
+          const countByAsset = new Map<string, number>();
+          const batchIdsToDelete: string[] = [];
+          for (const b of allBatches) {
+            const seen = (countByAsset.get(b.assetId) ?? 0) + 1;
+            countByAsset.set(b.assetId, seen);
+            if (seen > 2 && b.createdAt < cutoffScans) {
+              batchIdsToDelete.push(b.id);
+            }
+          }
+
+          if (batchIdsToDelete.length > 0) {
+            const deletedBatches = await this.prisma.diagnosticBatch.deleteMany({
+              where: { id: { in: batchIdsToDelete } },
+            });
+            result.diagnosticBatchesPurged = deletedBatches.count;
+          }
+        }
+
+        // 1c. Análisis forenses antiguos del Threat Lab (protegiendo los promovidos a hallazgos de seguridad)
+        if (this.prisma.malwareAnalysis) {
+          const deletedAnalyses = await this.prisma.malwareAnalysis.deleteMany({
+            where: {
+              createdAt: { lt: cutoffScans },
+              promotedFindingId: null,
+            },
+          });
+          result.malwareAnalysesPurged = deletedAnalyses.count;
         }
       }
 
@@ -186,6 +235,8 @@ export class RetentionService {
           detail: {
             scansPurged: result.scansPurged,
             scanPortsPurged: result.scanPortsPurged,
+            diagnosticBatchesPurged: result.diagnosticBatchesPurged,
+            malwareAnalysesPurged: result.malwareAnalysesPurged,
             tokensPurged: result.tokensPurged,
             loginAttemptsPurged: result.loginAttemptsPurged,
             auditLogsPurged: result.auditLogsPurged,
