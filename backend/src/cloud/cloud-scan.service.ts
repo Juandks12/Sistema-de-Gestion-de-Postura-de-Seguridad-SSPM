@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import {
   AssetCriticality,
@@ -16,7 +17,8 @@ import {
   RiskScoreTrigger,
   VerificationMethod,
 } from '@prisma/client';
-import { fingerprintOf } from '../findings/findings.service';
+import { AlertsService } from '../alerts/alerts.service';
+import { fingerprintOf, OpenedFinding } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import {
@@ -98,6 +100,7 @@ export class CloudScanService {
     private readonly awsEvaluator: AwsCspmEvaluatorService,
     private readonly azureEvaluator: AzureCspmEvaluatorService,
     private readonly riskScores: RiskScoresService,
+    @Optional() private readonly alerts?: AlertsService,
   ) {}
 
   /**
@@ -274,6 +277,7 @@ export class CloudScanService {
       const bySeverity = emptySeverityCounts();
       const byCategory: Partial<Record<FindingCategory, number>> = {};
       const seenFingerprints = new Set<string>();
+      const openedFindings: OpenedFinding[] = [];
 
       for (const draft of executionResult.findings) {
         const rule = CSPM_RULES_MAP.get(draft.ruleId);
@@ -329,7 +333,7 @@ export class CloudScanService {
         };
 
         if (!existing) {
-          await tx.finding.create({
+          const created = await tx.finding.create({
             data: {
               ...baseData,
               organizationId,
@@ -339,10 +343,21 @@ export class CloudScanService {
               firstSeenAt: now,
               dueDate: defaultDueDate,
             },
+            select: { id: true },
           });
           findingsCreated += 1;
           bySeverity[rule.severity] += 1;
           byCategory[rule.category] = (byCategory[rule.category] ?? 0) + 1;
+          openedFindings.push({
+            id: created.id,
+            ruleId: rule.ruleId,
+            category: rule.category,
+            severity: rule.severity,
+            title: baseData.title,
+            location,
+            evidence: enrichedEvidence,
+            reopened: false,
+          });
         } else if (existing.status === FindingStatus.RESOLVED) {
           await tx.finding.update({
             where: { id: existing.id },
@@ -356,6 +371,16 @@ export class CloudScanService {
           findingsReopened += 1;
           bySeverity[rule.severity] += 1;
           byCategory[rule.category] = (byCategory[rule.category] ?? 0) + 1;
+          openedFindings.push({
+            id: existing.id,
+            ruleId: rule.ruleId,
+            category: rule.category,
+            severity: rule.severity,
+            title: baseData.title,
+            location,
+            evidence: enrichedEvidence,
+            reopened: true,
+          });
         } else {
           await tx.finding.update({
             where: { id: existing.id },
@@ -436,6 +461,8 @@ export class CloudScanService {
       });
 
       return {
+        assetId,
+        openedFindings,
         updatedAccount,
         stats: {
           resourcesDiscovered: executionResult.resources.length,
@@ -451,6 +478,17 @@ export class CloudScanService {
         } satisfies CloudAuditStats,
       };
     });
+
+    if (this.alerts) {
+      await this.alerts.handleCloudAuditCompleted({
+        organizationId,
+        assetId: txOutcome.assetId,
+        cloudAccountId: account.id,
+        provider: account.provider,
+        accountName: account.name,
+        opened: txOutcome.openedFindings,
+      });
+    }
 
     return {
       account: this.cloudAccounts.sanitizeAccount(txOutcome.updatedAccount),

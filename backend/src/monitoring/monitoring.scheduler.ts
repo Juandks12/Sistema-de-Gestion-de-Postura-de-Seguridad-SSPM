@@ -1,9 +1,11 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MonitoringFrequency, Prisma, ScanSource } from '@prisma/client';
+import { AssetType, CloudAccountStatus, MonitoringFrequency, Prisma, ScanSource } from '@prisma/client';
 import { AlertsService } from '../alerts/alerts.service';
+import { CloudScanService } from '../cloud/cloud-scan.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RetentionService } from '../retention/retention.service';
+import { DiagnosticOrchestratorService } from '../scans/diagnostic-orchestrator.service';
 import { ScansService } from '../scans/scans.service';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -31,6 +33,9 @@ export interface SchedulerRunResult {
   dueAssets: number;
   claimed: number;
   queuedScans: number;
+  diagnosticBatchesStarted: number;
+  dueCloudAccounts: number;
+  auditedCloudAccounts: number;
   errors: number;
 }
 
@@ -55,6 +60,8 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
     private readonly scans: ScansService,
     private readonly alerts: AlertsService,
     private readonly retention: RetentionService,
+    @Optional() private readonly diagnosticOrchestrator?: DiagnosticOrchestratorService,
+    @Optional() private readonly cloudScan?: CloudScanService,
   ) {}
 
   get enabled(): boolean {
@@ -86,9 +93,10 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
     try {
       const now = new Date();
       const result = await this.runOnce(now);
-      if (result.claimed > 0) {
+      if (result.claimed > 0 || result.auditedCloudAccounts > 0) {
         this.logger.log(
-          `Monitoreo continuo: ${result.claimed} activo(s) reauditado(s), ${result.queuedScans} escaneo(s) encolado(s)`,
+          `Monitoreo continuo: ${result.claimed} activo(s) reauditado(s) (${result.diagnosticBatchesStarted} lote(s) 360°), ` +
+            `${result.queuedScans} escaneo(s) encolado(s), ${result.auditedCloudAccounts} cuenta(s) Cloud auditada(s)`,
         );
       }
 
@@ -120,11 +128,12 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
     }
   }
 
-  /** Activos vencidos de una frecuencia, los más atrasados primero. */
+  /** Activos perimetrales vencidos de una frecuencia, los más atrasados primero. */
   private dueWhere(frequency: Exclude<MonitoringFrequency, 'OFF'>, now: Date): Prisma.AssetWhereInput {
     const cutoff = new Date(now.getTime() - FREQUENCY_PERIOD_MS[frequency] + SCHEDULE_SLACK_MS);
     return {
       isActive: true,
+      type: { in: [AssetType.DOMAIN, AssetType.IP] },
       authorizationConfirmed: true,
       ...(this.config.get<boolean>('ASSET_VERIFICATION_REQUIRED') === true ? { verifiedAt: { not: null } } : {}),
       organization: { isActive: true, monitoringFrequency: frequency },
@@ -132,9 +141,27 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
     };
   }
 
+  /** Cuentas Cloud CSPM vencidas de una frecuencia, las más atrasadas primero. */
+  private dueCloudWhere(frequency: Exclude<MonitoringFrequency, 'OFF'>, now: Date): Prisma.CloudAccountWhereInput {
+    const cutoff = new Date(now.getTime() - FREQUENCY_PERIOD_MS[frequency] + SCHEDULE_SLACK_MS);
+    return {
+      status: CloudAccountStatus.CONNECTED,
+      organization: { isActive: true, monitoringFrequency: frequency },
+      OR: [{ lastAuditedAt: null }, { lastAuditedAt: { lt: cutoff } }],
+    };
+  }
+
   /** Una pasada del planificador. Pública para poder invocarla en pruebas. */
   async runOnce(now: Date = new Date()): Promise<SchedulerRunResult> {
-    const result: SchedulerRunResult = { dueAssets: 0, claimed: 0, queuedScans: 0, errors: 0 };
+    const result: SchedulerRunResult = {
+      dueAssets: 0,
+      claimed: 0,
+      queuedScans: 0,
+      diagnosticBatchesStarted: 0,
+      dueCloudAccounts: 0,
+      auditedCloudAccounts: 0,
+      errors: 0,
+    };
     let remaining = this.batchSize;
 
     for (const frequency of [MonitoringFrequency.DAILY, MonitoringFrequency.WEEKLY] as const) {
@@ -158,16 +185,56 @@ export class MonitoringScheduler implements OnApplicationBootstrap, OnApplicatio
         if (claim.count === 0) continue;
         result.claimed += 1;
         try {
-          const { queued } = await this.scans.enqueueAll({
-            organizationId: asset.organizationId,
-            assetId: asset.id,
-            requestedById: null,
-            source: ScanSource.SCHEDULED,
-          });
-          result.queuedScans += queued.length;
+          if (this.diagnosticOrchestrator) {
+            const { batchId, queued } = await this.diagnosticOrchestrator.startScheduledBatch(
+              asset.organizationId,
+              asset.id,
+            );
+            result.queuedScans += queued.length;
+            if (batchId && queued.length > 0) {
+              result.diagnosticBatchesStarted += 1;
+            }
+          } else {
+            const { queued } = await this.scans.enqueueAll({
+              organizationId: asset.organizationId,
+              assetId: asset.id,
+              requestedById: null,
+              source: ScanSource.SCHEDULED,
+            });
+            result.queuedScans += queued.length;
+          }
         } catch (err) {
           result.errors += 1;
           this.logger.warn(`No se pudo reauditar el activo ${asset.id}: ${(err as Error).message}`);
+        }
+      }
+
+      // Re-auditoría programada de cuentas Cloud CSPM conectadas (AWS y Azure)
+      if (this.cloudScan && this.prisma.cloudAccount) {
+        const cloudWhere = this.dueCloudWhere(frequency, now);
+        const dueAccounts = await this.prisma.cloudAccount.findMany({
+          where: cloudWhere,
+          select: { id: true, organizationId: true },
+          orderBy: [{ lastAuditedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
+          take: Math.max(1, this.batchSize),
+        });
+        result.dueCloudAccounts += dueAccounts.length;
+
+        for (const account of dueAccounts) {
+          const claim = await this.prisma.cloudAccount.updateMany({
+            where: { id: account.id, ...cloudWhere },
+            data: { lastAuditedAt: now },
+          });
+          if (claim.count === 0) continue;
+          try {
+            await this.cloudScan.runAccountAudit(account.organizationId, account.id);
+            result.auditedCloudAccounts += 1;
+          } catch (err) {
+            result.errors += 1;
+            this.logger.warn(
+              `No se pudo reauditar la cuenta cloud ${account.id}: ${(err as Error).message}`,
+            );
+          }
         }
       }
     }

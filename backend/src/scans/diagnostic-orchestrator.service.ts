@@ -294,6 +294,90 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
   }
 
   /**
+   * Inicia un Diagnóstico 360° programado por el Monitoreo Continuo (`SCHEDULED`).
+   * Encola todos los tipos de escaneo aplicables vinculados al lote (`batchId` y `stage`)
+   * para que al finalizar todos los escaneos quede registrada la instantánea de Diff 360°.
+   */
+  async startScheduledBatch(
+    organizationId: string,
+    assetId: string,
+    profile: DiagnosticProfile = DiagnosticProfile.COMMERCE_360,
+  ) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: assetId, organizationId },
+      select: { id: true, type: true, isActive: true, authorizationConfirmed: true },
+    });
+
+    if (!asset) {
+      throw new NotFoundException('Activo no encontrado');
+    }
+
+    const stages = this.getStagesForProfile(profile, asset.type);
+    const stageByType = new Map<ScanType, number>();
+    for (const stg of stages) {
+      for (const t of stg.types) {
+        stageByType.set(t, stg.stage);
+      }
+    }
+
+    const activeBatch = await this.prisma.diagnosticBatch.findFirst({
+      where: {
+        assetId,
+        organizationId,
+        status: { in: [DiagnosticBatchStatus.PENDING, DiagnosticBatchStatus.IN_PROGRESS] },
+      },
+      select: { id: true },
+    });
+
+    const batch =
+      activeBatch ??
+      (await this.prisma.diagnosticBatch.create({
+        data: {
+          organizationId,
+          assetId,
+          requestedById: null,
+          profile,
+          status: DiagnosticBatchStatus.IN_PROGRESS,
+          currentStage: Math.max(1, stages.length),
+          totalStages: Math.max(1, stages.length),
+          startedAt: new Date(),
+        },
+        select: { id: true },
+      }));
+
+    const queued: Awaited<ReturnType<ScansService['enqueue']>>[] = [];
+    const skipped: Array<{ type: ScanType; reason: string }> = [];
+
+    for (const stg of stages) {
+      for (const type of stg.types) {
+        try {
+          const scan = await this.scansService.enqueue({
+            organizationId,
+            assetId,
+            type,
+            requestedById: null,
+            source: ScanSource.SCHEDULED,
+            batchId: batch.id,
+            stage: stageByType.get(type) ?? stg.stage,
+          });
+          queued.push(scan);
+        } catch (err) {
+          skipped.push({
+            type,
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    return {
+      batchId: batch.id,
+      queued,
+      skipped,
+    };
+  }
+
+  /**
    * Hook reactivo llamado por ScanWorkerService cuando un escaneo finaliza o falla.
    */
   async onScanFinished(scanId: string, batchId: string) {
@@ -321,9 +405,11 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
     }
 
     const stages = this.getStagesForProfile(batch.profile, batch.asset.type);
-    const currentStageScans = batch.scans.filter((s) => s.stage === batch.currentStage);
+    const currentStageScans = batch.scans.filter(
+      (s) => (s.stage ?? 1) <= batch.currentStage,
+    );
 
-    // Si algún escaneo de la etapa actual sigue pendiente o en ejecución, no se avanza
+    // Si algún escaneo hasta la etapa actual sigue pendiente o en ejecución, no se avanza
     const pendingScans = currentStageScans.filter((s) =>
       s.status === ScanStatus.PENDING || s.status === ScanStatus.RUNNING,
     );
@@ -551,9 +637,23 @@ export class DiagnosticOrchestratorService implements OnModuleInit {
       const scansInStage = batch.scans.filter((s) => s.stage === stg.stage);
       let stageStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' = 'PENDING';
 
-      if (batch.currentStage > stg.stage || batch.status === DiagnosticBatchStatus.COMPLETED) {
+      if (batch.status === DiagnosticBatchStatus.COMPLETED) {
         stageStatus = 'COMPLETED';
-      } else if (batch.currentStage === stg.stage) {
+      } else if (
+        scansInStage.length > 0 &&
+        scansInStage.every(
+          (s) => s.status !== ScanStatus.PENDING && s.status !== ScanStatus.RUNNING,
+        )
+      ) {
+        stageStatus = 'COMPLETED';
+      } else if (batch.currentStage > stg.stage) {
+        stageStatus = 'COMPLETED';
+      } else if (
+        batch.currentStage === stg.stage ||
+        scansInStage.some(
+          (s) => s.status === ScanStatus.PENDING || s.status === ScanStatus.RUNNING,
+        )
+      ) {
         stageStatus = 'IN_PROGRESS';
       }
 
