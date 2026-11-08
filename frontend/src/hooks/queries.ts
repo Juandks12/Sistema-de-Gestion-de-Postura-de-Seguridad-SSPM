@@ -45,6 +45,7 @@ import type {
   AttackPathSummary,
   AuthResponse,
   Finding,
+  FindingSourceType,
   FindingTriageAnalysis,
   RetestFindingResult,
   FindingsSummary,
@@ -52,6 +53,10 @@ import type {
   FindingStatus,
   RemediationEffort,
   FrameworkDetailsResponse,
+  GrcCatalogResponse,
+  CreateManualFindingInput,
+  BulkReviewFindingsInput,
+  BulkReviewFindingsResult,
   OrgHistory,
   OrgUser,
   Organization,
@@ -136,7 +141,8 @@ export function useDashboardAsset(id: string) {
 
 export interface FindingsFilter {
   assetId?: string;
-  domain?: 'perimeter' | 'cloud' | '';
+  domain?: 'perimeter' | 'cloud' | 'manual' | 'threat' | '';
+  sourceType?: FindingSourceType | '';
   cloudAccountId?: string;
   severity?: Severity | '';
   status?: FindingStatus | '';
@@ -144,6 +150,9 @@ export interface FindingsFilter {
   assignedToId?: string | '';
   slaStatus?: SlaStatus | '';
   effortLevel?: RemediationEffort | '';
+  framework?: ComplianceFramework | '';
+  controlCode?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -349,6 +358,40 @@ export function useReviewFinding() {
     mutationFn: ({ id, ...payload }: ReviewFindingInput) =>
       api<Finding>(`/findings/${id}`, { method: 'PATCH', json: payload }),
     onSuccess: invalidate,
+  });
+}
+
+export function useGrcCatalog() {
+  return useQuery({
+    queryKey: ['findings', 'grc-catalog'] as const,
+    queryFn: () => api<GrcCatalogResponse>('/findings/grc-catalog'),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useCreateManualFinding() {
+  const invalidate = useInvalidateAll();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateManualFindingInput) =>
+      api<Finding>('/findings/manual', { method: 'POST', json: input }),
+    onSuccess: () => {
+      invalidate();
+      void qc.invalidateQueries({ queryKey: ['compliance'] });
+    },
+  });
+}
+
+export function useBulkReviewFindings() {
+  const invalidate = useInvalidateAll();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: BulkReviewFindingsInput) =>
+      api<BulkReviewFindingsResult>('/findings/bulk', { method: 'PATCH', json: input }),
+    onSuccess: () => {
+      invalidate();
+      void qc.invalidateQueries({ queryKey: ['compliance'] });
+    },
   });
 }
 

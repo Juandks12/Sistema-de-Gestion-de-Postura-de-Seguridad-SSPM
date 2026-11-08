@@ -1,16 +1,23 @@
 import {
   AlertCircle,
+  BookOpenCheck,
   Calendar,
   CheckCheck,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   Clock,
   Cloud,
   Download,
+  Layers,
+  Plus,
   RefreshCw,
+  Scale,
+  Search,
   Server,
   ShieldAlert,
   Sparkles,
+  Terminal,
   UserX,
   X,
   Zap,
@@ -32,13 +39,39 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Spinner';
 import { Table, Td, Th } from '@/components/ui/Table';
-import { useAssignees, useFindings, useFindingsSummary, useRetestFinding, useReviewFinding } from '@/hooks/queries';
+import {
+  useAssignees,
+  useBulkReviewFindings,
+  useCreateManualFinding,
+  useDashboardAssets,
+  useFindings,
+  useFindingsSummary,
+  useGrcCatalog,
+  useRetestFinding,
+  useReviewFinding,
+} from '@/hooks/queries';
 import { ApiError, downloadFile } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { CATEGORY_LABEL, CLOUD_RESOURCE_TYPE_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, STATUS_LABEL, cvss, formatDateTime, timeAgo } from '@/lib/format';
-import type { Finding, FindingCategory, FindingStatus, RemediationEffort, Severity, SlaStatus } from '@/lib/types';
+import type {
+  ComplianceFramework,
+  Finding,
+  FindingCategory,
+  FindingStatus,
+  RemediationEffort,
+  Severity,
+  SlaStatus,
+} from '@/lib/types';
 
 type ReviewAction = 'OPEN' | 'ACCEPTED' | 'FALSE_POSITIVE';
+
+const GRC_FRAMEWORK_PILLS: Array<{ id: ComplianceFramework; label: string; short: string }> = [
+  { id: 'ISO_27001', label: 'ISO/IEC 27001:2022', short: 'ISO 27001' },
+  { id: 'PCI_DSS', label: 'PCI-DSS v4.0', short: 'PCI-DSS' },
+  { id: 'NIST_CSF', label: 'NIST CSF 2.0', short: 'NIST CSF' },
+  { id: 'CIS_CONTROLS', label: 'CIS Controls v8', short: 'CIS v8' },
+  { id: 'SOC_2', label: 'SOC 2 Type II', short: 'SOC 2' },
+];
 
 export function FindingsPage() {
   const { user, canEdit } = useAuth();
@@ -46,23 +79,29 @@ export function FindingsPage() {
   const filter = {
     assetId: params.get('assetId') ?? undefined,
     cloudAccountId: params.get('cloudAccountId') ?? undefined,
-    domain: (params.get('domain') ?? '') as 'perimeter' | 'cloud' | '',
+    domain: (params.get('domain') ?? '') as 'perimeter' | 'cloud' | 'manual' | 'threat' | '',
     severity: (params.get('severity') ?? '') as Severity | '',
     status: (params.get('status') ?? 'OPEN') as FindingStatus | '',
     category: (params.get('category') ?? '') as FindingCategory | '',
     assignedToId: params.get('assignedToId') ?? '',
     slaStatus: (params.get('slaStatus') ?? '') as SlaStatus | '',
     effortLevel: (params.get('effortLevel') ?? '') as RemediationEffort | '',
+    framework: (params.get('framework') ?? '') as ComplianceFramework | '',
+    search: params.get('search') ?? '',
     page: Number(params.get('page') ?? 1),
   };
   const q = useFindings(filter);
-  const summaryQ = useFindingsSummary();
+  const summaryQ = useFindingsSummary(filter.assetId);
   const assigneesQ = useAssignees();
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [review, setReview] = useState<{ finding: Finding; action: ReviewAction } | null>(null);
   const [remediationFinding, setRemediationFinding] = useState<Finding | null>(null);
   const [triageFinding, setTriageFinding] = useState<Finding | null>(null);
+  const [createManualOpen, setCreateManualOpen] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchInput, setSearchInput] = useState(filter.search);
   const [downloading, setDownloading] = useState(false);
 
   const handleExport = async () => {
@@ -79,6 +118,8 @@ export function FindingsPage() {
       if (filter.assignedToId) sp.set('assignedToId', filter.assignedToId);
       if (filter.slaStatus) sp.set('slaStatus', filter.slaStatus);
       if (filter.effortLevel) sp.set('effortLevel', filter.effortLevel);
+      if (filter.framework) sp.set('framework', filter.framework);
+      if (filter.search) sp.set('search', filter.search);
       await downloadFile(`/findings/export?${sp.toString()}`, `findings-${new Date().toISOString().slice(0, 10)}.csv`);
     } catch (err) {
       console.error('Export error:', err);
@@ -99,12 +140,30 @@ export function FindingsPage() {
     const next = new URLSearchParams();
     if (filter.assetId) next.set('assetId', filter.assetId);
     next.set('status', 'OPEN');
+    setSearchInput('');
     setParams(next, { replace: true });
   };
 
   const items = q.data?.items ?? [];
   const meta = q.data?.meta;
   const slaSummary = summaryQ.data?.sla;
+  const bySource = summaryQ.data?.bySource;
+  const byFramework = summaryQ.data?.byFramework;
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const allOnPageSelected = items.length > 0 && items.every((f) => selectedIds.includes(f.id));
+  const toggleSelectPage = () => {
+    if (allOnPageSelected) {
+      const pageSet = new Set(items.map((f) => f.id));
+      setSelectedIds((prev) => prev.filter((id) => !pageSet.has(id)));
+    } else {
+      const merged = new Set([...selectedIds, ...items.map((f) => f.id)]);
+      setSelectedIds([...merged]);
+    }
+  };
 
   const hasNonDefaultFilters = Boolean(
     filter.status !== 'OPEN' ||
@@ -114,28 +173,41 @@ export function FindingsPage() {
     filter.category ||
     filter.assignedToId ||
     filter.slaStatus ||
-    filter.effortLevel
+    filter.effortLevel ||
+    filter.framework ||
+    filter.search
   );
 
   return (
     <>
       <PageHeader
-        title="Hallazgos"
-        description="Problemas detectados en tu perímetro externo e infraestructura Cloud (AWS & Azure) con trazabilidad de ciclo de vida, responsables y SLAs de remediación."
+        title="Centro Maestro de Hallazgos y GRC"
+        description="Gestión centralizada de hallazgos técnicos (Perímetro 360°, Cloud CSPM, Auditorías y Pentesting) con mapeo normativo en tiempo real (ISO 27001, PCI-DSS, NIST, CIS, SOC 2), taxonomía CWE/OWASP/MITRE y gobierno de SLAs."
         actions={
-          <Button
-            variant="secondary"
-            icon={<Download className="size-4" />}
-            onClick={handleExport}
-            loading={downloading}
-          >
-            Exportar CSV
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <Button
+                variant="primary"
+                icon={<Plus className="size-4" />}
+                onClick={() => setCreateManualOpen(true)}
+              >
+                Registrar Hallazgo / Auditoría
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              icon={<Download className="size-4" />}
+              onClick={handleExport}
+              loading={downloading}
+            >
+              Exportar CSV
+            </Button>
+          </div>
         }
       />
 
       {/* Domain selector tabs & Quick Wins Filter */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -147,7 +219,12 @@ export function FindingsPage() {
                 : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
             )}
           >
-            Todos los dominios
+            Todos los orígenes
+            {summaryQ.data ? (
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[10px] font-bold text-ink-2">
+                {summaryQ.data.total}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"
@@ -160,7 +237,12 @@ export function FindingsPage() {
             )}
           >
             <Server className="size-3.5" />
-            Perímetro Externo
+            Perímetro &amp; 360°
+            {bySource?.PERIMETER_SCAN !== undefined ? (
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[10px] font-bold text-ink-2">
+                {bySource.PERIMETER_SCAN}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"
@@ -174,6 +256,29 @@ export function FindingsPage() {
           >
             <Cloud className="size-3.5" />
             Seguridad Cloud (CSPM)
+            {bySource?.CLOUD_CSPM !== undefined ? (
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[10px] font-bold text-ink-2">
+                {bySource.CLOUD_CSPM}
+              </span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('domain', filter.domain === 'manual' ? '' : 'manual')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition',
+              filter.domain === 'manual'
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+            )}
+          >
+            <ClipboardCheck className="size-3.5" />
+            Auditoría Manual / Pentest
+            {bySource?.MANUAL_AUDIT !== undefined ? (
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.2 text-[10px] font-bold text-ink-2">
+                {bySource.MANUAL_AUDIT}
+              </span>
+            ) : null}
           </button>
         </div>
 
@@ -190,6 +295,93 @@ export function FindingsPage() {
           <Zap className="size-3.5 fill-emerald-500 text-emerald-500" />
           Quick Wins 24h (&lt; 30 min)
         </button>
+      </div>
+
+      {/* GRC Normative Framework Filter Bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-semibold text-ink-2">
+            <Scale className="size-3.5 text-accent" />
+            Marco Normativo (GRC):
+          </span>
+          <button
+            type="button"
+            onClick={() => setFilter('framework', '')}
+            className={cn(
+              'rounded-md px-2.5 py-1 text-xs font-medium transition',
+              !filter.framework
+                ? 'bg-accent text-white shadow-xs'
+                : 'bg-surface-2 text-ink-2 hover:bg-surface-2/80',
+            )}
+          >
+            Todos
+          </button>
+          {GRC_FRAMEWORK_PILLS.map((fw) => {
+            const active = filter.framework === fw.id;
+            const count = byFramework?.[fw.id];
+            return (
+              <button
+                key={fw.id}
+                type="button"
+                onClick={() => setFilter('framework', active ? '' : fw.id)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition',
+                  active
+                    ? 'bg-accent text-white shadow-xs'
+                    : 'bg-surface-2 text-ink-2 hover:bg-surface-2/80',
+                )}
+                title={`Filtrar hallazgos que impactan controles de ${fw.label}`}
+              >
+                <span>{fw.short}</span>
+                {count !== undefined ? (
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 text-[10px] font-bold',
+                      active ? 'bg-white/20 text-white' : 'bg-surface text-muted',
+                    )}
+                  >
+                    {count}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Text Search Input */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setFilter('search', searchInput.trim());
+          }}
+          className="flex w-full items-center gap-1.5 sm:w-72"
+        >
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Buscar regla, título, URL/puerto..."
+              className="w-full rounded-lg border border-border bg-surface-2/50 py-1.5 pr-7 pl-8 text-xs text-ink placeholder:text-muted focus:border-accent focus:outline-none"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput('');
+                  setFilter('search', '');
+                }}
+                className="absolute top-1/2 right-2 -translate-y-1/2 text-muted hover:text-ink"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
+          <Button size="sm" variant="secondary" type="submit">
+            Buscar
+          </Button>
+        </form>
       </div>
 
       {/* SLA Metrics & Quick Filter Banner */}
@@ -393,6 +585,44 @@ export function FindingsPage() {
         </Alert>
       ) : null}
 
+      {/* Bulk Triage Floating Bar */}
+      {canEdit && selectedIds.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex size-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
+              {selectedIds.length}
+            </span>
+            <div>
+              <p className="text-xs font-semibold text-ink">
+                {selectedIds.length === 1
+                  ? '1 hallazgo seleccionado para gobierno en lote'
+                  : `${selectedIds.length} hallazgos seleccionados para gobierno en lote`}
+              </p>
+              <p className="text-[11px] text-ink-2">
+                Asigna líder técnico, establece fecha límite SLA o actualiza el estado de remediación simultáneamente.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<Layers className="size-3.5" />}
+              onClick={() => setBulkModalOpen(true)}
+            >
+              Triaje y SLA en Lote
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setSelectedIds([])}
+            >
+              Limpiar selección
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <Card>
         {q.isPending ? (
           <div className="space-y-3 p-5">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}</div>
@@ -400,15 +630,26 @@ export function FindingsPage() {
           <EmptyState
             icon={ShieldAlert}
             title="Sin hallazgos con estos filtros"
-            description="Prueba a cambiar el estado, la severidad, el responsable o el filtro SLA."
+            description="Prueba a cambiar el estado, el marco normativo GRC, la severidad o el filtro SLA."
           />
         ) : (
           <Table>
             <thead>
               <tr>
+                {canEdit ? (
+                  <Th className="w-8">
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectPage}
+                      aria-label="Seleccionar todos los hallazgos de la página"
+                      className="size-3.5 rounded border-border accent-accent"
+                    />
+                  </Th>
+                ) : null}
                 <Th className="w-8" />
                 <Th>Severidad</Th>
-                <Th>Hallazgo</Th>
+                <Th>Hallazgo &amp; Mapeo GRC</Th>
                 <Th className="hidden lg:table-cell">Activo</Th>
                 <Th className="hidden xl:table-cell">CVSS</Th>
                 <Th className="hidden md:table-cell">SLA</Th>
@@ -420,9 +661,28 @@ export function FindingsPage() {
             <tbody>
               {items.map((f) => {
                 const isOpen = expanded === f.id;
+                const isSelected = selectedIds.includes(f.id);
                 return (
                   <Fragment key={f.id}>
-                    <tr className="cursor-pointer hover:bg-surface-2/60" onClick={() => setExpanded(isOpen ? null : f.id)} aria-expanded={isOpen}>
+                    <tr
+                      className={cn(
+                        'cursor-pointer hover:bg-surface-2/60',
+                        isSelected && 'bg-accent/5',
+                      )}
+                      onClick={() => setExpanded(isOpen ? null : f.id)}
+                      aria-expanded={isOpen}
+                    >
+                      {canEdit ? (
+                        <Td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectOne(f.id)}
+                            aria-label={`Seleccionar ${f.title}`}
+                            className="size-3.5 rounded border-border accent-accent"
+                          />
+                        </Td>
+                      ) : null}
                       <Td className="text-muted">{isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</Td>
                       <Td>
                         <span className="sm:hidden"><SeverityBadge severity={f.severity} compact /></span>
@@ -430,6 +690,11 @@ export function FindingsPage() {
                       </Td>
                       <Td>
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {f.sourceType === 'MANUAL_AUDIT' ? (
+                            <span className="inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+                              Auditoría / Pentest
+                            </span>
+                          ) : null}
                           {f.cloudAccount ? (
                             <span
                               className={cn(
@@ -462,6 +727,15 @@ export function FindingsPage() {
                               {f.effort === 'QUICK_WIN' && <Zap className="size-2.5 fill-emerald-500 text-emerald-500" />}
                               {f.effort === 'QUICK_WIN' ? 'Quick Win' : f.effort === 'MODERATE' ? 'Moderado' : 'Estructural'}
                               {f.estimatedMinutes ? ` (${f.estimatedMinutes}m)` : ''}
+                            </span>
+                          ) : null}
+                          {f.complianceControls && f.complianceControls.length > 0 ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-2"
+                              title={f.complianceControls.map((c) => `${c.frameworkName} ${c.code}`).join(' · ')}
+                            >
+                              <Scale className="size-2.5 text-accent" />
+                              {f.complianceControls.length} GRC
                             </span>
                           ) : null}
                         </div>
@@ -509,7 +783,7 @@ export function FindingsPage() {
                     </tr>
                     {isOpen ? (
                       <tr className="bg-surface-2/40">
-                        <td colSpan={9} className="border-b border-line px-5 py-4">
+                        <td colSpan={canEdit ? 10 : 9} className="border-b border-line px-5 py-4">
                           <FindingDetail
                             finding={f}
                             canEdit={canEdit}
@@ -551,6 +825,24 @@ export function FindingsPage() {
           finding={triageFinding}
           canEdit={canEdit}
           onClose={() => setTriageFinding(null)}
+        />
+      ) : null}
+
+      {createManualOpen ? (
+        <CreateManualFindingModal
+          defaultAssetId={filter.assetId}
+          onClose={() => setCreateManualOpen(false)}
+        />
+      ) : null}
+
+      {bulkModalOpen ? (
+        <BulkReviewModal
+          selectedIds={selectedIds}
+          onSuccess={() => {
+            setSelectedIds([]);
+            setBulkModalOpen(false);
+          }}
+          onClose={() => setBulkModalOpen(false)}
         />
       ) : null}
     </>
@@ -602,6 +894,63 @@ function FindingDetail({
             <span className="text-ink-2">{f.businessImpact}</span>
           </div>
         ) : null}
+
+        {/* Security Taxonomy Badges (CWE, OWASP Top 10, MITRE ATT&CK) */}
+        {f.cweId || f.owaspCategory || f.mitreAttackTechnique ? (
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {f.cweId ? (
+              <div className="rounded-lg border border-border bg-surface p-2.5 text-xs">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-muted">Debilidad (CWE)</span>
+                <span className="mt-0.5 block font-semibold text-ink">{f.cweId}</span>
+              </div>
+            ) : null}
+            {f.owaspCategory ? (
+              <div className="rounded-lg border border-border bg-surface p-2.5 text-xs">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-muted">Estándar OWASP</span>
+                <span className="mt-0.5 block font-semibold text-ink">{f.owaspCategory}</span>
+              </div>
+            ) : null}
+            {f.mitreAttackTechnique ? (
+              <div className="rounded-lg border border-border bg-surface p-2.5 text-xs">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-muted">Técnica MITRE ATT&amp;CK</span>
+                <span className="mt-0.5 block font-semibold text-ink">{f.mitreAttackTechnique}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Normative & GRC Controls Mapping */}
+        {f.complianceControls && f.complianceControls.length > 0 ? (
+          <div className="mt-3 rounded-lg border border-border bg-surface p-3">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
+                <BookOpenCheck className="size-3.5 text-accent" />
+                Controles Normativos y de Cumplimiento Impactados ({f.complianceControls.length})
+              </span>
+              <Link
+                to="/compliance"
+                className="text-[11px] font-medium text-accent hover:underline"
+              >
+                Abrir Matriz GRC →
+              </Link>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {f.complianceControls.map((ctrl) => (
+                <Link
+                  key={`${ctrl.framework}:${ctrl.code}`}
+                  to={`/compliance?framework=${ctrl.framework}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2/60 px-2 py-1 text-[11px] text-ink-2 transition hover:border-accent/50 hover:text-ink"
+                  title={`${ctrl.frameworkName} — ${ctrl.code}: ${ctrl.title} (${ctrl.domain})`}
+                >
+                  <span className="font-bold text-accent">{ctrl.frameworkName}</span>
+                  <span className="font-mono font-semibold text-ink">{ctrl.code}</span>
+                  <span className="hidden sm:inline text-muted">· {ctrl.title}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <p className="mt-3 text-xs font-semibold tracking-wide text-muted uppercase">Recomendación</p>
         <p className="mt-1 text-sm text-ink">{f.recommendation}</p>
         <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-ink-2 sm:grid-cols-2">
@@ -641,6 +990,26 @@ function FindingDetail({
         {isCve && f.evidence ? (
           <div className="mt-4">
             <CveList evidence={f.evidence} />
+          </div>
+        ) : null}
+        {f.remediationCli || f.remediationIac ? (
+          <div className="mt-3 space-y-2 rounded-lg border border-border bg-surface p-3">
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
+              <Terminal className="size-3.5 text-accent" />
+              Automatización de Remediación Directa (CLI / IaC)
+            </p>
+            {f.remediationCli ? (
+              <div>
+                <span className="text-[11px] font-medium text-muted">Comando CLI sugerido:</span>
+                <pre className="mt-1 overflow-x-auto rounded bg-surface-2 p-2 font-mono text-xs text-ink">{f.remediationCli}</pre>
+              </div>
+            ) : null}
+            {f.remediationIac ? (
+              <div>
+                <span className="text-[11px] font-medium text-muted">Infraestructura como Código (Terraform / IaC):</span>
+                <pre className="mt-1 overflow-x-auto rounded bg-surface-2 p-2 font-mono text-xs text-ink">{f.remediationIac}</pre>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {f.remediationGuide ? (
@@ -988,6 +1357,453 @@ function ReviewModal({ finding, action, onClose }: { finding: Finding; action: R
         <Textarea id="review-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej.: puerto necesario para el proveedor de pagos; acceso restringido por firewall." />
       </div>
       {error ? <Alert kind="error" className="mt-3">{error}</Alert> : null}
+    </Modal>
+  );
+}
+
+function BulkReviewModal({
+  selectedIds,
+  onSuccess,
+  onClose,
+}: {
+  selectedIds: string[];
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const bulkReview = useBulkReviewFindings();
+  const assigneesQ = useAssignees();
+
+  const [status, setStatus] = useState<FindingStatus | ''>('');
+  const [assignedToId, setAssignedToId] = useState<string>('__UNCHANGED__');
+  const [dueDate, setDueDate] = useState<string>('');
+  const [remediationNote, setRemediationNote] = useState<string>('');
+  const [note, setNote] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setError(null);
+    try {
+      await bulkReview.mutateAsync({
+        findingIds: selectedIds,
+        ...(status ? { status } : {}),
+        ...(assignedToId !== '__UNCHANGED__'
+          ? { assignedToId: assignedToId ? assignedToId : null }
+          : {}),
+        ...(dueDate ? { dueDate: new Date(`${dueDate}T23:59:59.999Z`).toISOString() } : {}),
+        ...(remediationNote.trim() ? { remediationNote: remediationNote.trim() } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo aplicar el triaje en lote.');
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Gobierno y Triaje en Lote (${selectedIds.length} hallazgos)`}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={bulkReview.isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSubmit} loading={bulkReview.isPending}>
+            Aplicar a {selectedIds.length} hallazgos
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-ink-2">
+          Solo los campos que modifiques se aplicarán al lote seleccionado. Si cambias el estado de remediación, se recalculará el Security Score de todos los activos afectados.
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="bulk-status">Cambiar estado a</Label>
+            <Select
+              id="bulk-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as FindingStatus | '')}
+            >
+              <option value="">(Conservar estado actual)</option>
+              {REVIEWABLE_STATUS_LIST.map((s) => (
+                <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="bulk-assignee">Asignar responsable</Label>
+            <Select
+              id="bulk-assignee"
+              value={assignedToId}
+              onChange={(e) => setAssignedToId(e.target.value)}
+            >
+              <option value="__UNCHANGED__">(Conservar responsable actual)</option>
+              <option value="">(Dejar sin asignar)</option>
+              {(assigneesQ.data ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.fullName} ({u.email})
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="bulk-due-date" hint="(opcional)">
+            Establecer Fecha Límite SLA común
+          </Label>
+          <Input
+            id="bulk-due-date"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="bulk-rem-note" hint="(opcional)">
+            Nota técnica de remediación para el lote
+          </Label>
+          <Textarea
+            id="bulk-rem-note"
+            rows={2}
+            value={remediationNote}
+            onChange={(e) => setRemediationNote(e.target.value)}
+            placeholder="Ej.: Incluido en el Sprint DevSecOps Q4 — Ticket JIRA SEC-412."
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="bulk-review-note" hint="(opcional)">
+            Justificación / Nota de auditoría
+          </Label>
+          <Textarea
+            id="bulk-review-note"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ej.: Aprobado en comité de seguridad."
+          />
+        </div>
+
+        {error ? <Alert kind="error">{error}</Alert> : null}
+      </div>
+    </Modal>
+  );
+}
+
+function CreateManualFindingModal({
+  defaultAssetId,
+  onClose,
+}: {
+  defaultAssetId?: string;
+  onClose: () => void;
+}) {
+  const createManual = useCreateManualFinding();
+  const assetsQ = useDashboardAssets();
+  const assigneesQ = useAssignees();
+  const grcQ = useGrcCatalog();
+
+  const assets = assetsQ.data?.items ?? [];
+  const [assetId, setAssetId] = useState<string>(defaultAssetId ?? '');
+  const [severity, setSeverity] = useState<Severity>('HIGH');
+  const [category, setCategory] = useState<FindingCategory>('VULNERABLE_SOFTWARE');
+  const [title, setTitle] = useState('');
+  const [location, setLocation] = useState('');
+  const [description, setDescription] = useState('');
+  const [recommendation, setRecommendation] = useState('');
+  const [cweId, setCweId] = useState('');
+  const [owaspCategory, setOwaspCategory] = useState('');
+  const [mitreAttackTechnique, setMitreAttackTechnique] = useState('');
+  const [effort, setEffort] = useState<RemediationEffort>('MODERATE');
+  const [businessImpact, setBusinessImpact] = useState('');
+  const [remediationCli, setRemediationCli] = useState('');
+  const [assignedToId, setAssignedToId] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [selectedControlIds, setSelectedControlIds] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const effectiveAssetId = assetId || (assets[0]?.id ?? '');
+
+  const toggleControl = (ctrlKey: string) => {
+    setSelectedControlIds((prev) =>
+      prev.includes(ctrlKey) ? prev.filter((x) => x !== ctrlKey) : [...prev, ctrlKey],
+    );
+  };
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!effectiveAssetId) {
+      setError('Selecciona el activo afectado.');
+      return;
+    }
+    if (title.trim().length < 5 || description.trim().length < 10 || recommendation.trim().length < 5 || !location.trim()) {
+      setError('Completa el título, la ubicación/endpoint, la descripción técnica y la recomendación.');
+      return;
+    }
+
+    try {
+      await createManual.mutateAsync({
+        assetId: effectiveAssetId,
+        severity,
+        category,
+        title: title.trim(),
+        location: location.trim(),
+        description: description.trim(),
+        recommendation: recommendation.trim(),
+        effort,
+        ...(cweId.trim() ? { cweId: cweId.trim() } : {}),
+        ...(owaspCategory.trim() ? { owaspCategory: owaspCategory.trim() } : {}),
+        ...(mitreAttackTechnique.trim() ? { mitreAttackTechnique: mitreAttackTechnique.trim() } : {}),
+        ...(businessImpact.trim() ? { businessImpact: businessImpact.trim() } : {}),
+        ...(remediationCli.trim() ? { remediationCli: remediationCli.trim() } : {}),
+        ...(assignedToId ? { assignedToId } : {}),
+        ...(dueDate ? { dueDate: new Date(`${dueDate}T23:59:59.999Z`).toISOString() } : {}),
+        ...(selectedControlIds.length > 0 ? { complianceControlIds: selectedControlIds } : {}),
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo registrar el hallazgo manual.');
+    }
+  };
+
+  const controls = grcQ.data?.controls ?? [];
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Registrar Hallazgo de Seguridad / Auditoría Manual / Pentest"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={createManual.isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSubmit} loading={createManual.isPending}>
+            Registrar hallazgo en el Centro Maestro
+          </Button>
+        </>
+      }
+    >
+      <div className="max-h-[72vh] space-y-4 overflow-y-auto pr-1">
+        <p className="text-xs text-ink-2">
+          Registra hallazgos provenientes de pruebas de penetración (Pentesting), auditorías internas/externas (ISO 27001, PCI-DSS, SOC 2) o revisiones de arquitectura para consolidar su ciclo de vida, SLA y cumplimiento normativo en un solo repositorio.
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="man-asset">Activo afectado</Label>
+            <Select
+              id="man-asset"
+              value={effectiveAssetId}
+              onChange={(e) => setAssetId(e.target.value)}
+            >
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name ? `${a.name} (${a.value})` : a.value}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="man-severity">Severidad</Label>
+            <Select
+              id="man-severity"
+              value={severity}
+              onChange={(e) => setSeverity(e.target.value as Severity)}
+            >
+              {SEVERITY_ORDER.map((s) => (
+                <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="man-category">Categoría técnica</Label>
+            <Select
+              id="man-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value as FindingCategory)}
+            >
+              {(Object.keys(CATEGORY_LABEL) as FindingCategory[]).map((c) => (
+                <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="man-title">Título del hallazgo</Label>
+            <Input
+              id="man-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ej.: IDOR en endpoint de descarga de extractos"
+            />
+          </div>
+          <div>
+            <Label htmlFor="man-location">Ubicación / Endpoint / Recurso</Label>
+            <Input
+              id="man-location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Ej.: https://api.midominio.com/v1/statements/{id}"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="man-desc">Descripción técnica y evidencia de auditoría</Label>
+          <Textarea
+            id="man-desc"
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe el vector identificado, los pasos de reproducción y el alcance observado..."
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="man-rec">Recomendación de remediación</Label>
+            <Textarea
+              id="man-rec"
+              rows={2}
+              value={recommendation}
+              onChange={(e) => setRecommendation(e.target.value)}
+              placeholder="Ej.: Validar pertenencia del recurso contra el tenantId del JWT autenticado..."
+            />
+          </div>
+          <div>
+            <Label htmlFor="man-impact" hint="(opcional)">Impacto en el negocio</Label>
+            <Textarea
+              id="man-impact"
+              rows={2}
+              value={businessImpact}
+              onChange={(e) => setBusinessImpact(e.target.value)}
+              placeholder="Ej.: Exposición de información financiera confidencial de otros clientes..."
+            />
+          </div>
+        </div>
+
+        {/* Taxonomía CWE / OWASP / MITRE */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="man-cwe" hint="(opcional)">CWE ID</Label>
+            <Input
+              id="man-cwe"
+              value={cweId}
+              onChange={(e) => setCweId(e.target.value)}
+              placeholder="Ej.: CWE-639: IDOR"
+            />
+          </div>
+          <div>
+            <Label htmlFor="man-owasp" hint="(opcional)">Categoría OWASP</Label>
+            <Input
+              id="man-owasp"
+              value={owaspCategory}
+              onChange={(e) => setOwaspCategory(e.target.value)}
+              placeholder="Ej.: A01:2021 - Broken Access Control"
+            />
+          </div>
+          <div>
+            <Label htmlFor="man-mitre" hint="(opcional)">Técnica MITRE ATT&amp;CK</Label>
+            <Input
+              id="man-mitre"
+              value={mitreAttackTechnique}
+              onChange={(e) => setMitreAttackTechnique(e.target.value)}
+              placeholder="Ej.: T1190 - Exploit Public App"
+            />
+          </div>
+        </div>
+
+        {/* Controles GRC Impactados */}
+        {controls.length > 0 ? (
+          <div className="rounded-lg border border-border bg-surface-2/40 p-3">
+            <Label hint={`(${selectedControlIds.length} seleccionados)`}>
+              Controles Normativos y Estándares Impactados (ISO 27001, PCI-DSS, NIST, CIS, SOC 2)
+            </Label>
+            <div className="mt-2 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+              {controls.map((c) => {
+                const key = `${c.framework}:${c.code}`;
+                const active = selectedControlIds.includes(key);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleControl(key)}
+                    className={cn(
+                      'rounded-md border px-2 py-1 text-[11px] font-medium transition text-left',
+                      active
+                        ? 'border-accent bg-accent text-white'
+                        : 'border-border bg-surface text-ink-2 hover:bg-surface-2',
+                    )}
+                    title={`${c.frameworkName} ${c.code} — ${c.title}`}
+                  >
+                    <span className="font-bold">{c.frameworkName}</span> {c.code}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="man-effort">Esfuerzo estimado</Label>
+            <Select
+              id="man-effort"
+              value={effort}
+              onChange={(e) => setEffort(e.target.value as RemediationEffort)}
+            >
+              <option value="QUICK_WIN">Quick Win (&lt; 30 min)</option>
+              <option value="MODERATE">Moderado (&lt; 2 horas)</option>
+              <option value="STRUCTURAL">Estructural (&gt; 4 horas)</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="man-assignee" hint="(opcional)">Asignar responsable</Label>
+            <Select
+              id="man-assignee"
+              value={assignedToId}
+              onChange={(e) => setAssignedToId(e.target.value)}
+            >
+              <option value="">(Sin asignar)</option>
+              {(assigneesQ.data ?? []).map((u) => (
+                <option key={u.id} value={u.id}>{u.fullName}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="man-due" hint="(opcional)">Fecha límite SLA</Label>
+            <Input
+              id="man-due"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="man-cli" hint="(opcional)">Comando CLI o Snippet de Remediación</Label>
+          <Input
+            id="man-cli"
+            value={remediationCli}
+            onChange={(e) => setRemediationCli(e.target.value)}
+            placeholder="Ej.: aws s3api put-public-access-block --bucket mi-bucket ..."
+          />
+        </div>
+
+        {error ? <Alert kind="error">{error}</Alert> : null}
+      </div>
     </Modal>
   );
 }
