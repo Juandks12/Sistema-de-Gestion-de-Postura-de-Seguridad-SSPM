@@ -75,6 +75,7 @@ export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   CLOUD_COMPUTE: 'Cómputo e Infraestructura Cloud',
   CLOUD_DATABASE: 'Bases de Datos Cloud',
   CLOUD_LOGGING: 'Auditoría y Logging Cloud',
+  MALWARE_THREAT: 'Amenaza de Malware y Phishing',
 };
 
 export const CLOUD_RESOURCE_TYPE_LABEL: Record<CloudResourceType, string> = {

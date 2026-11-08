@@ -30,6 +30,8 @@ export const AUDIT_ACTIONS = {
   'finding.review': 'Hallazgo revisado',
   'finding.create_manual': 'Hallazgo manual / de auditoría registrado',
   'finding.bulk_review': 'Triaje masivo de hallazgos ejecutado',
+  'threat_lab.analyze': 'Artefacto analizado en Laboratorio de Malware y Phishing',
+  'threat_lab.promote_finding': 'Análisis de amenaza promovido a hallazgo de seguridad',
   'alert_channel.create': 'Canal de alertas creado',
   'alert_channel.update': 'Canal de alertas modificado',
   'alert_channel.delete': 'Canal de alertas eliminado',

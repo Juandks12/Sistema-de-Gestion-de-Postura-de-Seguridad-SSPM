@@ -243,10 +243,10 @@ export const COMPLIANCE_CONTROLS: ComplianceControlDefinition[] = [
     id: 'ISO-A.8.23',
     framework: ComplianceFramework.ISO_27001,
     code: 'A.8.23',
-    title: 'Filtrado Web y Prevención de Fugas de Información',
+    title: 'Filtrado Web, Anti-Malware y Prevención de Fugas de Información',
     domain: 'Seguridad de la Información',
     description:
-      'El acceso a sitios web y la exposición de archivos corporativos debe gestionarse para reducir la exposición a software malicioso y divulgación no autorizada.',
+      'El acceso a sitios web y la exposición o recepción de archivos corporativos debe gestionarse para reducir la exposición a software malicioso, phishing y divulgación no autorizada.',
     ruleIds: [
       'PATH-SECRETS-EXPOSED',
       'PATH-VCS-EXPOSED',
@@ -254,6 +254,10 @@ export const COMPLIANCE_CONTROLS: ComplianceControlDefinition[] = [
       'PATH-CONFIG-EXPOSED',
       'PATH-ADMIN-PANEL',
       'PATH-K8S-CONFIG-EXPOSED',
+      'THREAT-EMAIL-PHISHING-BEC',
+      'THREAT-FILE-MALICIOUS-HASH',
+      'THREAT-FILE-SUSPICIOUS-MACRO-PDF',
+      'THREAT-URL-MALICIOUS-PHISHING',
     ],
   },
 

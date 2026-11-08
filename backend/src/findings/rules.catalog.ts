@@ -1067,6 +1067,67 @@ const rawRules: RawRule[] = [
     recommendation:
       'Corrija el registro TXT de BIMI en el DNS asegurando que la etiqueta l= apunte a un archivo SVG sobre HTTPS y que no existan registros duplicados.',
   },
+  // ------------------------------------ laboratorio de malware, phishing y amenazas
+  {
+    id: 'THREAT-EMAIL-PHISHING-BEC',
+    category: C.MALWARE_THREAT,
+    severity: S.HIGH,
+    cvss: 8.2,
+    title: 'Correo electrónico malicioso de Phishing o Suplantación Ejecutiva (BEC)',
+    description:
+      'El análisis forense del correo (.eml / cabeceras MIME) detectó indicadores críticos de suplantación de identidad, desalineación entre From y Reply-To/Return-Path, fallos de autenticación SPF/DKIM/DMARC, dominios homógrafos (Punycode) o enlaces de captura de credenciales.',
+    recommendation:
+      'Bloquee el remitente y los dominios/URLs extraídos en el gateway de correo (SEG), invalide las sesiones de usuarios que hayan interactuado con el mensaje y refuerce la política DMARC a p=reject.',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 30,
+    businessImpact:
+      'Riesgo directo de compromiso de cuentas corporativas, fraude financiero por transferencia no autorizada (BEC) o infección inicial de ransomware.',
+  },
+  {
+    id: 'THREAT-FILE-MALICIOUS-HASH',
+    category: C.MALWARE_THREAT,
+    severity: S.CRITICAL,
+    cvss: 9.8,
+    title: 'Artefacto o archivo ejecutable malicioso confirmado (Malware / Payload)',
+    description:
+      'El archivo o hash analizado presenta firmas positivas en fuentes de inteligencia de amenazas (MalwareBazaar / ThreatFox / VirusTotal), discrepancia crítica entre Magic Bytes y extensión declarada (doble extensión ejecutable) o alta entropía característica de empaquetadores maliciosos.',
+    recommendation:
+      'Aísle inmediatamente los endpoints donde se haya descargado el archivo, agregue el hash SHA-256 a la lista de bloqueo del EDR/Antivirus y audite conexiones salientes hacia los indicadores C2 asociados.',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 25,
+    businessImpact:
+      'Ejecución de código arbitrario, despliegue de ransomware/infostealer y compromiso de activos críticos de la organización.',
+  },
+  {
+    id: 'THREAT-FILE-SUSPICIOUS-MACRO-PDF',
+    category: C.MALWARE_THREAT,
+    severity: S.HIGH,
+    cvss: 7.8,
+    title: 'Documento ofimático o PDF con macros activas o acciones embebidas peligrosas',
+    description:
+      'El análisis estático identificó estructuras de ejecución embebida como proyectos de macros VBA/XLM (AutoOpen / Document_Open) o diccionarios PDF peligrosos (/JS, /JavaScript, /Launch, /OpenAction, /EmbeddedFiles) utilizados como vector de entrega inicial (Dropper).',
+    recommendation:
+      'Bloquee la ejecución de macros provenientes de Internet mediante políticas GPO/Intune, deshabilite JavaScript en lectores PDF corporativos y someta el documento a aislamiento antes de su apertura.',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 30,
+    businessImpact:
+      'Infección silenciosa de estaciones de trabajo mediante documentos señuelo (facturas, órdenes de compra) con descarga de carga útil secundaria.',
+  },
+  {
+    id: 'THREAT-URL-MALICIOUS-PHISHING',
+    category: C.MALWARE_THREAT,
+    severity: S.HIGH,
+    cvss: 8.1,
+    title: 'URL maliciosa de Phishing, robo de credenciales o distribución de malware',
+    description:
+      'La URL inspeccionada presenta patrones de suplantación de marca, ofuscación de host (@, IP literal, homógrafos IDN), redirección encadenada o reputación maliciosa confirmada en URLhaus / ThreatFox / VirusTotal.',
+    recommendation:
+      'Bloquee el dominio e IP destino en el proxy DNS/Firewall perimetral, revoque credenciales de usuarios expuestos y reporte el dominio de phishing para baja (takedown).',
+    effort: 'QUICK_WIN',
+    estimatedMinutes: 20,
+    businessImpact:
+      'Robo de credenciales corporativas o de clientes (Account Takeover) y descarga drive-by de troyanos bancarios.',
+  },
 ];
 
 export function computeRuleEffortAndImpact(r: {
