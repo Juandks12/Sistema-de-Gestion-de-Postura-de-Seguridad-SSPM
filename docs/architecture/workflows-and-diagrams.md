@@ -1,10 +1,10 @@
 # Flujos de Trabajo y Diagramas de Secuencia
 
-> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Versión: **2.0.0**  
+> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)**  
+> Versión: **3.0.0 (Sprint 23)**  
 > Alcance: **Flujos Críticos del Sistema en Mermaid**
 
-Este documento recopila la especificación técnica y los diagramas de secuencia/flujo de los 5 procesos centrales de la plataforma.
+Este documento recopila la especificación técnica y los diagramas de secuencia/flujo de los 7 procesos centrales de la plataforma.
 
 ---
 
@@ -15,6 +15,8 @@ Este documento recopila la especificación técnica y los diagramas de secuencia
 3. [Flujo 3: Escaneo de Postura Cloud Multicloud (CSPM AWS & Azure)](#3-flujo-de-escaneo-de-postura-cloud-multicloud-cspm-aws--azure)
 4. [Flujo 4: Ciclo de Vida del Hallazgo y Gestión de SLAs](#4-flujo-del-ciclo-de-vida-del-hallazgo-y-gestión-de-slas)
 5. [Flujo 5: Algoritmo Determinista del Security Score](#5-flujo-del-algoritmo-determinista-del-security-score)
+6. [Flujo 6: Laboratorio Forense de Malware, Phishing y Amenazas (Threat Lab)](#6-flujo-del-laboratorio-forense-de-malware-phishing-y-amenazas-threat-lab)
+7. [Flujo 7: Evaluación Multi-Marco GRC y Exportación SIEM/SOAR](#7-flujo-de-evaluación-multi-marco-grc-y-exportación-siemsoar)
 
 ---
 
@@ -233,4 +235,77 @@ flowchart LR
     end
 
     Calc --> A & B & C_Grade & D & F
+```
+
+---
+
+## 6. Flujo del Laboratorio Forense de Malware, Phishing y Amenazas (Threat Lab)
+
+El módulo `ThreatLabModule` analiza correos `.eml`, archivos/hashes y URLs sospechosas de forma 100% estática y heurística en memoria, permitiendo promover los hallazgos confirmados al Centro de Hallazgos y GRC:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Analista as Analista SOC / Forense
+    participant UI as ThreatLabPage.tsx
+    participant Svc as ThreatLabService
+    participant Engine as Motores Estáticos (.eml / File / URL)
+    participant DB as PostgreSQL (malware_analyses)
+    participant Findings as FindingsService & ComplianceService
+
+    Analista->>UI: Carga correo .eml, archivo/hash (Web Crypto SHA-256) o URL sospechosa
+    UI->>Svc: POST /api/v1/threat-lab/analyze/{email|file|url}
+    Svc->>Engine: Ejecutar inspección estática y correlación Threat Intel
+    Engine-->>Svc: Veredicto (CLEAN/SUSPICIOUS/MALICIOUS), Risk Score (0-100), Indicadores MITRE ATT&CK
+    Svc->>DB: Persistir MalwareAnalysis y registrar AuditLog
+    Svc-->>UI: Retornar análisis forense completo
+    UI-->>Analista: Mostrar ForensicVerdictPanel (velocímetro, saltos SMTP, entropía, IoCs)
+
+    opt Promoción a Hallazgo de Seguridad y GRC
+        Analista->>UI: Clic en "Promover a Hallazgo de Seguridad y GRC"
+        UI->>Svc: POST /api/v1/threat-lab/:id/promote-finding (assetId, assignedToId)
+        Svc->>Findings: Crear/actualizar Finding (categoría MALWARE_THREAT, reglas THREAT-*)
+        Findings-->>Svc: Hallazgo enriquecido con CWE, MITRE ATT&CK y controles GRC
+        Svc->>DB: Vincular promotedFindingId y recalcular Security Score
+        Svc-->>UI: Hallazgo creado y sincronizado con GRC Hub
+    end
+```
+
+---
+
+## 7. Flujo de Evaluación Multi-Marco GRC y Exportación SIEM/SOAR
+
+Todos los hallazgos (perimetrales, cloud CSPM, laboratorio de amenazas y auditorías manuales) convergen en el `ComplianceService`, que evalúa en tiempo real el porcentaje de cumplimiento sobre 5 estándares internacionales y los expone tanto en reportes PDF como en la API Pública SIEM/SOAR:
+
+```mermaid
+flowchart LR
+    subgraph Fuentes ["Fuentes de Hallazgos (4 Orígenes)"]
+        S1["Escaneos Perimetrales & 360°"]
+        S2["Auditoría Cloud CSPM (AWS/Azure)"]
+        S3["Threat & Malware Lab (IoCs)"]
+        S4["Auditoría Manual / Pentest"]
+    end
+
+    subgraph Hub ["Centro Unificado de Hallazgos & Taxonomía"]
+        Enrich["FindingsService.enrichFinding<br>CWE + OWASP Top 10 + MITRE ATT&CK"]
+        Eval["ComplianceService<br>Cruza ruleId contra controles normativos"]
+    end
+
+    subgraph Marcos ["5 Marcos Normativos Evaluados"]
+        M1["ISO/IEC 27001:2022"]
+        M2["PCI-DSS v4.0"]
+        M3["SOC 2 Type II"]
+        M4["NIST CSF 2.0"]
+        M5["CIS Critical Security Controls v8"]
+    end
+
+    subgraph Salidas ["Salidas Ejecutivas y Operativas"]
+        Out1["Consola GRC (/compliance) & Hallazgos (/findings)"]
+        Out2["Reportes PDF Ejecutivos y Técnicos"]
+        Out3["API Pública SIEM/SOAR (/api/v1/public/* JSON & NDJSON)"]
+    end
+
+    S1 & S2 & S3 & S4 --> Enrich --> Eval
+    Eval --> M1 & M2 & M3 & M4 & M5
+    M1 & M2 & M3 & M4 & M5 --> Out1 & Out2 & Out3
 ```
