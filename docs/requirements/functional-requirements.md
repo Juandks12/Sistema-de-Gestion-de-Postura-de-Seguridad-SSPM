@@ -1,10 +1,10 @@
 # Especificación de Requerimientos Funcionales (RF)
 
-> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Versión: **2.0.0**  
-> Alcance: **RF-01 a RF-18**
+> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)**  
+> Versión: **3.0.0 (Sprint 23)**  
+> Alcance: **RF-01 a RF-21**
 
-Este documento detalla los 18 requerimientos funcionales implementados en la plataforma, especificando el módulo responsable, los criterios de aceptación formales, los endpoints REST involucrados y las validaciones de seguridad aplicadas.
+Este documento detalla los 21 requerimientos funcionales implementados en la plataforma, especificando el módulo responsable, los criterios de aceptación formales, los endpoints REST involucrados y las validaciones de seguridad aplicadas.
 
 ---
 
@@ -14,10 +14,10 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 | :--- | :--- | :--- | :---: |
 | [RF-01](#rf-01-gestión-de-inventario-de-activos) | Gestión de Inventario de Activos | `AssetsModule` | Alta |
 | [RF-02](#rf-02-verificación-criptográfica-de-propiedad) | Verificación de Propiedad de Activos | `AssetsModule` | Crítica |
-| [RF-03](#rf-03-descubrimiento-pasivo-de-superficie-easm) | Descubrimiento de Superficie Expuesta | `DiscoveryModule` | Alta |
+| [RF-03](#rf-03-descubrimiento-pasivo-de-superficie-easm) | Descubrimiento de Superficie Expuesta y Promoción 360° | `DiscoveryModule` | Alta |
 | [RF-04](#rf-04-auditoría-de-red-puertos-y-servicios) | Auditoría de Red, Puertos y Servicios | `ScansModule` (Nmap) | Alta |
 | [RF-05](#rf-05-auditoría-de-cabeceras-http-y-tls) | Auditoría de Cabeceras HTTP y TLS | `ScansModule` (TLS/Headers) | Alta |
-| [RF-06](#rf-06-seguridad-del-correo-electrónico-y-marca) | Seguridad del Correo Electrónico y Marca | `ScansModule` (EmailSecurity) | Alta |
+| [RF-06](#rf-06-seguridad-del-correo-electrónico-y-marca) | Seguridad del Correo Electrónico, DNS y Marca | `ScansModule` (Email/DNS) | Alta |
 | [RF-07](#rf-07-auditoría-web-profunda-e-commerce-y-secret-hunter) | Auditoría Web E-Commerce y Secret Hunter | `ScansModule` (WebScanners) | Crítica |
 | [RF-08](#rf-08-madurez-de-divulgación-responsable-rfc-9116) | Madurez de Divulgación Responsable (RFC 9116) | `ScansModule` (SecurityTxt) | Media |
 | [RF-09](#rf-09-auditoría-de-postura-cloud-multicloud-cspm) | Auditoría de Postura Cloud Multicloud (CSPM) | `CloudModule` (AWS/Azure) | Crítica |
@@ -27,9 +27,12 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 | [RF-13](#rf-13-matriz-quick-wins-24h-vs-mejoras-estructurales) | Matriz Quick Wins 24h vs. Mejoras Estructurales | `FindingsModule` (Catalog) | Alta |
 | [RF-14](#rf-14-gestión-de-hallazgos-slas-y-triage-inteligente) | Gestión de Hallazgos, SLAs y Triage | `FindingsModule` | Alta |
 | [RF-15](#rf-15-motor-de-riesgo-y-security-score-determinista) | Motor de Riesgo y Security Score Determinista | `RiskModule` | Crítica |
-| [RF-16](#rf-16-generador-de-reportes-ejecutivos-y-técnicos-en-pdf) | Generador de Reportes PDF | `ReportsModule` | Alta |
+| [RF-16](#rf-16-generador-de-reportes-ejecutivos-y-técnicos-en-pdf) | Generador de Reportes PDF (GRC + Threat Lab + 360°) | `ReportsModule` | Alta |
 | [RF-17](#rf-17-sistema-de-alertas-tempranas-y-webhooks) | Sistema de Alertas Tempranas y Webhooks | `AlertsModule` | Alta |
-| [RF-18](#rf-18-monitoreo-continuo-programado) | Monitoreo Continuo Programado | `MonitoringModule` | Media |
+| [RF-18](#rf-18-monitoreo-continuo-programado) | Monitoreo Continuo Programado (360° + CSPM) | `MonitoringModule` | Media |
+| [RF-19](#rf-19-centro-unificado-de-hallazgos-y-gobierno-normativo-grc-hub) | Centro Unificado de Hallazgos y Gobierno Normativo (GRC Hub) | `FindingsModule` & `ComplianceModule` | Crítica |
+| [RF-20](#rf-20-laboratorio-forense-de-malware-phishing-y-amenazas-threat-lab) | Laboratorio Forense de Malware, Phishing y Amenazas | `ThreatLabModule` | Crítica |
+| [RF-21](#rf-21-api-pública-siemsoar-y-gestión-de-api-keys) | API Pública SIEM/SOAR y Gestión de API Keys | `PublicApiModule` & `ApiKeysModule` | Alta |
 
 ---
 
@@ -288,7 +291,42 @@ Este documento detalla los 18 requerimientos funcionales implementados en la pla
 - **Descripción:** Ejecuta periódicamente auditorías automáticas sobre todos los activos activos de la organización sin requerir acción manual del usuario.
 - **Criterios de Aceptación:**
   1. Frecuencias configurables a nivel de organización: `DAILY` (Diario), `WEEKLY` (Semanal) o `DISABLED` (Desactivado).
-  2. Tarea cron nocturna que evalúa los activos verificados cuyo último escaneo supere el intervalo configurado.
+  2. Tarea cron nocturna que evalúa los activos verificados cuyo último escaneo supere el intervalo configurado, lanzando lotes `DiagnosticBatch` (`COMMERCE_360`) y re-auditando cuentas `CloudAccount` en estado `CONNECTED`.
   3. Encolado progresivo con dispersión temporal (*jitter*) para evitar picos de carga en la base de datos o en la red.
   4. Disparo automático de alertas si el monitoreo detecta regresiones o nuevas vulnerabilidades.
-- **Endpoints:** `PATCH /api/v1/organizations/settings/monitoring`.
+- **Endpoints:** `PATCH /api/v1/monitoring`, `GET /api/v1/monitoring`.
+
+---
+
+### RF-19: Centro Unificado de Hallazgos y Gobierno Normativo (GRC Hub)
+- **Módulo Responsable:** [`FindingsService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/findings.service.ts), [`grc-taxonomy.catalog.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/findings/grc-taxonomy.catalog.ts) y [`ComplianceService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/compliance/compliance.service.ts)
+- **Descripción:** Centraliza todos los hallazgos de seguridad de la organización (perímetro, cloud CSPM, laboratorio de amenazas y auditorías manuales/pentests) y los correlaciona bidireccionalmente con 5 marcos regulatorios internacionales.
+- **Criterios de Aceptación:**
+  1. Enriquecimiento taxonómico de cada hallazgo con `sourceType` (`PERIMETER_SCAN`, `CLOUD_CSPM`, `THREAT_MALWARE_LAB`, `MANUAL_AUDIT`), `cweId`, `owaspCategory`, `mitreAttackTechnique` y `complianceControls[]`.
+  2. Evaluación continua sobre 5 marcos normativos: **ISO/IEC 27001:2022, PCI-DSS v4.0, SOC 2 Type II, NIST CSF 2.0 y CIS Critical Security Controls v8**.
+  3. Creación de hallazgos manuales o provenientes de pentest externo (`POST /api/v1/findings/manual`).
+  4. Triaje, asignación de responsable y actualización de SLA en lote sobre múltiples hallazgos (`PATCH /api/v1/findings/bulk`).
+- **Endpoints:** `GET /api/v1/findings`, `GET /api/v1/findings/grc-catalog`, `POST /api/v1/findings/manual`, `PATCH /api/v1/findings/bulk`, `GET /api/v1/compliance`, `GET /api/v1/compliance/frameworks/:framework`.
+
+---
+
+### RF-20: Laboratorio Forense de Malware, Phishing y Amenazas (Threat Lab)
+- **Módulo Responsable:** [`ThreatLabService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/threat-lab/threat-lab.service.ts) y analizadores en [`backend/src/threat-lab/analyzers/`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/threat-lab/analyzers/)
+- **Descripción:** Proporciona una estación de análisis forense estático y heurístico sin ejecución para inspeccionar correos electrónicos sospechosos (`.eml`), archivos/hashes y URLs potencialmente maliciosas.
+- **Criterios de Aceptación:**
+  1. **Analizador de Correos (`.eml` / MIME):** Evalúa cabeceras `Authentication-Results` (SPF/DKIM/DMARC), desalineación `From` vs `Reply-To`/`Return-Path`, saltos `Received`, patrones BEC, dominios homógrafos IDN y extrae URLs y adjuntos para pivote forense.
+  2. **Analizador de Archivos y Hashes:** Detecta discrepancias entre Magic Bytes y extensión, dobles extensiones engañosas, entropía de Shannon elevada, macros VBA/XLM auto-ejecutables (`AutoOpen`, `Workbook_Open`), directivas PDF peligrosas (`/JS`, `/JavaScript`, `/Launch`, `/OpenAction`), cabeceras PE y correlación de hashes SHA-256 contra firmas conocidas.
+  3. **Analizador de URLs:** Evalúa heurísticas anti-phishing, suplantación de marca, credenciales embebidas, IPs literales, redirecciones abiertas (`redirect=`, `url=`) y entrega directa de ejecutables.
+  4. **Promoción en 1 clic a Hallazgo GRC:** Permite promover cualquier análisis sospechoso o malicioso a un hallazgo formal (`MALWARE_THREAT`) vinculado a un activo e integrado con el Security Score y los 5 marcos normativos.
+- **Endpoints:** `POST /api/v1/threat-lab/analyze/email`, `POST /api/v1/threat-lab/analyze/file`, `POST /api/v1/threat-lab/analyze/url`, `POST /api/v1/threat-lab/:id/promote-finding`, `GET /api/v1/threat-lab`, `GET /api/v1/threat-lab/summary`.
+
+---
+
+### RF-21: API Pública SIEM/SOAR y Gestión de API Keys
+- **Módulo Responsable:** [`PublicApiController`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/public-api/public-api.controller.ts), [`PublicApiService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/public-api/public-api.service.ts) y [`ApiKeysService`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/api-keys/api-keys.service.ts)
+- **Descripción:** Permite a sistemas SIEM/SOAR externos (Splunk, Microsoft Sentinel, Wazuh, Elastic, Datadog) ingerir telemetría de postura, hallazgos, alertas, rutas de ataque, cumplimiento GRC y análisis forenses mediante llaves de API con scopes granulares.
+- **Criterios de Aceptación:**
+  1. Emisión y revocación de llaves con prefijo `sspm_live_` almacenando únicamente su hash SHA-256 en base de datos.
+  2. Validación mediante guardia `ApiKeyGuard` leyendo la cabecera `X-API-Key` y verificando expiración y scopes (`read:posture`, `read:assets`, `read:findings`, `read:alerts`).
+  3. Soporte de exportación en formato `json` y streaming `ndjson` (`application/x-ndjson`) con filtros incrementales `since`.
+- **Endpoints:** `GET /api/v1/public/posture`, `GET /api/v1/public/assets`, `GET /api/v1/public/findings`, `GET /api/v1/public/alerts`, `GET /api/v1/public/attack-paths`, `GET /api/v1/public/compliance`, `GET /api/v1/public/threat-lab`.

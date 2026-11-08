@@ -1,11 +1,11 @@
 # Módulo Orquestador de Diagnóstico 360° y Diff Temporal
 
-> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)**  
-> Módulo Backend: [`scans/diagnostic-orchestrator.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/diagnostic-orchestrator.service.ts) y [`scans/posture-diff.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/posture-diff.service.ts)  
-> Componente Frontend: [`Diagnostic360Stepper.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/components/Diagnostic360Stepper.tsx)  
-> Versión: **2.0.0 (Sprint 12 - Pilar 2)**
+> **Sistema de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)**  
+> Módulo Backend: [`scans/diagnostic-orchestrator.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/scans/diagnostic-orchestrator.service.ts), [`monitoring/monitoring.scheduler.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/monitoring/monitoring.scheduler.ts) y [`discovery/discovery.service.ts`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/backend/src/discovery/discovery.service.ts)  
+> Componentes Frontend: [`Diagnostic360Stepper.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/components/Diagnostic360Stepper.tsx), [`PostureDiffModal.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/components/PostureDiffModal.tsx) y [`DiscoveredHostsCard.tsx`](file:///home/miguel/Proyectos/Sistema-de-Gestion-de-Postura-de-Seguridad-SSPM/frontend/src/components/DiscoveredHostsCard.tsx)  
+> Versión: **3.0.0 (Sprint 23)**
 
-Este documento describe la arquitectura, la máquina de estados y los algoritmos del Orquestador de Diagnóstico 360° y el motor de Diff Temporal de Postura.
+Este documento describe la arquitectura, la máquina de estados y los algoritmos del Orquestador de Diagnóstico 360°, el motor de Diff Temporal de Postura, su integración con el Monitoreo Continuo y la promoción en 1 clic desde Certificate Transparency.
 
 ---
 
@@ -132,7 +132,10 @@ export interface PostureDiff {
 El componente de interfaz en React 19 proporciona una experiencia fluida y reactiva:
 - **Barra de Progreso y Stepper:** Muestra visualmente las 3 etapas con iconos de estado (Pendiente, En Ejecución con animación spinner, y Completado con checkmark verde).
 - **Polling No Intrusivo:** Monitorea el progreso cada 3 segundos hasta la finalización.
-- **Tarjeta de Diff Temporal:** Al completarse, despliega un cuadro comparativo:
+- **Tarjeta y Modal de Diff Temporal (`PostureDiffModal.tsx`):** Al completarse, despliega un cuadro comparativo con:
   - Badge verde con `+X pts` o rojo con `-X pts`.
-  - Contadores de hallazgos resueltos vs. regresiones.
-  - Notificación de alerta inmediata si se detectaron puertos nuevos o caída de puntuación.
+  - Contadores de hallazgos resueltos vs. regresiones y persistentes.
+  - Telemetría de superficie profunda: variación de WAF (`wafBefore` → `wafAfter`), versiones TLS soportadas (`tlsProtocols`), endpoints OpenAPI/Swagger descubiertos (`openApiEndpointsCount`), operaciones sin autenticación (`unauthenticatedApiOpsCount`) y exposición de Stack Traces (`debugStackTraceExposed`).
+- **Integración con Monitoreo Continuo y Descubrimiento CT (Sprints 19 y 23):**
+  - El `MonitoringScheduler` ejecuta lotes `DiagnosticBatch` programados (`source = SCHEDULED`, perfil `COMMERCE_360`) en cada ciclo diario/semanal y re-audita cuentas `CloudAccount` conectadas.
+  - Desde `DiscoveredHostsCard.tsx`, cualquier subdominio hallado en Certificate Transparency puede promoverse al inventario e iniciar automáticamente su primer Diagnóstico Profundo 360° en 1 clic (`POST /api/v1/discovered-hosts/:id/promote-and-scan`).

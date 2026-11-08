@@ -86,15 +86,14 @@ seguridad es alto.
 
 Esto es lo que de verdad amplía el mercado más allá del nicho actual:
 
-1. Integraciones de postura en la nube (AWS/Azure/GCP config checks) —
-   esto es lo que el mercado llama "SSPM" hoy; el producto actual es más
-   bien EASM (superficie externa). Evaluar si conviene ampliar el alcance
-   o mantener el posicionamiento actual y ser explícitos en el nombre.
-2. SSO (SAML/OIDC) — requisito de compra típico en empresas medianas.
-3. ~~**Exportación de datos y API pública (API Keys e integración SIEM/SOAR)**~~ (completado):
+1. ~~**Integraciones de postura en la nube (AWS/Azure config checks — CSPM)**~~ (completado en Sprints 14–19):
+   conectores sin agente para AWS (SigV4) y Microsoft Azure (ARM OAuth2), bóveda AES-256-GCM y re-auditoría automática integrada en el planificador de monitoreo continuo.
+2. ~~**Centro Unificado de Hallazgos y Gobierno Normativo Multi-Marco (GRC Hub)**~~ (completado en Sprints 15 y 20):
+   mapeo taxonómico CWE, OWASP Top 10 y MITRE ATT&CK, triaje/SLA en lote, auditoría manual y evaluación continua en 5 marcos (`ISO_27001`, `PCI_DSS`, `SOC_2`, `NIST_CSF`, `CIS_CONTROLS`).
+3. ~~**Laboratorio Forense de Malware, Phishing y Amenazas (Threat & Malware Lab)**~~ (completado en Sprints 21 y 22):
+   estación interactiva de análisis estático y heurístico para correos `.eml`/BEC, archivos/hashes y URLs sospechosas con promoción en 1 clic a hallazgo GRC y navegación unificada en **5 Dominios de Seguridad**.
+4. ~~**Exportación de datos y API pública (API Keys e integración SIEM/SOAR)**~~ (completado en Sprints 9 y 23):
    autenticación con secretos prefijados y hashes SHA-256 en base de datos, scopes granulares,
-   endpoints de sincronización incremental (`since`) y formatos JSON/NDJSON para Splunk, Wazuh,
-   Elastic y Datadog, junto con interfaz de administración de llaves y documentación técnica integrada.
-4. Certificaciones/cumplimiento (SOC 2 tipo I como mínimo) — solo cuando
-   haya clientes reales que lo exijan contractualmente; es costoso y no
-   debe anticiparse sin demanda confirmada.
+   endpoints de sincronización incremental (`since`) y formatos JSON/NDJSON para postura, activos, hallazgos, alertas, rutas de ataque (`/attack-paths`), cumplimiento GRC (`/compliance`) y laboratorio forense (`/threat-lab`).
+5. **Siguientes integraciones en hoja de ruta (`docs/roadmap/future-integrations.md`):**
+   conector CSPM para Google Cloud Platform (GCP), sincronización bidireccional ITSM (Jira/ServiceNow), atestación automatizada PCI-DSS v4.0 SAQ-A, playbooks de mitigación WAF en 1 clic y migración de colas de alto volumen a BullMQ + Redis.

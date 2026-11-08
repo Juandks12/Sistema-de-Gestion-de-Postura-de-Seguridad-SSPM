@@ -1,19 +1,21 @@
-# Documentación Técnica Integral del Sistema SSPM / EASM / CSPM
+# Documentación Técnica Integral del Sistema SSPM / EASM / CSPM / GRC & Threat Lab
 
 > **Sistema de Gestión de Postura de Seguridad (Security Posture Management Platform)**  
-> Versión del Sistema: **2.0.0 (Sprint 13)**  
-> Fecha de Documentación: **Octubre 2026**  
-> Alcance: **Perímetro Externo (EASM), Seguridad E-Commerce / Web Profunda, Postura Cloud Multicloud (CSPM AWS & Azure) y Correlación de Rutas de Ataque (Attack Paths)**
+> Versión del Sistema: **3.0.0 (Sprint 23 — 5 Dominios de Seguridad)**  
+> Fecha de Documentación: **Noviembre 2026**  
+> Alcance: **Perímetro Externo (EASM), Seguridad E-Commerce / Web Profunda, Postura Cloud Multicloud (CSPM AWS & Azure), Laboratorio Forense de Malware/Phishing (Threat Lab), Centro Unificado de Hallazgos y Gobierno Normativo (GRC Hub) y Correlación de Rutas de Ataque (Attack Paths)**
 
 ---
 
 ## 1. Visión General del Sistema y Objetivos
 
-La **Plataforma de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)** es una solución integral diseñada para proteger a comercios electrónicos, PyMEs y corporativos frente a vectores de ataque modernos. El sistema supera las limitaciones de los escáneres superficiales tradicionales (que solo analizan la raíz HTTP `/` o puertos genéricos) mediante tres capacidades diferenciadoras:
+La **Plataforma de Gestión de Postura de Seguridad (SSPM / EASM / CSPM / GRC & Threat Lab)** es una solución integral organizada en **5 Dominios de Seguridad** diseñada para proteger a comercios electrónicos, PyMEs y corporativos frente a vectores de ataque modernos:
 
-1. **Auditoría E-Commerce y Web Profunda**: Inspección especializada de pasarelas de pago, detección de scripts de terceros sin integridad criptográfica (**Anti-Skimming / Magecart PCI-DSS v4.0**), análisis de bundles JavaScript con búsqueda activa de llaves/secretos (**Secret Hunter**), detección de **Source Maps (`.js.map`)** y auditoría de vulnerabilidades CMS (**WordPress, WooCommerce, PrestaShop, Magento, Shopify**).
+1. **Auditoría E-Commerce y Web Profunda**: Inspección especializada de pasarelas de pago, detección de scripts de terceros sin integridad criptográfica (**Anti-Skimming / Magecart PCI-DSS v4.0**), análisis de bundles JavaScript con búsqueda activa de llaves/secretos (**Secret Hunter**), detección de **Source Maps (`.js.map`)**, sondeos OpenAPI/GraphQL y auditoría de vulnerabilidades CMS (**WordPress, WooCommerce, PrestaShop, Magento, Shopify**).
 2. **Postura de Seguridad Cloud Multicloud (CSPM)**: Conectores nativos sin agente (*agentless*) para **Amazon Web Services (AWS)** y **Microsoft Azure**, auditando configuraciones de IAM, almacenamiento público (S3 / Blob Storage), redes (Security Groups / NSGs), bases de datos y logging contra mejores prácticas CIS Benchmarks.
-3. **Orquestación 360° y Correlación de Rutas de Ataque (Attack Paths)**: Diagnóstico integral en 3 etapas encadenadas en 1 clic, motor de **Diff Temporal de Postura** entre escaneos, y un motor de correlación que agrupa hallazgos aislados en **Rutas de Ataque compuestas con narrativa de impacto financiero** y una **Matriz de Priorización Quick Wins 24h (< 30 min) vs. Mejoras Estructurales**.
+3. **Laboratorio Forense de Malware, Phishing y Amenazas (`Threat & Malware Lab`)**: Estación interactiva de análisis estático y heurístico sin ejecución para inspeccionar correos `.eml`/MIME (BEC, spoofing SPF/DKIM/DMARC), archivos/hashes (Magic Bytes, entropía de Shannon, macros VBA/XLM, firmas PDF `/JS`/`/Launch`) y URLs sospechosas, con promoción en 1 clic al Centro de Hallazgos.
+4. **Centro Unificado de Hallazgos y Gobierno Normativo (`GRC Hub`)**: Centralización de vulnerabilidades enriquecidas con taxonomía **CWE, OWASP Top 10:2021 y MITRE ATT&CK**, triaje/SLA en lote, auditoría manual y evaluación continua sobre **5 marcos normativos** (**ISO 27001, PCI-DSS v4.0, SOC 2, NIST CSF 2.0 y CIS Controls v8**).
+5. **Orquestación 360°, Correlación de Rutas de Ataque y Operaciones SIEM/SOAR**: Diagnóstico integral en 3 etapas encadenadas en 1 clic, **Diff Temporal de Postura**, correlación de **Rutas de Ataque (Kill-Chains)** con narrativa financiera, **Matriz Quick Wins 24h (< 30 min)**, reportes PDF ejecutivos/técnicos y API Pública SIEM/SOAR en JSON y NDJSON.
 
 ---
 
@@ -40,7 +42,10 @@ La **Plataforma de Gestión de Postura de Seguridad (SSPM / EASM / CSPM)** es un
 | **RF-15** | **Motor de Riesgo y Security Score Determinista** | `RiskModule` | Cálculo matemático transparente (0-100, grados A-F) sin cajas negras, con penalizaciones ponderadas por severidad (`CRITICAL`: 25, `HIGH`: 15, `MEDIUM`: 6, `LOW`: 2) y topes máximos para evitar puntuaciones infladas. |
 | **RF-16** | **Reportes Ejecutivos y Técnicos en PDF** | `ReportsModule` (PDFRenderer) | Generación de reportes bajo demanda o programados: Reporte Ejecutivo con diagnóstico en lenguaje de negocio, Rutas de Ataque, Impacto Financiero y Matriz Quick Wins 24h; Reporte Técnico con detalles de puertos, ciphers y evidencias forenses. |
 | **RF-17** | **Alertas Tempranas y Webhooks** | `AlertsModule` | Disparo en tiempo real de notificaciones ante puertos recién abiertos, certificados por expirar (< 7 días), hallazgos críticos o caídas de score, despachadas vía Email (SMTP) o Webhook (Slack, Discord, JSON genérico) con control de concurrencia y reintentos. |
-| **RF-18** | **Monitoreo Continuo Automatizado** | `MonitoringModule` | Programador configurable (Diario / Semanal / Desactivado) que encola y ejecuta escaneos periódicos sin intervención humana. |
+| **RF-18** | **Monitoreo Continuo Automatizado (360° + CSPM)** | `MonitoringModule` | Programador configurable (Diario / Semanal / Desactivado) que encola lotes `DiagnosticBatch` (`COMMERCE_360`) y re-audita cuentas Cloud CSPM sin intervención humana. |
+| **RF-19** | **Centro Unificado de Hallazgos y Gobierno Normativo (GRC Hub)** | `FindingsModule` & `ComplianceModule` | Enriquecimiento taxonómico (CWE, OWASP, MITRE ATT&CK), auditoría manual, triaje/SLA en lote y evaluación continua de controles sobre ISO 27001, PCI-DSS v4.0, SOC 2, NIST CSF 2.0 y CIS Controls v8. |
+| **RF-20** | **Laboratorio Forense de Malware, Phishing y Amenazas** | `ThreatLabModule` | Análisis estático y heurístico sin ejecución de correos `.eml`/MIME (BEC/spoofing), archivos/hashes (Magic Bytes, entropía, macros VBA/XLM, PDF `/JS`) y URLs sospechosas, con promoción en 1 clic a hallazgo GRC. |
+| **RF-21** | **API Pública SIEM/SOAR y Gestión de API Keys** | `PublicApiModule` & `ApiKeysModule` | Exportación autenticada por `X-API-Key` con scopes en formato `json` y `ndjson` para postura, activos, hallazgos, alertas, rutas de ataque, cumplimiento GRC y análisis forenses del Threat Lab. |
 
 ---
 
@@ -485,7 +490,16 @@ erDiagram
 - Modelo matemático determinista con topes por categoría y penalizaciones balanceadas.
 
 ### 6.5 Generador de Reportes PDF (`backend/src/reports/pdf-renderer.ts`)
-- Renderizado de PDF con PDFKit en memoria, WinAnsi seguro, paleta cromática profesional y bloques para C-Levels y equipos técnicos.
+- Renderizado de PDF con PDFKit en memoria, WinAnsi seguro, paleta cromática profesional, Matriz de Cumplimiento Normativo (GRC), telemetría del Laboratorio de Malware, evolución de Diagnósticos 360° y controles CWE/MITRE/GRC para C-Levels y equipos técnicos.
+
+### 6.6 Laboratorio Forense de Malware y Phishing (`backend/src/threat-lab/`)
+- **`email-malware.analyzer.ts`**: Análisis de cabeceras MIME/SMTP, validación SPF/DKIM/DMARC, desalineación `From`/`Reply-To`/`Return-Path`, detección BEC, homógrafos IDN y extracción de URLs/adjuntos.
+- **`file-malware.analyzer.ts`**: Verificación de Magic Bytes vs extensión, doble extensión, entropía de Shannon, macros VBA/XLM, firmas PDF (`/JS`, `/Launch`, `/OpenAction`), cabeceras PE y correlación de hashes SHA-256.
+- **`url-malware.analyzer.ts`**: Heurísticas anti-phishing, suplantación de marcas, credenciales embebidas, redirecciones abiertas y entrega de ejecutables.
+
+### 6.7 Centro Unificado de Hallazgos y Cumplimiento GRC (`backend/src/findings/` y `backend/src/compliance/`)
+- **`grc-taxonomy.catalog.ts`**: Mapeo transversal de cada regla hacia `CWE`, `OWASP Top 10:2021`, `MITRE ATT&CK` y controles de `ISO_27001`, `PCI_DSS`, `SOC_2`, `NIST_CSF` y `CIS_CONTROLS`.
+- **`compliance.service.ts`**: Evaluación continua del estado `COMPLIANT` / `NON_COMPLIANT` de cada control normativo a partir de los hallazgos activos de las 4 fuentes (`PERIMETER_SCAN`, `CLOUD_CSPM`, `THREAT_MALWARE_LAB`, `MANUAL_AUDIT`).
 
 ---
 
