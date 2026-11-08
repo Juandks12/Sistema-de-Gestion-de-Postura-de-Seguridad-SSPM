@@ -23,9 +23,10 @@ import { ScansController } from './scans.controller';
 import { ScansService } from './scans.service';
 import { DiagnosticOrchestratorService } from './diagnostic-orchestrator.service';
 import { DiagnosticController } from './diagnostic.controller';
+import { TicketingModule } from '../ticketing/ticketing.module';
 
 @Module({
-  imports: [FindingsModule, RiskModule, AlertsModule, VulnerabilitiesModule, forwardRef(() => DiscoveryModule)],
+  imports: [FindingsModule, RiskModule, AlertsModule, VulnerabilitiesModule, forwardRef(() => DiscoveryModule), TicketingModule],
   controllers: [ScansController, DiagnosticController],
   providers: [
     ScansService,

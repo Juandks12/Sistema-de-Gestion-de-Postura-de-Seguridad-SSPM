@@ -1,4 +1,4 @@
-import { forwardRef, Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssetType, Prisma, RiskScoreTrigger, ScanStatus, ScanType } from '@prisma/client';
 import { AlertsService } from '../alerts/alerts.service';
@@ -7,6 +7,7 @@ import { DiscoveryService } from '../discovery/discovery.service';
 import { FindingsService, OpenedFinding, SyncFindingsResult } from '../findings/findings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
+import { TicketingService } from '../ticketing/ticketing.service';
 import { NmapParseError } from './nmap/nmap-xml.parser';
 import { ScanCancellationService } from './scan-cancellation.service';
 import { ScanExecutionError } from './scan.errors';
@@ -57,6 +58,8 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
     @Inject(forwardRef(() => DiscoveryService))
     private readonly discovery: DiscoveryService,
     @Inject(SCANNERS) scanners: Scanner[],
+    @Optional()
+    private readonly ticketing?: TicketingService,
   ) {
     this.scanners = new Map(scanners.map((s) => [s.type, s]));
     this.currentConcurrencyLimit = this.baseConcurrency;
@@ -361,6 +364,18 @@ export class ScanWorkerService implements OnApplicationBootstrap, OnApplicationS
         opened,
         newHosts,
       });
+
+      // Hook de ticketing: auto-creación de tickets en Jira/Azure Boards según umbral configurado
+      if (this.ticketing && opened.length > 0) {
+        this.ticketing
+          .autoCreateTicketsForScan(
+            scan.organizationId,
+            opened.map((o) => o.id),
+          )
+          .catch((err) => {
+            this.logger.warn(`Error en auto-creación de tickets para escaneo ${scanId}: ${(err as Error).message}`);
+          });
+      }
 
       // Notificar hooks de finalización (para lotes y pipeline 360°)
       await this.notifyScanFinished(scanId, scan.batchId);

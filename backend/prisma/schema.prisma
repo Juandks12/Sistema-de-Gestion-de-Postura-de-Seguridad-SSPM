@@ -210,6 +210,20 @@ enum AlertChannelType {
   WEBHOOK
 }
 
+/// Proveedor de ticketing de ingeniería y remediación.
+enum TicketingProvider {
+  JIRA
+  AZURE_BOARDS
+}
+
+/// Umbral de severidad mínima para creación automática de tickets tras escaneo.
+enum TicketingAutoCreateThreshold {
+  DISABLED
+  CRITICAL
+  HIGH
+  MEDIUM
+}
+
 /// Cómo se demostró que la organización controla un activo (sección 1.6.3).
 /// DNS_TXT        -> registro TXT en _sspm-verification.<dominio> (cubre sus subdominios)
 /// HTTP_FILE      -> archivo /.well-known/sspm-verification.txt servido por el host
@@ -280,6 +294,7 @@ model Organization {
   cloudResources    CloudResource[]
   diagnosticBatches DiagnosticBatch[]
   malwareAnalyses   MalwareAnalysis[]
+  ticketingIntegration TicketingIntegration?
 
   @@map("organizations")
 }
@@ -515,6 +530,12 @@ model Finding {
   /// Enlace a cuenta y recurso cloud si el hallazgo se originó en auditoría CSPM
   cloudAccountId  String?         @map("cloud_account_id") @db.Uuid
   cloudResourceId String?         @map("cloud_resource_id") @db.Uuid
+  /// Enlace y estado de sincronización con ticket de ingeniería externo (Jira o Azure Boards)
+  ticketProvider  String?         @map("ticket_provider") @db.VarChar(30)
+  ticketKey       String?         @map("ticket_key") @db.VarChar(100)
+  ticketUrl       String?         @map("ticket_url") @db.VarChar(500)
+  ticketStatus    String?         @map("ticket_status") @db.VarChar(50)
+  ticketSyncedAt  DateTime?       @map("ticket_synced_at") @db.Timestamptz(6)
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -532,6 +553,7 @@ model Finding {
   @@index([organizationId, assignedToId])
   @@index([organizationId, cloudAccountId])
   @@index([organizationId, cloudResourceId])
+  @@index([organizationId, ticketProvider, ticketKey])
   @@map("findings")
 }
 
@@ -907,4 +929,33 @@ model MalwareAnalysis {
   @@index([organizationId, verdict])
   @@index([sha256])
   @@map("malware_analyses")
+}
+
+/// Integración con sistemas de ticketing para remediación de ingeniería (Jira / Azure DevOps).
+model TicketingIntegration {
+  id                   String                       @id @default(uuid()) @db.Uuid
+  organizationId       String                       @unique @map("organization_id") @db.Uuid
+  provider             TicketingProvider
+  enabled              Boolean                      @default(true)
+  /// URL base del servicio: https://myorg.atlassian.net o https://dev.azure.com/myorg
+  instanceUrl          String                       @map("instance_url") @db.VarChar(255)
+  /// Clave de proyecto en Jira (ej. "SEC") o nombre de proyecto en Azure DevOps (ej. "DevOps - SRE")
+  projectKey           String                       @map("project_key") @db.VarChar(100)
+  /// Tipo de issue o work item por defecto: "Bug", "Task", "Issue"
+  issueType            String                       @default("Bug") @map("issue_type") @db.VarChar(50)
+  /// Umbral de severidad para creación automática de tickets tras escaneo
+  autoCreateThreshold  TicketingAutoCreateThreshold @default(DISABLED) @map("auto_create_threshold")
+  /// Credenciales cifradas con CryptoVaultService (AES-256-GCM)
+  credentialsEncrypted String                       @map("credentials_encrypted") @db.Text
+  /// Configuración adicional (etiquetas por defecto, campos custom, etc.)
+  config               Json?
+  lastTestedAt         DateTime?                    @map("last_tested_at") @db.Timestamptz(6)
+  lastTestStatus       String?                      @map("last_test_status") @db.VarChar(30)
+  lastTestError        String?                      @map("last_test_error") @db.VarChar(500)
+  createdAt            DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ticketing_integrations")
 }

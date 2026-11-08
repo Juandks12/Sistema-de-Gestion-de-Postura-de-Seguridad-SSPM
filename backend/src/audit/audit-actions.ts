@@ -41,6 +41,11 @@ export const AUDIT_ACTIONS = {
   'api_key.create': 'Llave de API creada',
   'api_key.revoke': 'Llave de API revocada',
   'api_key.delete': 'Llave de API eliminada',
+  'ticketing.configure': 'Integración de ticketing configurada',
+  'ticketing.delete': 'Integración de ticketing eliminada',
+  'ticketing.create_ticket': 'Ticket de remediación creado en Jira/Azure Boards',
+  'ticketing.bulk_ticket': 'Tickets de remediación creados en lote',
+  'ticketing.sync_ticket': 'Sincronización de estado de ticket ejecutada',
   'system.retention_cleanup': 'Purga de retención de datos ejecutada',
 } as const;
 
