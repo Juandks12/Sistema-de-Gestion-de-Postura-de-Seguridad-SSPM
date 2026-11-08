@@ -9,6 +9,8 @@ describe('RetentionService', () => {
   let prismaMock: {
     scan: { findMany: jest.Mock; deleteMany: jest.Mock };
     scanPort: { count: jest.Mock };
+    diagnosticBatch: { findMany: jest.Mock; deleteMany: jest.Mock };
+    malwareAnalysis: { deleteMany: jest.Mock };
     accountToken: { deleteMany: jest.Mock };
     loginAttempt: { deleteMany: jest.Mock };
     report: { deleteMany: jest.Mock };
@@ -33,6 +35,13 @@ describe('RetentionService', () => {
       },
       scanPort: {
         count: jest.fn(),
+      },
+      diagnosticBatch: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      malwareAnalysis: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       accountToken: {
         deleteMany: jest.fn(),
@@ -143,5 +152,32 @@ describe('RetentionService', () => {
     const status = service.getStatus();
     expect(status.lastRunAt).toBe(now.toISOString());
     expect(status.lastResult).toEqual(result);
+  });
+
+  it('purga lotes DiagnosticBatch antiguos conservando los últimos 2 por activo y purga análisis Threat Lab no promovidos', async () => {
+    const now = new Date('2026-10-08T12:00:00Z');
+    prismaMock.scan.findMany.mockResolvedValue([]);
+    prismaMock.diagnosticBatch.findMany.mockResolvedValueOnce([
+      { id: 'batch-newest-1', assetId: 'asset-1', createdAt: new Date('2026-01-10T00:00:00Z') },
+      { id: 'batch-newest-2', assetId: 'asset-1', createdAt: new Date('2026-01-05T00:00:00Z') },
+      { id: 'batch-old-3', assetId: 'asset-1', createdAt: new Date('2026-01-01T00:00:00Z') },
+    ]);
+    prismaMock.diagnosticBatch.deleteMany.mockResolvedValueOnce({ count: 1 });
+    prismaMock.malwareAnalysis.deleteMany.mockResolvedValueOnce({ count: 4 });
+    prismaMock.accountToken.deleteMany.mockResolvedValueOnce({ count: 0 });
+    prismaMock.loginAttempt.deleteMany.mockResolvedValueOnce({ count: 0 });
+    prismaMock.report.deleteMany.mockResolvedValueOnce({ count: 0 });
+    prismaMock.auditLog.deleteMany.mockResolvedValueOnce({ count: 0 });
+
+    const result = await service.runRetention(actor, now);
+
+    expect(result.diagnosticBatchesPurged).toBe(1);
+    expect(result.malwareAnalysesPurged).toBe(4);
+    expect(prismaMock.diagnosticBatch.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['batch-old-3'] } },
+    });
+    expect(prismaMock.malwareAnalysis.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ promotedFindingId: null }),
+    });
   });
 });
