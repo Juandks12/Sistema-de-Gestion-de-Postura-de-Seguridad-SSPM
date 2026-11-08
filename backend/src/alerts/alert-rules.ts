@@ -34,7 +34,7 @@ export interface PortInfo {
 
 export interface AlertDetectionInput {
   asset: { id: string; value: string; name: string | null };
-  scan: { id: string; type: ScanType };
+  scan?: { id: string; type: ScanType } | null;
   /** Hallazgos que pasaron a OPEN en este escaneo. */
   opened: OpenedFinding[];
   /** Puertos abiertos nuevos frente al escaneo de puertos anterior; null si no hay anterior (línea base). */
@@ -95,7 +95,7 @@ export function detectAlerts(input: AlertDetectionInput): AlertDraft[] {
   const label = assetLabel(input.asset);
   const covered = new Set<string>();
 
-  if (input.scan.type === ScanType.PORT_SCAN && input.newOpenPorts && input.newOpenPorts.length > 0) {
+  if (input.scan?.type === ScanType.PORT_SCAN && input.newOpenPorts && input.newOpenPorts.length > 0) {
     const ports = [...input.newOpenPorts].sort((a, b) => a.port - b.port);
     const locations = new Set(ports.map((p) => `${p.protocol}/${p.port}`));
     const related = input.opened.filter(
@@ -146,7 +146,7 @@ export function detectAlerts(input: AlertDetectionInput): AlertDraft[] {
     });
   }
 
-  if (input.scan.type === ScanType.SUBDOMAIN_DISCOVERY && input.newHosts && input.newHosts.length > 0) {
+  if (input.scan?.type === ScanType.SUBDOMAIN_DISCOVERY && input.newHosts && input.newHosts.length > 0) {
     const hosts = input.newHosts;
     const shown = hosts.slice(0, MAX_HOSTS_IN_MESSAGE).join(', ');
     const rest = hosts.length > MAX_HOSTS_IN_MESSAGE ? ` y ${hosts.length - MAX_HOSTS_IN_MESSAGE} más` : '';

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AlertsModule } from '../alerts/alerts.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RiskModule } from '../risk/risk.module';
 import { CloudAccountsController } from './cloud-accounts.controller';
@@ -10,7 +11,7 @@ import { AwsCspmEvaluatorService } from './evaluators/aws-cspm.evaluator';
 import { AzureCspmEvaluatorService } from './evaluators/azure-cspm.evaluator';
 
 @Module({
-  imports: [PrismaModule, RiskModule],
+  imports: [PrismaModule, RiskModule, AlertsModule],
   controllers: [CloudAccountsController],
   providers: [
     CloudAccountsService,

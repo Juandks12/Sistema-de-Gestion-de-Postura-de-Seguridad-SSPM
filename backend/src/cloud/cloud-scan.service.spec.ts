@@ -6,6 +6,7 @@ import {
   FindingSeverity,
   FindingStatus,
 } from '@prisma/client';
+import { AlertsService } from '../alerts/alerts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
 import { CloudAccountsService } from './cloud-accounts.service';
@@ -200,6 +201,42 @@ describe('CloudScanService', () => {
       expect(prismaMock.finding.update).toHaveBeenCalledTimes(1);
       expect(prismaMock.finding.updateMany).toHaveBeenCalledTimes(1);
       expect(riskScoresMock.snapshot).toHaveBeenCalledTimes(1);
+    });
+
+    it('notifica a AlertsService cuando se abren o reabren hallazgos en la auditoría Cloud', async () => {
+      const alertsMock = {
+        handleCloudAuditCompleted: jest.fn().mockResolvedValue(1),
+      };
+      const serviceWithAlerts = new CloudScanService(
+        prismaMock as unknown as PrismaService,
+        cloudAccountsMock as unknown as CloudAccountsService,
+        awsEvaluatorMock as unknown as AwsCspmEvaluatorService,
+        azureEvaluatorMock as unknown as AzureCspmEvaluatorService,
+        riskScoresMock as unknown as RiskScoresService,
+        alertsMock as unknown as AlertsService,
+      );
+
+      prismaMock.finding.findUnique.mockResolvedValue(null);
+
+      await serviceWithAlerts.runAccountAudit('org-1', 'acc-1', { simulate: true });
+
+      expect(alertsMock.handleCloudAuditCompleted).toHaveBeenCalledTimes(1);
+      expect(alertsMock.handleCloudAuditCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: 'org-1',
+          assetId: 'asset-1',
+          cloudAccountId: 'acc-1',
+          provider: CloudProvider.AWS,
+          accountName: 'AWS Prod',
+          opened: expect.arrayContaining([
+            expect.objectContaining({
+              ruleId: 'AWS-S3-PUBLIC-READ',
+              severity: FindingSeverity.CRITICAL,
+              reopened: false,
+            }),
+          ]),
+        }),
+      );
     });
   });
 
