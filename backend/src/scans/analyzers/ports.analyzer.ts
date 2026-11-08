@@ -40,12 +40,36 @@ function describeService(port: NmapPort): string {
   return parts.length > 0 ? `${name} (${parts.join(' ')})` : name;
 }
 
+export interface AnalyzePortsOptions {
+  /**
+   * Cuando es true (ej. en activos de tipo DOMAIN), omite reportar `SVC-OPEN-PORT`
+   * en los puertos web estándar 80/tcp y 443/tcp, ya que son auditados en profundidad
+   * por los escáneres WEB_HEADERS y TLS_CERT.
+   */
+  skipStandardWebPorts?: boolean;
+}
+
 /** Genera un hallazgo por cada puerto abierto, clasificado según el servicio. */
-export function analyzePorts(ports: NmapPort[]): FindingDraft[] {
+export function analyzePorts(ports: NmapPort[], options?: AnalyzePortsOptions): FindingDraft[] {
   return ports
     .filter((p) => p.state === 'open')
     .map((p) => ({
+      port: p,
       ruleId: classify(p),
+    }))
+    .filter(({ port, ruleId }) => {
+      if (
+        options?.skipStandardWebPorts &&
+        ruleId === 'SVC-OPEN-PORT' &&
+        port.protocol === 'tcp' &&
+        (port.port === 80 || port.port === 443)
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .map(({ port: p, ruleId }) => ({
+      ruleId,
       location: `${p.protocol}/${p.port}`,
       title: `${describeService(p)} expuesto en el puerto ${p.port}/${p.protocol}`,
       evidence: {

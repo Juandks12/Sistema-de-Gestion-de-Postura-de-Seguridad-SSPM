@@ -66,13 +66,34 @@ export class PortScanScanner implements Scanner {
     const host = result.hosts[0];
     const ports = host?.ports ?? [];
     const openPorts = ports.filter((p) => p.state === 'open');
-    const cve = await this.cves.analyze(openPorts, ctx.signal);
+
+    // Enriquecer puertos abiertos sin CPE de Nmap con CPEs pasivos de Shodan InternetDB
+    // para que CveLookupService correlacione vulnerabilidades NVD + EPSS + CISA KEV.
+    const internetDbCpes = (internetDb?.cpes ?? []).filter((c) => c.includes(':a:'));
+    const portsForCve = openPorts.map((p, idx) => {
+      const existingCpes = p.service?.cpe ?? [];
+      if (existingCpes.length === 0 && internetDbCpes.length > 0 && (p.port === 443 || p.port === 80 || idx === 0)) {
+        return {
+          ...p,
+          service: {
+            ...p.service,
+            cpe: internetDbCpes,
+          },
+        };
+      }
+      return p;
+    });
+
+    const cve = await this.cves.analyze(portsForCve, ctx.signal);
+    const portFindings = analyzePorts(ports, {
+      skipStandardWebPorts: ctx.asset.type === 'DOMAIN',
+    });
 
     return {
       parameters: { tool: 'nmap', args, profile: { ...profile } },
       rawResult: result,
       ports,
-      findings: [...analyzePorts(ports), ...cve.findings],
+      findings: [...portFindings, ...cve.findings],
       incompleteCategories: cve.complete ? [] : [FindingCategory.VULNERABLE_SOFTWARE],
       summary: {
         hostStatus: host?.status ?? 'unknown',
