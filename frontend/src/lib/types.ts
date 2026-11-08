@@ -152,6 +152,62 @@ export interface Scan {
   requestedBy: { id: string; fullName: string; email: string } | null;
 }
 
+export type FindingSourceType =
+  | 'PERIMETER_SCAN'
+  | 'CLOUD_CSPM'
+  | 'THREAT_MALWARE_LAB'
+  | 'MANUAL_AUDIT';
+
+export interface FindingComplianceControlRef {
+  id: string;
+  framework: ComplianceFramework;
+  frameworkName: string;
+  code: string;
+  title: string;
+  domain: string;
+}
+
+export interface GrcCatalogResponse {
+  frameworks: FrameworkMetadata[];
+  controls: FindingComplianceControlRef[];
+}
+
+export interface CreateManualFindingInput {
+  assetId: string;
+  category: FindingCategory;
+  severity: Severity;
+  title: string;
+  description: string;
+  recommendation: string;
+  location: string;
+  ruleId?: string;
+  cvssScore?: number;
+  cweId?: string;
+  owaspCategory?: string;
+  mitreAttackTechnique?: string;
+  complianceControlIds?: string[];
+  businessImpact?: string;
+  effort?: RemediationEffort;
+  remediationCli?: string;
+  assignedToId?: string;
+  dueDate?: string;
+}
+
+export interface BulkReviewFindingsInput {
+  findingIds: string[];
+  status?: FindingStatus;
+  assignedToId?: string | null;
+  dueDate?: string | null;
+  note?: string;
+  remediationNote?: string;
+}
+
+export interface BulkReviewFindingsResult {
+  updatedCount: number;
+  affectedAssetsCount: number;
+  items: Finding[];
+}
+
 export interface Finding {
   id: string;
   assetId: string;
@@ -196,6 +252,13 @@ export interface Finding {
   effort?: RemediationEffort;
   estimatedMinutes?: number;
   businessImpact?: string | null;
+  sourceType?: FindingSourceType;
+  cweId?: string;
+  owaspCategory?: string;
+  mitreAttackTechnique?: string;
+  complianceControls?: FindingComplianceControlRef[];
+  remediationCli?: string | null;
+  remediationIac?: string | null;
 }
 
 export type SlaStatus = 'OVERDUE' | 'APPROACHING' | 'ON_TRACK' | 'RESOLVED' | 'NO_SLA';
@@ -229,6 +292,8 @@ export interface FindingsSummary {
   total: number;
   bySeverity: SeverityCounts;
   byCategory: Record<string, number>;
+  bySource?: Record<FindingSourceType, number>;
+  byFramework?: Record<ComplianceFramework, number>;
   severityOrder: Severity[];
   sla?: FindingsSlaSummary;
 }

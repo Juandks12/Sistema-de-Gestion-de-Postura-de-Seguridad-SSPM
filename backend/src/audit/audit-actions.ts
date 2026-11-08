@@ -28,6 +28,8 @@ export const AUDIT_ACTIONS = {
   'asset.delete': 'Activo eliminado',
   'asset.verified': 'Propiedad del activo verificada',
   'finding.review': 'Hallazgo revisado',
+  'finding.create_manual': 'Hallazgo manual / de auditoría registrado',
+  'finding.bulk_review': 'Triaje masivo de hallazgos ejecutado',
   'alert_channel.create': 'Canal de alertas creado',
   'alert_channel.update': 'Canal de alertas modificado',
   'alert_channel.delete': 'Canal de alertas eliminado',

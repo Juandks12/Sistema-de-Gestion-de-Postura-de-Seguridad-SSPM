@@ -86,6 +86,7 @@ export class ComplianceService {
         cvssScore: true,
         location: true,
         assetId: true,
+        evidence: true,
         asset: {
           select: {
             id: true,
@@ -97,9 +98,9 @@ export class ComplianceService {
     });
 
     const activeRulesMap = new Map<string, ControlFindingSummary[]>();
+    const activeControlIdMap = new Map<string, ControlFindingSummary[]>();
     for (const f of activeFindings) {
-      const list = activeRulesMap.get(f.ruleId) ?? [];
-      list.push({
+      const summaryItem: ControlFindingSummary = {
         id: f.id,
         ruleId: f.ruleId,
         title: f.title,
@@ -109,8 +110,24 @@ export class ComplianceService {
         assetId: f.assetId,
         assetValue: f.asset.value,
         assetName: f.asset.name,
-      });
+      };
+      const list = activeRulesMap.get(f.ruleId) ?? [];
+      list.push(summaryItem);
       activeRulesMap.set(f.ruleId, list);
+
+      if (f.evidence && typeof f.evidence === 'object' && !Array.isArray(f.evidence)) {
+        const ev = f.evidence as Record<string, unknown>;
+        if (Array.isArray(ev.complianceControlIds)) {
+          for (const rawId of ev.complianceControlIds) {
+            if (typeof rawId === 'string') {
+              const key = rawId.trim().toUpperCase();
+              const ctrlList = activeControlIdMap.get(key) ?? [];
+              ctrlList.push(summaryItem);
+              activeControlIdMap.set(key, ctrlList);
+            }
+          }
+        }
+      }
     }
 
     const frameworkSummaries: FrameworkSummary[] = [];
@@ -137,10 +154,24 @@ export class ComplianceService {
 
       for (const ctrl of controls) {
         const matchingFindings: ControlFindingSummary[] = [];
+        const seenIds = new Set<string>();
         for (const ruleId of ctrl.ruleIds) {
           const findings = activeRulesMap.get(ruleId);
           if (findings) {
-            matchingFindings.push(...findings);
+            for (const item of findings) {
+              if (!seenIds.has(item.id)) {
+                seenIds.add(item.id);
+                matchingFindings.push(item);
+              }
+            }
+          }
+        }
+        const explicitById = activeControlIdMap.get(ctrl.id.toUpperCase()) ?? [];
+        const explicitByCode = activeControlIdMap.get(`${ctrl.framework}:${ctrl.code}`.toUpperCase()) ?? [];
+        for (const item of [...explicitById, ...explicitByCode]) {
+          if (!seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            matchingFindings.push(item);
           }
         }
 
@@ -244,6 +275,7 @@ export class ComplianceService {
         cvssScore: true,
         location: true,
         assetId: true,
+        evidence: true,
         asset: {
           select: {
             id: true,
@@ -255,9 +287,9 @@ export class ComplianceService {
     });
 
     const activeRulesMap = new Map<string, ControlFindingSummary[]>();
+    const activeControlIdMap = new Map<string, ControlFindingSummary[]>();
     for (const f of activeFindings) {
-      const list = activeRulesMap.get(f.ruleId) ?? [];
-      list.push({
+      const summaryItem: ControlFindingSummary = {
         id: f.id,
         ruleId: f.ruleId,
         title: f.title,
@@ -267,8 +299,23 @@ export class ComplianceService {
         assetId: f.assetId,
         assetValue: f.asset.value,
         assetName: f.asset.name,
-      });
+      };
+      const list = activeRulesMap.get(f.ruleId) ?? [];
+      list.push(summaryItem);
       activeRulesMap.set(f.ruleId, list);
+
+      if (f.evidence && typeof f.evidence === 'object' && !Array.isArray(f.evidence)) {
+        const ev = f.evidence as Record<string, unknown>;
+        if (Array.isArray(ev.complianceControlIds)) {
+          for (const rawId of ev.complianceControlIds) {
+            if (typeof rawId === 'string') {
+              const ctrlList = activeControlIdMap.get(rawId) ?? [];
+              ctrlList.push(summaryItem);
+              activeControlIdMap.set(rawId, ctrlList);
+            }
+          }
+        }
+      }
     }
 
     const results: ControlEvaluationResult[] = [];
@@ -279,10 +326,24 @@ export class ComplianceService {
 
     for (const ctrl of controls) {
       const matchingFindings: ControlFindingSummary[] = [];
+      const seenIds = new Set<string>();
       for (const ruleId of ctrl.ruleIds) {
         const found = activeRulesMap.get(ruleId);
         if (found) {
-          matchingFindings.push(...found);
+          for (const item of found) {
+            if (!seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              matchingFindings.push(item);
+            }
+          }
+        }
+      }
+      const explicitById = activeControlIdMap.get(ctrl.id.toUpperCase()) ?? [];
+      const explicitByCode = activeControlIdMap.get(`${ctrl.framework}:${ctrl.code}`.toUpperCase()) ?? [];
+      for (const item of [...explicitById, ...explicitByCode]) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          matchingFindings.push(item);
         }
       }
 
