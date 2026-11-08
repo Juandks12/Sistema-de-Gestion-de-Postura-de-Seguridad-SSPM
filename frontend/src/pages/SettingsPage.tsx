@@ -28,6 +28,7 @@ import { FREQUENCY_DESCRIPTION, FREQUENCY_LABEL, SEVERITY_LABEL, SEVERITY_ORDER,
 import type { AlertChannel, AlertChannelType, MonitoringFrequency, Severity } from '@/lib/types';
 
 import { ApiKeysCard } from '@/components/ApiKeysCard';
+import { TicketingIntegrationCard } from '@/components/TicketingIntegrationCard';
 
 const FREQUENCIES: MonitoringFrequency[] = ['OFF', 'DAILY', 'WEEKLY'];
 
@@ -38,10 +39,11 @@ export function SettingsPage() {
   }
   return (
     <>
-      <PageHeader title="Configuración" description="Monitoreo continuo de los activos, canales de alerta, integración SIEM/SOAR y políticas de retención de datos." />
+      <PageHeader title="Configuración" description="Monitoreo continuo de los activos, canales de alerta, integración Jira / Azure Boards y políticas de retención de datos." />
       <MonitoringCard />
       <ChannelsCard />
       <ApiKeysCard />
+      <TicketingIntegrationCard />
       <DataRetentionCard />
     </>
   );
