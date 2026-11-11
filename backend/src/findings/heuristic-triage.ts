@@ -25,7 +25,7 @@ const DEV_ENV_REGEX = /dev|stage|staging|test|qa|lab|sandbox|internal|local/i;
 const DNS_INDICATOR_REGEX = /ns[0-9]*|dns|named|bind/i;
 
 export function evaluateHeuristicTriage(input: TriageFindingInput): FindingTriageAnalysis {
-  const { id, ruleId, category, severity, title, location, evidence, asset } = input;
+  const { id, ruleId, category, severity, title, description, location, evidence, asset } = input;
   const tags = asset.tags ?? [];
   const assetName = asset.name ?? '';
   const assetValue = asset.value;
@@ -56,7 +56,7 @@ export function evaluateHeuristicTriage(input: TriageFindingInput): FindingTriag
   // Regla 1: Falta de cabeceras de navegación HTML en servicios API/Backend
   if (
     category === 'HTTP_HEADERS' &&
-    ['HDR-CSP-MISSING', 'HDR-X-FRAME-OPTIONS-MISSING', 'HDR-PERMISSIONS-POLICY-MISSING'].includes(ruleId) &&
+    ['HDR-CSP-MISSING', 'HDR-XFO-MISSING', 'HDR-X-FRAME-OPTIONS-MISSING', 'HDR-PERMISSIONS-POLICY-MISSING', 'HDR-PERMISSIONS-MISSING'].includes(ruleId) &&
     isApiContext
   ) {
     contextFactors.push({
@@ -87,7 +87,7 @@ export function evaluateHeuristicTriage(input: TriageFindingInput): FindingTriag
   }
 
   // Regla 2: Seguridad de correo (SPF/DMARC) reportada sobre direcciones IP
-  if (category === 'EMAIL_SECURITY' && asset.type === 'IP') {
+  if (category === 'EMAIL_SECURITY' && (asset.type === 'IP' || tags.includes('ip-address'))) {
     contextFactors.push({
       factor: 'Tipo de activo no compatible con correo de dominio',
       impact: 'INCREASES_FP_PROBABILITY',
@@ -115,8 +115,25 @@ export function evaluateHeuristicTriage(input: TriageFindingInput): FindingTriag
     };
   }
 
+  // Regla 2b: Dominio que no recibe correos (outbound-only) o entorno no productivo
+  if (category === 'EMAIL_SECURITY' && (tags.includes('outbound-only') || tags.includes('non-production') || tags.includes('staging'))) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 85,
+      summary: 'Probable falso positivo: dominio o entorno de solo salida o pruebas que no gestiona recepción de correo.',
+      reasoning: ['Dominios dedicados a envíos automatizados salientes o entornos no productivos no requieren registros de recepción como MTA-STS o BIMI.'],
+      contextFactors: [{ factor: 'Dominio o entorno secundario', impact: 'INCREASES_FP_PROBABILITY', detail: 'El dominio solo realiza envíos salientes o es de pruebas.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Dominio de solo salida o entorno de pruebas sin buzones de correo entrante.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
   // Regla 3: Puerto 53 abierto en infraestructura de nombres de dominio
-  if (location.includes('/53') && isDnsContext) {
+  if ((location.includes('/53') || location.includes(':53') || ruleId.includes('PORT-DNS')) && isDnsContext) {
     contextFactors.push({
       factor: 'Servicio DNS legítimo',
       impact: 'INCREASES_FP_PROBABILITY',
@@ -141,8 +158,28 @@ export function evaluateHeuristicTriage(input: TriageFindingInput): FindingTriag
     };
   }
 
+  // Regla 3b: Puerto 80 con redirección 301 a HTTPS
+  if (
+    (location.includes(':80') || location.includes('/80') || ruleId.includes('PORT-HTTP') || ruleId.includes('HDR-HTTP-NO-REDIRECT')) &&
+    (evidence?.statusCode === 301 || tags.includes('https-redirect'))
+  ) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 90,
+      summary: 'Probable falso positivo: el puerto 80 implementa redirección 301 automática a HTTPS según el estándar web.',
+      reasoning: ['El puerto 80 responde con código 301 hacia HTTPS para garantizar que todo el tráfico sea cifrado.'],
+      contextFactors: [{ factor: 'Redirección 301 HTTPS verificada', impact: 'INCREASES_FP_PROBABILITY', detail: 'El servidor fuerza transporte seguro.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Redirección automática 301 a HTTPS configurada correctamente en el puerto 80.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
   // Regla 4: Entornos de desarrollo o pruebas con discrepancia de certificado TLS
-  if (category === 'TLS_CERTIFICATE' && ['TLS-SELF-SIGNED', 'TLS-HOSTNAME-MISMATCH'].includes(ruleId) && isDevEnv) {
+  if ((category === 'TLS_CERTIFICATE' || category === 'SSL_TLS') && ['TLS-SELF-SIGNED', 'TLS-CERT-SELFSIGNED', 'TLS-HOSTNAME-MISMATCH'].includes(ruleId) && isDevEnv) {
     contextFactors.push({
       factor: 'Entorno de Desarrollo / Pruebas',
       impact: 'INCREASES_FP_PROBABILITY',
@@ -165,6 +202,97 @@ export function evaluateHeuristicTriage(input: TriageFindingInput): FindingTriag
       contextFactors,
       recommendedAction: 'ACCEPT_RISK',
       suggestedNote: 'Aceptación de riesgo: Certificado interno en entorno de desarrollo/pruebas sin impacto en usuarios finales.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
+  // Regla 4b: HSTS en red interna o IP
+  if (ruleId === 'HDR-HSTS-MISSING' && (tags.includes('internal') || tags.includes('rfc1918') || asset.type === 'IP')) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 88,
+      summary: 'Probable falso positivo: HSTS no aplica sobre direcciones IP privadas o activos internos sin dominio FQDN.',
+      reasoning: ['La directiva HSTS opera a nivel de cabeceras en dominios públicos para su registro en listas de precarga de navegadores.'],
+      contextFactors: [{ factor: 'Activo IP interno', impact: 'INCREASES_FP_PROBABILITY', detail: 'Dirección privada sin nombre de dominio público.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Las direcciones IP internas no gestionan políticas HSTS.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
+  // Regla 4c: CORS o Documentación Pública Intencional
+  if (
+    (ruleId.includes('CORS') || ruleId.includes('SWAGGER') || ruleId.includes('DOCS')) &&
+    (tags.includes('public-data') || tags.includes('public-api') || tags.includes('documentation') || location.includes('/public'))
+  ) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 85,
+      summary: 'Probable falso positivo: recurso diseñado explícitamente para acceso público o documentación abierta.',
+      reasoning: ['Los endpoints y portales de documentación pública no requieren restricciones de origen CORS estricto.'],
+      contextFactors: [{ factor: 'Recurso público intencional', impact: 'INCREASES_FP_PROBABILITY', detail: 'Servicio diseñado para consumo abierto sin autenticación.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Servicio o documentación concebida para acceso público.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
+  // Regla 4d: Cloud S3 bucket para activos estáticos web (CSS/JS/Imágenes)
+  if (ruleId.includes('S3') && (tags.includes('static-assets') || tags.includes('cdn'))) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 90,
+      summary: 'Probable falso positivo: bucket S3 destinado a la distribución de recursos web estáticos públicos.',
+      reasoning: ['Los activos estáticos del frontend (imágenes, hojas de estilo) requieren acceso público de lectura por diseño.'],
+      contextFactors: [{ factor: 'Contenedor de activos estáticos', impact: 'INCREASES_FP_PROBABILITY', detail: 'Contenido público por arquitectura web.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Bucket configurado para entrega pública de archivos estáticos.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
+  // Regla 4e: Actuator health check básico sin secretos
+  if ((location.includes('/actuator/health') || ruleId.includes('ACTUATOR-HEALTH')) && !JSON.stringify(evidence || {}).includes('password')) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 85,
+      summary: 'Probable falso positivo: endpoint /health estándar sin exposición de secretos ni información sensible.',
+      reasoning: ['El endpoint de health check solo confirma disponibilidad operativa para balanceadores de carga.'],
+      contextFactors: [{ factor: 'Endpoint de monitoreo estándar', impact: 'INCREASES_FP_PROBABILITY', detail: 'No divulga datos sensibles ni variables de entorno.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Health check estándar para monitoreo sin exposición de datos.',
+      evaluatedAt: new Date().toISOString(),
+      provider: 'heuristic-expert',
+    };
+  }
+
+  // Regla 4f: Cabecera Server genérica sin versión expuesta
+  if (
+    (ruleId.includes('SERVER-LEAK') || ruleId.includes('SERVER-VERSION') || ruleId === 'HDR-SERVER-BANNER') &&
+    (tags.includes('cdn') || tags.includes('waf') || evidence?.server === 'cloudflare' || description.includes('cloudflare'))
+  ) {
+    return {
+      findingId: id,
+      verdict: 'PROBABLE_FALSE_POSITIVE',
+      confidence: 'HIGH',
+      confidenceScore: 85,
+      summary: 'Probable falso positivo: cabecera de CDN o WAF genérica que no divulga versiones vulnerables específicas.',
+      reasoning: ['La identificación de un proveedor de CDN como Cloudflare no constituye una vulnerabilidad técnica explotable.'],
+      contextFactors: [{ factor: 'Edge CDN genérico', impact: 'INCREASES_FP_PROBABILITY', detail: 'Cabecera estándar de red de distribución.' }],
+      recommendedAction: 'MARK_FALSE_POSITIVE',
+      suggestedNote: 'Falso positivo: Cabecera genérica de CDN perimetral.',
       evaluatedAt: new Date().toISOString(),
       provider: 'heuristic-expert',
     };

@@ -1,6 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromptInjectionShieldService } from '../ai/guardrails/prompt-injection-shield.service';
+import { OutputGuardrailService } from '../ai/guardrails/output-guardrail.service';
+import { LlmObservabilityService } from '../ai/observability/llm-observability.service';
 import { evaluateHeuristicTriage, TriageFindingInput } from './heuristic-triage';
 import { FindingTriageAnalysis } from './triage.interface';
 
@@ -15,6 +18,9 @@ export class FindingTriageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    @Optional() private readonly promptShield: PromptInjectionShieldService = new PromptInjectionShieldService(),
+    @Optional() private readonly outputGuardrail: OutputGuardrailService = new OutputGuardrailService(),
+    @Optional() private readonly observability?: LlmObservabilityService,
   ) {}
 
   /**
@@ -58,6 +64,13 @@ export class FindingTriageService {
       throw new NotFoundException('Hallazgo no encontrado');
     }
 
+    // 1. Inspeccionar evidencia y campos de texto con el Escudo contra Prompt Injection
+    const findingContentForInspection = `${finding.title} ${finding.description || ''} ${finding.location || ''} ${JSON.stringify(finding.evidence || {})}`;
+    const shieldResult = this.promptShield.inspect(
+      findingContentForInspection,
+      `Finding:${finding.id}`,
+    );
+
     const input: TriageFindingInput = {
       id: finding.id,
       ruleId: finding.ruleId,
@@ -65,7 +78,9 @@ export class FindingTriageService {
       severity: finding.severity,
       cvssScore: finding.cvssScore !== null ? Number(finding.cvssScore) : 0,
       title: finding.title,
-      description: finding.description,
+      description: shieldResult.isSuspicious
+        ? this.promptShield.sanitize(finding.description || '')
+        : finding.description,
       location: finding.location,
       evidence: (finding.evidence as Record<string, unknown>) ?? {},
       asset: {
@@ -83,13 +98,48 @@ export class FindingTriageService {
 
     if (apiKey) {
       try {
-        analysis = await this.generateWithAi(input, apiKey);
+        analysis = await this.generateWithAi(input, apiKey, organizationId, shieldResult);
       } catch (err) {
         this.logger.warn(`Fallo al generar triage con IA (${(err as Error).message}). Usando motor heurístico experto.`);
+        if (this.observability) {
+          const model = this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini';
+          await this.observability.recordExecution({
+            organizationId,
+            agentOrService: 'Finding Triage AI',
+            model,
+            promptTokens: 0,
+            completionTokens: 0,
+            latencyMs: 0,
+            status: 'FALLBACK_HEURISTIC',
+            promptInjectionDetected: shieldResult.isSuspicious,
+            promptInjectionScore: shieldResult.riskScore,
+            detectedPatterns: shieldResult.detectedPatterns,
+            fallbackReason: (err as Error).message,
+          });
+        }
         analysis = evaluateHeuristicTriage(input);
       }
     } else {
       analysis = evaluateHeuristicTriage(input);
+    }
+
+    // 2. Si se detectó manipulación o inyección maliciosa en el hallazgo, asegurar que no se rebaje a Falso Positivo
+    if (shieldResult.isSuspicious && analysis.verdict === 'PROBABLE_FALSE_POSITIVE') {
+      this.logger.warn(
+        `[Output Guardrail] Inyección detectada en hallazgo ${finding.id}. Forzando veredicto NEEDS_VERIFICATION.`,
+      );
+      analysis = {
+        ...analysis,
+        verdict: 'NEEDS_VERIFICATION',
+        confidence: 'LOW',
+        confidenceScore: 30,
+        recommendedAction: 'RETEST',
+        summary: `Hallazgo requiere verificación manual: Se detectó un intento de inyección de prompts en los artefactos del hallazgo.`,
+        reasoning: [
+          `ALERTA DE SEGURIDAD: Se detectaron patrones de Prompt Injection (${shieldResult.detectedPatterns.join(', ')}).`,
+          ...analysis.reasoning,
+        ],
+      };
     }
 
     this.cache.set(cacheKey, { analysis, expiresAt: Date.now() + CACHE_TTL_MS });
@@ -97,13 +147,22 @@ export class FindingTriageService {
   }
 
   /**
-   * Llamada al proveedor LLM externo.
+   * Llamada al proveedor LLM externo blindado con delimitadores y observabilidad.
    */
-  private async generateWithAi(input: TriageFindingInput, apiKey: string): Promise<FindingTriageAnalysis> {
+  private async generateWithAi(
+    input: TriageFindingInput,
+    apiKey: string,
+    organizationId: string,
+    shieldResult: { isSuspicious: boolean; riskScore: number; detectedPatterns: string[] },
+  ): Promise<FindingTriageAnalysis> {
     const apiUrl = this.config.get<string>('AI_API_URL') ?? 'https://api.openai.com/v1';
     const model = this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini';
+    const startTime = Date.now();
+
+    const hardenedPrefix = this.promptShield.getHardenedSystemPrefix();
 
     const systemPrompt =
+      `${hardenedPrefix}\n\n` +
       'Eres un analista senior de seguridad de aplicaciones (AppSec) y triage de vulnerabilidades. ' +
       'Tu labor es evaluar objetivamente si un hallazgo técnico de seguridad es un PROBABLE FALSO POSITIVO dado el contexto del activo ' +
       '(por ejemplo, APIs sin renderizado HTML con falta de CSP, puertos legítimos de DNS en servidores de nombres, entornos de pruebas, etc.) ' +
@@ -120,7 +179,7 @@ export class FindingTriageService {
       '  "suggestedNote": string (nota concisa para registrar en la plataforma)\n' +
       '}';
 
-    const userContent = JSON.stringify({
+    const rawFindingJson = JSON.stringify({
       finding: {
         ruleId: input.ruleId,
         category: input.category,
@@ -138,6 +197,8 @@ export class FindingTriageService {
         tags: input.asset.tags,
       },
     });
+
+    const userContent = this.promptShield.wrapUntrustedInput(rawFindingJson, input.id);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
@@ -166,10 +227,32 @@ export class FindingTriageService {
         throw new Error(`LLM API responded with ${response.status}: ${text.slice(0, 150)}`);
       }
 
-      const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const body = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
       const rawContent = body.choices?.[0]?.message?.content;
       if (!rawContent) {
         throw new Error('LLM response returned empty content');
+      }
+
+      const latencyMs = Date.now() - startTime;
+      const promptTokens = body.usage?.prompt_tokens ?? Math.ceil(userContent.length / 4);
+      const completionTokens = body.usage?.completion_tokens ?? Math.ceil(rawContent.length / 4);
+
+      if (this.observability) {
+        await this.observability.recordExecution({
+          organizationId,
+          agentOrService: 'Finding Triage AI',
+          model,
+          promptTokens,
+          completionTokens,
+          latencyMs,
+          status: shieldResult.isSuspicious ? 'BLOCKED_INJECTION' : 'SUCCESS',
+          promptInjectionDetected: shieldResult.isSuspicious,
+          promptInjectionScore: shieldResult.riskScore,
+          detectedPatterns: shieldResult.detectedPatterns,
+        });
       }
 
       const parsed = JSON.parse(rawContent) as Partial<FindingTriageAnalysis>;
@@ -195,3 +278,4 @@ export class FindingTriageService {
     }
   }
 }
+

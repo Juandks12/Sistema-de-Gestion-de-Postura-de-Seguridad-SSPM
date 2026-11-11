@@ -1,6 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmbeddingService } from '../embeddings/embedding.service';
+import { PromptInjectionShieldService } from '../guardrails/prompt-injection-shield.service';
+import { OutputGuardrailService } from '../guardrails/output-guardrail.service';
+import { LlmObservabilityService } from '../observability/llm-observability.service';
 import { KnowledgeCategoryEnum, RagSearchDto } from './dto/rag-search.dto';
 
 export interface RagDocumentResult {
@@ -56,6 +59,9 @@ export class RagRetrievalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly embeddingService: EmbeddingService,
+    @Optional() private readonly promptShield: PromptInjectionShieldService = new PromptInjectionShieldService(),
+    @Optional() private readonly outputGuardrail: OutputGuardrailService = new OutputGuardrailService(),
+    @Optional() private readonly observability?: LlmObservabilityService,
   ) {}
 
   /**
@@ -101,6 +107,23 @@ export class RagRetrievalService {
     organizationId: string,
     customContext?: string,
   ): Promise<GroundedRemediationPlaybook> {
+    const startTime = Date.now();
+    let sanitizedCustomContext = customContext;
+    let isInjectionDetected = false;
+    let injectionScore = 0;
+    let detectedPatterns: string[] = [];
+
+    if (customContext) {
+      const shield = this.promptShield.inspect(customContext, 'RAG Custom Context');
+      if (shield.isSuspicious) {
+        isInjectionDetected = true;
+        injectionScore = shield.riskScore;
+        detectedPatterns = shield.detectedPatterns;
+        sanitizedCustomContext = shield.sanitizedContent;
+        this.logger.warn(`[RAG Retrieval] Prompt injection detectado en customContext: ${detectedPatterns.join(', ')}`);
+      }
+    }
+
     const finding = await this.prisma.finding.findFirst({
       where: { id: findingId, organizationId },
       include: { asset: true },
@@ -111,7 +134,7 @@ export class RagRetrievalService {
     }
 
     // 1. Consulta RAG semántica cruzando ruleId, título, descripción y contexto
-    const query = `${finding.ruleId} ${finding.title} ${finding.category} ${finding.location} ${finding.recommendation} ${customContext || ''}`;
+    const query = `${finding.ruleId} ${finding.title} ${finding.category} ${finding.location} ${finding.recommendation} ${sanitizedCustomContext || ''}`;
 
     const [iacSnippets, guides, complianceDocs, kevEntries] = await Promise.all([
       this.searchSemantic({ query, category: KnowledgeCategoryEnum.REMEDIATION_IAC, limit: 3, minSimilarity: 0.05 }),
@@ -156,6 +179,14 @@ export class RagRetrievalService {
       });
     }
 
+    // Output Guardrail: verificar y sanitizar comandos en snippets de código
+    for (const snippet of codeSnippets) {
+      const { safeCommands, blockedCommands } = this.outputGuardrail.sanitizeRemediationCommands([snippet.code]);
+      if (blockedCommands.length > 0) {
+        snippet.code = `# [GUARDRAIL BLOCK] Comandos destructivos detectados y neutralizados:\n# ${blockedCommands.join('\n# ')}\n\n` + safeCommands.join('\n');
+      }
+    }
+
     // 4. Formular pasos de remediación
     const stepByStepRemediation: string[] = [
       `Validar la ubicación afectada: '${finding.location}' en el activo '${finding.asset?.value || 'N/A'}'.`,
@@ -169,8 +200,24 @@ export class RagRetrievalService {
     const verificationTest = this.buildVerificationTest(finding.ruleId, finding.location, finding.asset?.value);
 
     // 6. Análisis de causa raíz
-    const primaryGuide = guides[0]?.content || finding.description;
+    const primaryGuide = guides[0]?.content || finding.description || '';
     const rootCauseAnalysis = `El hallazgo '${finding.title}' fue detectado con severidad ${finding.severity} debido a una brecha de configuración en '${finding.location}'.\n\nContexto Grounded RAG:\n${primaryGuide.slice(0, 400)}...`;
+
+    // Registrar observabilidad de IA
+    if (this.observability) {
+      await this.observability.recordExecution({
+        organizationId,
+        agentOrService: 'Copilot RAG Retrieval',
+        model: 'text-embedding-3-small',
+        promptTokens: Math.ceil(query.length / 4),
+        completionTokens: 350,
+        latencyMs: Date.now() - startTime,
+        status: isInjectionDetected ? 'BLOCKED_INJECTION' : 'SUCCESS',
+        promptInjectionDetected: isInjectionDetected,
+        promptInjectionScore: injectionScore,
+        detectedPatterns,
+      });
+    }
 
     return {
       findingId: finding.id,
