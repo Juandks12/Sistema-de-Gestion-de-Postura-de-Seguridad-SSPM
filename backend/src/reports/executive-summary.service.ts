@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ReportType } from '@prisma/client';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
+import { PromptInjectionShieldService } from '../ai/guardrails/prompt-injection-shield.service';
+import { LlmObservabilityService } from '../ai/observability/llm-observability.service';
 import { ExecutiveBusinessSummary } from './executive-summary.interface';
 import { generateHeuristicSummary as synthesizeHeuristic } from './heuristic-synthesis';
 import { ReportData, prioritizedFindings } from './report-data';
@@ -18,6 +20,8 @@ export class ExecutiveSummaryService {
   constructor(
     private readonly reports: ReportsService,
     private readonly config: ConfigService,
+    @Optional() private readonly promptShield: PromptInjectionShieldService = new PromptInjectionShieldService(),
+    @Optional() private readonly observability?: LlmObservabilityService,
   ) {}
 
   /**
@@ -38,9 +42,22 @@ export class ExecutiveSummaryService {
     const apiKey = this.config.get<string>('AI_API_KEY');
     if (apiKey) {
       try {
-        summary = await this.generateWithAi(reportData, apiKey);
+        summary = await this.generateWithAi(reportData, apiKey, actor.organizationId);
       } catch (err) {
         this.logger.warn(`Fallo al generar resumen con IA (${(err as Error).message}). Usando motor heurístico experto.`);
+        if (this.observability) {
+          const model = this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini';
+          await this.observability.recordExecution({
+            organizationId: actor.organizationId,
+            agentOrService: 'Executive Summary AI',
+            model,
+            promptTokens: 0,
+            completionTokens: 0,
+            latencyMs: 0,
+            status: 'FALLBACK_HEURISTIC',
+            fallbackReason: (err as Error).message,
+          });
+        }
         summary = this.generateHeuristicSummary(reportData);
       }
     } else {
@@ -61,9 +78,10 @@ export class ExecutiveSummaryService {
   /**
    * Generación con LLM externo si se proporciona API key.
    */
-  private async generateWithAi(data: ReportData, apiKey: string): Promise<ExecutiveBusinessSummary> {
+  private async generateWithAi(data: ReportData, apiKey: string, organizationId: string): Promise<ExecutiveBusinessSummary> {
     const apiUrl = this.config.get<string>('AI_API_URL') ?? 'https://api.openai.com/v1';
     const model = this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini';
+    const startTime = Date.now();
 
     const findings = prioritizedFindings(data).slice(0, 10).map((f) => ({
       title: f.title,
@@ -73,7 +91,10 @@ export class ExecutiveSummaryService {
       asset: f.asset,
     }));
 
+    const hardenedPrefix = this.promptShield.getHardenedSystemPrefix();
+
     const systemPrompt =
+      `${hardenedPrefix}\n\n` +
       'Eres un Director de Seguridad de la Información (CISO) y consultor senior de ciberseguridad. ' +
       'Tu tarea es redactar un Resumen Ejecutivo de Postura de Seguridad para la alta gerencia (CEO, CFO, Junta Directiva). ' +
       'El lenguaje debe ser claro, profesional, persuasivo y enfocado en IMPACTO EN EL NEGOCIO (financiero, operativo, reputacional, legal), ' +
@@ -139,9 +160,28 @@ export class ExecutiveSummaryService {
         throw new Error(`LLM API respondió ${response.status}: ${await response.text()}`);
       }
 
-      const raw = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const raw = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
       const content = raw.choices?.[0]?.message?.content;
       if (!content) throw new Error('Respuesta vacía del proveedor LLM');
+
+      const latencyMs = Date.now() - startTime;
+      const promptTokens = raw.usage?.prompt_tokens ?? Math.ceil(userPrompt.length / 4);
+      const completionTokens = raw.usage?.completion_tokens ?? Math.ceil(content.length / 4);
+
+      if (this.observability) {
+        await this.observability.recordExecution({
+          organizationId,
+          agentOrService: 'Executive Summary AI',
+          model,
+          promptTokens,
+          completionTokens,
+          latencyMs,
+          status: 'SUCCESS',
+        });
+      }
 
       const cleanJson = content.replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
       const parsed = JSON.parse(cleanJson) as ExecutiveBusinessSummary;
@@ -156,3 +196,4 @@ export class ExecutiveSummaryService {
     }
   }
 }
+

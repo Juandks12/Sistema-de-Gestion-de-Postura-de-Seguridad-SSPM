@@ -1516,6 +1516,35 @@ export interface McpToolDefinition {
   };
 }
 
+export interface LlmObservabilityStats {
+  totalCalls: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  averageLatencyMs: number;
+  fallbackRatePercent: number;
+  promptInjectionsBlocked: number;
+  byAgent: Record<string, { calls: number; costUsd: number; tokens: number }>;
+  byModel: Record<string, { calls: number; costUsd: number }>;
+}
+
+export interface LlmExecutionLogItem {
+  id: string;
+  agentOrService: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  latencyMs: number;
+  status: 'SUCCESS' | 'FALLBACK_HEURISTIC' | 'BLOCKED_INJECTION' | 'ERROR';
+  promptInjectionDetected: boolean;
+  promptInjectionScore?: number | null;
+  detectedPatterns: string[];
+  fallbackReason?: string | null;
+  createdAt: string;
+}
+
+
 
 
 

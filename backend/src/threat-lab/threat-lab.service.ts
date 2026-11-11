@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
   FindingCategory,
   FindingSeverity,
@@ -15,6 +15,9 @@ import { computeDefaultFindingDueDate } from '../findings/grc-taxonomy.catalog';
 import { getRule } from '../findings/rules.catalog';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskScoresService } from '../risk/risk-scores.service';
+import { PromptInjectionShieldService } from '../ai/guardrails/prompt-injection-shield.service';
+import { OutputGuardrailService } from '../ai/guardrails/output-guardrail.service';
+import { LlmObservabilityService } from '../ai/observability/llm-observability.service';
 import { analyzeEmailArtifact } from './analyzers/email-malware.analyzer';
 import { analyzeFileArtifact } from './analyzers/file-malware.analyzer';
 import { analyzeUrlArtifact } from './analyzers/url-malware.analyzer';
@@ -59,6 +62,9 @@ export class ThreatLabService {
     private readonly findings: FindingsService,
     private readonly riskScores: RiskScoresService,
     private readonly audit: AuditService,
+    @Optional() private readonly promptShield: PromptInjectionShieldService = new PromptInjectionShieldService(),
+    @Optional() private readonly outputGuardrail: OutputGuardrailService = new OutputGuardrailService(),
+    @Optional() private readonly observability?: LlmObservabilityService,
   ) {}
 
   private async verifyAssetIfPresent(organizationId: string, assetId?: string): Promise<void> {
@@ -78,6 +84,44 @@ export class ThreatLabService {
       rawContent: dto.rawContent,
       artifactName: dto.artifactName,
     });
+
+    // Guardrail: Inspeccionar payload del correo contra Prompt Injection
+    const shieldResult = this.promptShield.inspect(dto.rawContent, `Email:${dto.artifactName}`);
+    if (shieldResult.isSuspicious) {
+      analysis.indicators.push({
+        code: 'EMAIL-PROMPT-INJECTION-ATTEMPT',
+        title: 'Intento de Prompt Injection Detectado',
+        detail: `Se identificaron patrones de jailbreak/inyección: ${shieldResult.detectedPatterns.join(', ')}`,
+        severity: FindingSeverity.HIGH,
+        scoreImpact: 35,
+        mitreTechnique: 'T1059',
+      });
+
+      if (analysis.verdict === MalwareVerdict.CLEAN) {
+        analysis.verdict = MalwareVerdict.SUSPICIOUS;
+        analysis.riskScore = Math.max(analysis.riskScore, shieldResult.riskScore);
+        analysis.severity = FindingSeverity.HIGH;
+      }
+
+      if (this.observability) {
+        await this.observability.recordExecution({
+          organizationId: actor.organizationId,
+          agentOrService: 'Threat Lab Email Guard',
+          model: 'guardrail-regex-shield',
+          promptTokens: Math.ceil(dto.rawContent.length / 4),
+          completionTokens: 0,
+          latencyMs: 1,
+          status: 'BLOCKED_INJECTION',
+          promptInjectionDetected: true,
+          promptInjectionScore: shieldResult.riskScore,
+          detectedPatterns: shieldResult.detectedPatterns,
+        });
+      }
+    }
+
+    // Output Guardrail: Sanitizar comandos de remediación potencialmente dañinos
+    const { safeCommands } = this.outputGuardrail.sanitizeRemediationCommands(analysis.recommendations);
+    analysis.recommendations = safeCommands;
 
     const saved = await this.prisma.malwareAnalysis.create({
       data: {
@@ -135,6 +179,46 @@ export class ThreatLabService {
       sha256: dto.sha256,
     });
 
+    // Guardrail: Inspeccionar texto plano si fue provisto
+    if (dto.rawText) {
+      const shieldResult = this.promptShield.inspect(dto.rawText, `File:${dto.fileName}`);
+      if (shieldResult.isSuspicious) {
+        analysis.indicators.push({
+          code: 'FILE-PROMPT-INJECTION-ATTEMPT',
+          title: 'Intento de Prompt Injection Detectado en Archivo',
+          detail: `Se identificaron patrones de inyección: ${shieldResult.detectedPatterns.join(', ')}`,
+          severity: FindingSeverity.HIGH,
+          scoreImpact: 35,
+          mitreTechnique: 'T1059',
+        });
+
+        if (analysis.verdict === MalwareVerdict.CLEAN) {
+          analysis.verdict = MalwareVerdict.SUSPICIOUS;
+          analysis.riskScore = Math.max(analysis.riskScore, shieldResult.riskScore);
+          analysis.severity = FindingSeverity.HIGH;
+        }
+
+        if (this.observability) {
+          await this.observability.recordExecution({
+            organizationId: actor.organizationId,
+            agentOrService: 'Threat Lab File Guard',
+            model: 'guardrail-regex-shield',
+            promptTokens: Math.ceil(dto.rawText.length / 4),
+            completionTokens: 0,
+            latencyMs: 1,
+            status: 'BLOCKED_INJECTION',
+            promptInjectionDetected: true,
+            promptInjectionScore: shieldResult.riskScore,
+            detectedPatterns: shieldResult.detectedPatterns,
+          });
+        }
+      }
+    }
+
+    // Output Guardrail: Sanitizar comandos de remediación
+    const { safeCommands } = this.outputGuardrail.sanitizeRemediationCommands(analysis.recommendations);
+    analysis.recommendations = safeCommands;
+
     const saved = await this.prisma.malwareAnalysis.create({
       data: {
         organizationId: actor.organizationId,
@@ -178,6 +262,45 @@ export class ThreatLabService {
   async analyzeUrl(actor: AuthUser, dto: AnalyzeUrlDto) {
     await this.verifyAssetIfPresent(actor.organizationId, dto.assetId);
     const analysis = analyzeUrlArtifact({ url: dto.url });
+
+    // Guardrail: Inspeccionar URL decodificada contra payloads de prompt injection
+    const decodedUrl = decodeURIComponent(dto.url);
+    const shieldResult = this.promptShield.inspect(decodedUrl, `URL:${dto.url}`);
+    if (shieldResult.isSuspicious) {
+      analysis.indicators.push({
+        code: 'URL-PROMPT-INJECTION-ATTEMPT',
+        title: 'Intento de Prompt Injection Detectado en URL',
+        detail: `Se detectaron patrones de inyección en la URL: ${shieldResult.detectedPatterns.join(', ')}`,
+        severity: FindingSeverity.HIGH,
+        scoreImpact: 35,
+        mitreTechnique: 'T1059',
+      });
+
+      if (analysis.verdict === MalwareVerdict.CLEAN) {
+        analysis.verdict = MalwareVerdict.SUSPICIOUS;
+        analysis.riskScore = Math.max(analysis.riskScore, shieldResult.riskScore);
+        analysis.severity = FindingSeverity.HIGH;
+      }
+
+      if (this.observability) {
+        await this.observability.recordExecution({
+          organizationId: actor.organizationId,
+          agentOrService: 'Threat Lab URL Guard',
+          model: 'guardrail-regex-shield',
+          promptTokens: Math.ceil(dto.url.length / 4),
+          completionTokens: 0,
+          latencyMs: 1,
+          status: 'BLOCKED_INJECTION',
+          promptInjectionDetected: true,
+          promptInjectionScore: shieldResult.riskScore,
+          detectedPatterns: shieldResult.detectedPatterns,
+        });
+      }
+    }
+
+    // Output Guardrail: Sanitizar comandos
+    const { safeCommands } = this.outputGuardrail.sanitizeRemediationCommands(analysis.recommendations);
+    analysis.recommendations = safeCommands;
 
     const saved = await this.prisma.malwareAnalysis.create({
       data: {

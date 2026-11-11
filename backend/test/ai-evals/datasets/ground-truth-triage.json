@@ -1,0 +1,957 @@
+[
+  {
+    "id": "GT-01",
+    "ruleId": "HDR-CSP-MISSING",
+    "category": "HTTP_HEADERS",
+    "severity": "MEDIUM",
+    "cvssScore": 4.5,
+    "title": "Falta cabecera Content-Security-Policy",
+    "location": "https://api.empresa.com/v1/auth/token",
+    "description": "La cabecera CSP no está presente en la respuesta del endpoint.",
+    "asset": {
+      "type": "API_GATEWAY",
+      "value": "api.empresa.com",
+      "name": "API Gateway Producción",
+      "criticality": "HIGH",
+      "tags": ["api", "production", "json-only"]
+    },
+    "evidence": { "contentType": "application/json" },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "Los endpoints API puros que devuelven JSON no renderizan HTML ni ejecutan scripts en el navegador del usuario."
+  },
+  {
+    "id": "GT-02",
+    "ruleId": "HDR-CSP-MISSING",
+    "category": "HTTP_HEADERS",
+    "severity": "HIGH",
+    "cvssScore": 6.5,
+    "title": "Falta cabecera Content-Security-Policy en portal web",
+    "location": "https://portal.empresa.com/login",
+    "description": "El portal de acceso para clientes no implementa CSP.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "portal.empresa.com",
+      "name": "Portal Clientes",
+      "criticality": "CRITICAL",
+      "tags": ["web", "frontend", "html"]
+    },
+    "evidence": { "contentType": "text/html" },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Formularios web que renderizan HTML requieren CSP para mitigar inyecciones XSS y robo de tokens."
+  },
+  {
+    "id": "GT-03",
+    "ruleId": "HDR-HSTS-MISSING",
+    "category": "HTTP_HEADERS",
+    "severity": "HIGH",
+    "cvssScore": 5.9,
+    "title": "Cabecera Strict-Transport-Security no configurada",
+    "location": "https://tienda.empresa.com",
+    "description": "No se detectó HSTS en el dominio público de e-commerce.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "tienda.empresa.com",
+      "name": "E-Commerce Principal",
+      "criticality": "CRITICAL",
+      "tags": ["ecommerce", "public"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "HSTS es obligatorio en sitios web públicos para prevenir ataques de degradación SSL/TLS (SSL-Strip)."
+  },
+  {
+    "id": "GT-04",
+    "ruleId": "HDR-HSTS-MISSING",
+    "category": "HTTP_HEADERS",
+    "severity": "LOW",
+    "cvssScore": 2.5,
+    "title": "Falta HSTS en dirección IP de red privada",
+    "location": "http://10.0.4.15:8080",
+    "description": "Host interno en segmento RFC1918 no envía HSTS.",
+    "asset": {
+      "type": "IP",
+      "value": "10.0.4.15",
+      "name": "Microservicio Interno de Métricas",
+      "criticality": "LOW",
+      "tags": ["internal", "rfc1918"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "Las IPs internas en redes privadas sin salida a Internet no operan con dominios FQDN públicos que requieran precarga de HSTS."
+  },
+  {
+    "id": "GT-05",
+    "ruleId": "HDR-XFO-MISSING",
+    "category": "HTTP_HEADERS",
+    "severity": "MEDIUM",
+    "cvssScore": 4.3,
+    "title": "Falta cabecera X-Frame-Options en API REST",
+    "location": "https://api.empresa.com/v1/metrics",
+    "description": "No se incluye X-Frame-Options en la respuesta de telemetría JSON.",
+    "asset": {
+      "type": "API_GATEWAY",
+      "value": "api.empresa.com",
+      "name": "API Gateway",
+      "criticality": "MEDIUM",
+      "tags": ["api", "json"]
+    },
+    "evidence": { "contentType": "application/json" },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "Clickjacking requiere que el navegador renderice la respuesta dentro de un iframe HTML; una respuesta JSON es inmune a clickjacking."
+  },
+  {
+    "id": "GT-06",
+    "ruleId": "HDR-XFO-MISSING",
+    "category": "HTTP_HEADERS",
+    "severity": "HIGH",
+    "cvssScore": 6.1,
+    "title": "Falta X-Frame-Options en portal bancario",
+    "location": "https://banca.empresa.com/transferencias",
+    "description": "Página web de pagos susceptible a Clickjacking.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "banca.empresa.com",
+      "name": "Portal Transaccional",
+      "criticality": "CRITICAL",
+      "tags": ["banking", "payments"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Páginas transaccionales que renderizan botones de acción deben prevenir incrustación en iframes maliciosos."
+  },
+  {
+    "id": "GT-07",
+    "ruleId": "HDR-SERVER-LEAK",
+    "category": "HTTP_HEADERS",
+    "severity": "LOW",
+    "cvssScore": 3.1,
+    "title": "Fuga de versión de servidor en cabecera Server",
+    "location": "https://app.empresa.com",
+    "description": "Server: Apache/2.4.41 (Ubuntu) OpenSSL/1.1.1f.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "app.empresa.com",
+      "name": "Aplicación Corporativa",
+      "criticality": "HIGH",
+      "tags": ["production"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Divulgar versiones específicas de software facilita la selección de exploits por atacantes externos."
+  },
+  {
+    "id": "GT-08",
+    "ruleId": "HDR-SERVER-LEAK",
+    "category": "HTTP_HEADERS",
+    "severity": "INFO",
+    "cvssScore": 0.0,
+    "title": "Cabecera Server genérica sin versión",
+    "location": "https://cdn.empresa.com",
+    "description": "Server: cloudflare",
+    "asset": {
+      "type": "CDN",
+      "value": "cdn.empresa.com",
+      "name": "Cloudflare CDN Edge",
+      "criticality": "MEDIUM",
+      "tags": ["cdn", "waf"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "El nombre genérico de un WAF o CDN sin versión no constituye una fuga de información explotable."
+  },
+  {
+    "id": "GT-09",
+    "ruleId": "EMAIL-SPF-MISSING",
+    "category": "EMAIL_SECURITY",
+    "severity": "MEDIUM",
+    "cvssScore": 5.0,
+    "title": "Registro SPF no encontrado sobre IP pública",
+    "location": "198.51.100.25",
+    "description": "La dirección IP no cuenta con registro SPF en su zona DNS inversa.",
+    "asset": {
+      "type": "IP",
+      "value": "198.51.100.25",
+      "name": "Servidor Web Edge",
+      "criticality": "MEDIUM",
+      "tags": ["ip-address"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "Los registros SPF se publican exclusivamente sobre nombres de dominio FQDN, no sobre direcciones IP individuales."
+  },
+  {
+    "id": "GT-10",
+    "ruleId": "EMAIL-SPF-MISSING",
+    "category": "EMAIL_SECURITY",
+    "severity": "HIGH",
+    "cvssScore": 6.8,
+    "title": "Registro SPF inexistente en dominio corporativo",
+    "location": "empresa.com",
+    "description": "El dominio emisor principal no tiene ningún registro SPF publicado.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "empresa.com",
+      "name": "Dominio Corporativo",
+      "criticality": "CRITICAL",
+      "tags": ["email", "brand"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "La ausencia de SPF en el dominio corporativo permite a cualquier actor suplantar correos en nombre de la empresa."
+  },
+  {
+    "id": "GT-11",
+    "ruleId": "EMAIL-DMARC-POLICY-NONE",
+    "category": "EMAIL_SECURITY",
+    "severity": "HIGH",
+    "cvssScore": 6.2,
+    "title": "Política DMARC configurada en p=none (solo monitoreo)",
+    "location": "empresa.com",
+    "description": "v=DMARC1; p=none; rua=mailto:dmarc@empresa.com. Los correos falsificados no son rechazados.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "empresa.com",
+      "name": "Dominio Corporativo",
+      "criticality": "CRITICAL",
+      "tags": ["email"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "p=none no bloquea el phishing ni el spoofing activo; se debe migrar a p=quarantine o p=reject."
+  },
+  {
+    "id": "GT-12",
+    "ruleId": "EMAIL-BIMI-MISSING",
+    "category": "EMAIL_SECURITY",
+    "severity": "LOW",
+    "cvssScore": 2.0,
+    "title": "Falta indicador BIMI en dominio de pruebas",
+    "location": "staging.empresa.dev",
+    "description": "No se detecta registro BIMI para visualización de logotipo en clientes de correo.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "staging.empresa.dev",
+      "name": "Dominio de Pruebas",
+      "criticality": "LOW",
+      "tags": ["staging", "non-production"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "BIMI es una mejora de identidad visual de marca aplicable a dominios productivos, no a entornos de prueba."
+  },
+  {
+    "id": "GT-13",
+    "ruleId": "PORT-DNS-OPEN",
+    "category": "NETWORK_PORTS",
+    "severity": "MEDIUM",
+    "cvssScore": 5.0,
+    "title": "Puerto 53/UDP (DNS) abierto en el perímetro",
+    "location": "ns1.empresa.com:53",
+    "description": "Servicio DNS escuchando peticiones en el puerto 53.",
+    "asset": {
+      "type": "NAMESERVER",
+      "value": "ns1.empresa.com",
+      "name": "Servidor DNS Autoritativo 1",
+      "criticality": "HIGH",
+      "tags": ["dns", "nameserver"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "El puerto 53 es el propósito operativo esencial de un servidor de nombres DNS autoritativo."
+  },
+  {
+    "id": "GT-14",
+    "ruleId": "PORT-DNS-OPEN",
+    "category": "NETWORK_PORTS",
+    "severity": "HIGH",
+    "cvssScore": 7.0,
+    "title": "Puerto 53/UDP (DNS) abierto en servidor de aplicaciones web",
+    "location": "app.empresa.com:53",
+    "description": "El servidor web tiene un resolvedor DNS abierto susceptible a amplificación DDoS.",
+    "asset": {
+      "type": "WEB_SERVER",
+      "value": "app.empresa.com",
+      "name": "Servidor Web App",
+      "criticality": "HIGH",
+      "tags": ["web"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Un servidor web no debe exponer servicios DNS públicos, especialmente resolvedores abiertos."
+  },
+  {
+    "id": "GT-15",
+    "ruleId": "PORT-SSH-EXPOSED",
+    "category": "NETWORK_PORTS",
+    "severity": "CRITICAL",
+    "cvssScore": 8.8,
+    "title": "Puerto SSH (22) expuesto a Internet en base de datos productiva",
+    "location": "db-master.empresa.com:22",
+    "description": "Acceso administrativo SSH abierto a 0.0.0.0/0 en el nodo de base de datos.",
+    "asset": {
+      "type": "DATABASE",
+      "value": "db-master.empresa.com",
+      "name": "Base de Datos Producción",
+      "criticality": "CRITICAL",
+      "tags": ["database", "production"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Los servidores de base de datos jamás deben exponer SSH a la Internet pública; solo mediante VPN o Bastion."
+  },
+  {
+    "id": "GT-16",
+    "ruleId": "PORT-SSH-EXPOSED",
+    "category": "NETWORK_PORTS",
+    "severity": "MEDIUM",
+    "cvssScore": 4.5,
+    "title": "Puerto SSH (22) en Bastion Host corporativo con MFA",
+    "location": "bastion.empresa.com:22",
+    "description": "Puerto SSH abierto en el host designado formalmente como punto de entrada perimetral.",
+    "asset": {
+      "type": "BASTION_HOST",
+      "value": "bastion.empresa.com",
+      "name": "Jump Host Bastion",
+      "criticality": "HIGH",
+      "tags": ["bastion", "mfa-enforced"]
+    },
+    "expectedVerdict": "NEEDS_VERIFICATION",
+    "rationale": "El bastión está diseñado para SSH, pero se debe verificar si implementa MFA y listas de acceso IP restrictivas."
+  },
+  {
+    "id": "GT-17",
+    "ruleId": "PORT-RDP-EXPOSED",
+    "category": "NETWORK_PORTS",
+    "severity": "CRITICAL",
+    "cvssScore": 9.8,
+    "title": "Escritorio Remoto de Windows (RDP 3389) accesible públicamente",
+    "location": "198.51.100.12:3389",
+    "description": "Puerto 3389/TCP expuesto sin VPN ni firewall perimetral.",
+    "asset": {
+      "type": "SERVER",
+      "value": "198.51.100.12",
+      "name": "Controlador de Dominio Active Directory",
+      "criticality": "CRITICAL",
+      "tags": ["windows", "active-directory"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "RDP expuesto a Internet es el principal vector inicial de intrusiones de ransomware corporativo."
+  },
+  {
+    "id": "GT-18",
+    "ruleId": "PORT-DB-EXPOSED",
+    "category": "NETWORK_PORTS",
+    "severity": "CRITICAL",
+    "cvssScore": 9.1,
+    "title": "Motor PostgreSQL (5432) expuesto a Internet",
+    "location": "db.empresa.com:5432",
+    "description": "Puerto 5432 abierto al público permitiendo intentos de fuerza bruta.",
+    "asset": {
+      "type": "DATABASE",
+      "value": "db.empresa.com",
+      "name": "Postgres Cluster",
+      "criticality": "CRITICAL",
+      "tags": ["database", "postgres"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Las conexiones directas a motores de bases de datos deben restringirse a redes VPC internas."
+  },
+  {
+    "id": "GT-19",
+    "ruleId": "PORT-HTTP-CLEARTEXT",
+    "category": "NETWORK_PORTS",
+    "severity": "LOW",
+    "cvssScore": 2.0,
+    "title": "Puerto 80/TCP abierto con redirección 301 a HTTPS",
+    "location": "https://empresa.com:80",
+    "description": "El puerto 80 responde únicamente con HTTP 301 Moved Permanently hacia https://empresa.com.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "empresa.com",
+      "name": "Sitio Web Institucional",
+      "criticality": "HIGH",
+      "tags": ["web", "https-redirect"]
+    },
+    "evidence": { "statusCode": 301, "location": "https://empresa.com/" },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "El puerto 80 es necesario como estándar en la Web para redirigir a los visitantes a HTTPS de forma transparente."
+  },
+  {
+    "id": "GT-20",
+    "ruleId": "PORT-HTTP-CLEARTEXT",
+    "category": "NETWORK_PORTS",
+    "severity": "HIGH",
+    "cvssScore": 7.4,
+    "title": "Formulario de inicio de sesión transmitido por HTTP en texto claro",
+    "location": "http://admin.empresa.com/login",
+    "description": "El formulario de autenticación no redirige a HTTPS y recibe contraseñas en claro.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "admin.empresa.com",
+      "name": "Panel de Administración",
+      "criticality": "CRITICAL",
+      "tags": ["admin", "auth"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Transmitir credenciales sin cifrado TLS viola directamente PCI-DSS, GDPR e ISO 27001."
+  },
+  {
+    "id": "GT-21",
+    "ruleId": "TLS-DEPRECATED-VERSION",
+    "category": "SSL_TLS",
+    "severity": "HIGH",
+    "cvssScore": 7.5,
+    "title": "Soporte de protocolos obsoletos TLS 1.0 y TLS 1.1",
+    "location": "pagos.empresa.com:443",
+    "description": "La pasarela de pagos aún negocia sesiones con TLS 1.0 y TLS 1.1.",
+    "asset": {
+      "type": "PAYMENT_GATEWAY",
+      "value": "pagos.empresa.com",
+      "name": "Pasarela de Pagos",
+      "criticality": "CRITICAL",
+      "tags": ["pci-dss", "payments"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "TLS 1.0 y 1.1 están prohibidos expresamente por PCI-DSS debido a debilidades criptográficas severas."
+  },
+  {
+    "id": "GT-22",
+    "ruleId": "TLS-CERT-EXPIRED",
+    "category": "SSL_TLS",
+    "severity": "CRITICAL",
+    "cvssScore": 8.0,
+    "title": "Certificado digital SSL/TLS expirado",
+    "location": "clientes.empresa.com:443",
+    "description": "El certificado X.509 expiró hace 4 días y produce advertencias de seguridad en navegadores.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "clientes.empresa.com",
+      "name": "Portal Clientes",
+      "criticality": "HIGH",
+      "tags": ["web"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Un certificado caducado interrumpe la operatividad e incita a los usuarios a eludir advertencias de seguridad."
+  },
+  {
+    "id": "GT-23",
+    "ruleId": "TLS-CERT-SELFSIGNED",
+    "category": "SSL_TLS",
+    "severity": "LOW",
+    "cvssScore": 3.0,
+    "title": "Certificado autofirmado en entorno de pruebas interno",
+    "location": "10.0.9.4:8443",
+    "description": "Certificado emitido por una CA interna privada en máquina de desarrollo.",
+    "asset": {
+      "type": "IP",
+      "value": "10.0.9.4",
+      "name": "Servidor de Pruebas QA",
+      "criticality": "LOW",
+      "tags": ["dev", "internal"]
+    },
+    "expectedVerdict": "NEEDS_VERIFICATION",
+    "rationale": "En entornos de prueba es común usar certificados internos, pero debe confirmarse si el entorno interactúa con datos reales."
+  },
+  {
+    "id": "GT-24",
+    "ruleId": "LEAK-GIT-CONFIG",
+    "category": "SENSITIVE_PATHS",
+    "severity": "CRITICAL",
+    "cvssScore": 9.3,
+    "title": "Directorio .git accesible públicamente",
+    "location": "https://tienda.empresa.com/.git/config",
+    "description": "La carpeta de control de versiones Git está expuesta permitiendo la descarga del código fuente.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "tienda.empresa.com",
+      "name": "Tienda en Línea",
+      "criticality": "CRITICAL",
+      "tags": ["ecommerce"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Permite clonar el repositorio completo incluyendo credenciales, claves de API e historial de commits."
+  },
+  {
+    "id": "GT-25",
+    "ruleId": "LEAK-ENV-FILE",
+    "category": "SENSITIVE_PATHS",
+    "severity": "CRITICAL",
+    "cvssScore": 9.8,
+    "title": "Archivo de entorno .env accesible vía HTTP",
+    "location": "https://api.empresa.com/.env",
+    "description": "El archivo de variables de entorno contiene secretos de base de datos y llaves de cifrado.",
+    "asset": {
+      "type": "API_GATEWAY",
+      "value": "api.empresa.com",
+      "name": "API Backend",
+      "criticality": "CRITICAL",
+      "tags": ["api"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Exposición crítica e inmediata de credenciales maestras de la plataforma."
+  },
+  {
+    "id": "GT-26",
+    "ruleId": "LEAK-SWAGGER-DOCS",
+    "category": "SENSITIVE_PATHS",
+    "severity": "LOW",
+    "cvssScore": 3.5,
+    "title": "Documentación Swagger UI pública en API de desarrolladores",
+    "location": "https://developer.empresa.com/docs",
+    "description": "Interfaz interactiva OpenAPI expuesta en el portal público para socios y desarrolladores.",
+    "asset": {
+      "type": "PUBLIC_PORTAL",
+      "value": "developer.empresa.com",
+      "name": "Portal de Desarrolladores Públicos",
+      "criticality": "LOW",
+      "tags": ["public-api", "documentation"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "La documentación en un portal de desarrolladores abierto está diseñada intencionalmente para ser pública."
+  },
+  {
+    "id": "GT-27",
+    "ruleId": "LEAK-ACTUATOR-HEALTH",
+    "category": "SENSITIVE_PATHS",
+    "severity": "LOW",
+    "cvssScore": 2.0,
+    "title": "Endpoint /actuator/health accesible",
+    "location": "https://service.empresa.com/actuator/health",
+    "description": "Retorna exclusivamente {\"status\":\"UP\"} para chequeo de balanceador.",
+    "asset": {
+      "type": "MICROSERVICE",
+      "value": "service.empresa.com",
+      "name": "Servicio de Notificaciones",
+      "criticality": "MEDIUM",
+      "tags": ["spring-boot"]
+    },
+    "evidence": { "body": "{\"status\":\"UP\"}" },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "El health check estándar sin detalles de componentes ni dependencias no divulga información sensible."
+  },
+  {
+    "id": "GT-28",
+    "ruleId": "LEAK-ACTUATOR-ENV",
+    "category": "SENSITIVE_PATHS",
+    "severity": "CRITICAL",
+    "cvssScore": 9.5,
+    "title": "Spring Boot Actuator /actuator/env expuesto",
+    "location": "https://service.empresa.com/actuator/env",
+    "description": "Divulga propiedades de configuración del sistema y variables de entorno del servidor.",
+    "asset": {
+      "type": "MICROSERVICE",
+      "value": "service.empresa.com",
+      "name": "Servicio Central",
+      "criticality": "CRITICAL",
+      "tags": ["spring-boot"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Expone configuración sensible y secretos en memoria de la JVM."
+  },
+  {
+    "id": "GT-29",
+    "ruleId": "CSPM-AWS-S3-PUBLIC-BUCKET",
+    "category": "CLOUD_SECURITY",
+    "severity": "CRITICAL",
+    "cvssScore": 9.0,
+    "title": "Bucket S3 con permisos de lectura pública sobre respaldos",
+    "location": "arn:aws:s3:::empresa-database-backups",
+    "description": "El bucket de respaldos no tiene habilitado Block Public Access (All).",
+    "asset": {
+      "type": "S3_BUCKET",
+      "value": "empresa-database-backups",
+      "name": "Bucket de Backups",
+      "criticality": "CRITICAL",
+      "tags": ["aws", "cloud", "backup"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Respaldos corporativos expuestos públicamente constituyen una brecha de datos masiva."
+  },
+  {
+    "id": "GT-30",
+    "ruleId": "CSPM-AWS-S3-PUBLIC-BUCKET",
+    "category": "CLOUD_SECURITY",
+    "severity": "LOW",
+    "cvssScore": 2.5,
+    "title": "Bucket S3 público para activos estáticos web (CSS/JS/Imágenes)",
+    "location": "arn:aws:s3:::empresa-public-web-assets",
+    "description": "Bucket configurado para alojar favicon, hojas de estilo e imágenes públicas de la web.",
+    "asset": {
+      "type": "S3_BUCKET",
+      "value": "empresa-public-web-assets",
+      "name": "Assets Públicos",
+      "criticality": "LOW",
+      "tags": ["aws", "static-assets", "cdn"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "Los recursos estáticos para el frontend público están destinados por arquitectura a ser legibles públicamente."
+  },
+  {
+    "id": "GT-31",
+    "ruleId": "CSPM-AWS-ROOT-MFA-DISABLED",
+    "category": "CLOUD_SECURITY",
+    "severity": "CRITICAL",
+    "cvssScore": 9.9,
+    "title": "Cuenta raíz de AWS (Root User) sin autenticación multifactor (MFA)",
+    "location": "AWS Account: 123456789012",
+    "description": "El usuario root carece de dispositivo virtual o físico de MFA.",
+    "asset": {
+      "type": "AWS_ACCOUNT",
+      "value": "123456789012",
+      "name": "Cuenta Principal de AWS",
+      "criticality": "CRITICAL",
+      "tags": ["aws", "root"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "El usuario root tiene privilegios absolutos sobre toda la infraestructura cloud y debe tener MFA mandatorio."
+  },
+  {
+    "id": "GT-32",
+    "ruleId": "CSPM-AZURE-NSG-OPEN-SSH",
+    "category": "CLOUD_SECURITY",
+    "severity": "CRITICAL",
+    "cvssScore": 8.5,
+    "title": "Azure Network Security Group permite SSH desde cualquier origen (0.0.0.0/0)",
+    "location": "nsg-backend-prod (Regla: allow-ssh)",
+    "description": "Regla entrante permite conexiones al puerto 22 desde cualquier dirección IP de Internet.",
+    "asset": {
+      "type": "AZURE_NSG",
+      "value": "nsg-backend-prod",
+      "name": "NSG Backend Producción",
+      "criticality": "CRITICAL",
+      "tags": ["azure", "network"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Exponer SSH sin restricción en Azure facilita el movimiento lateral y compromiso de instancias virtuales."
+  },
+  {
+    "id": "GT-33",
+    "ruleId": "MALWARE-RANSOMWARE-DETECTED",
+    "category": "MALWARE_THREAT",
+    "severity": "CRITICAL",
+    "cvssScore": 10.0,
+    "title": "Firma de Ransomware WannaCry detectada en artefacto adjunto",
+    "location": "factura_vencida.pdf.exe",
+    "description": "Coincidencia exacta de hash y patrones binarios con cepa de ransomware conocida.",
+    "asset": {
+      "type": "FILE",
+      "value": "factura_vencida.pdf.exe",
+      "name": "Archivo Adjunto en Correo",
+      "criticality": "CRITICAL",
+      "tags": ["malware", "threat-lab"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Firma confirmada de ransomware activo no admite dudas; remediación y aislamiento urgente."
+  },
+  {
+    "id": "GT-34",
+    "ruleId": "MALWARE-EICAR-TEST",
+    "category": "MALWARE_THREAT",
+    "severity": "LOW",
+    "cvssScore": 1.0,
+    "title": "Cadena de prueba estándar antivirus EICAR detectada",
+    "location": "eicar.com.txt",
+    "description": "Archivo de prueba sintético utilizado para verificar la respuesta de motores antivirus.",
+    "asset": {
+      "type": "FILE",
+      "value": "eicar.com.txt",
+      "name": "Archivo de Validación Antivirus",
+      "criticality": "LOW",
+      "tags": ["testing", "eicar"]
+    },
+    "expectedVerdict": "NEEDS_VERIFICATION",
+    "rationale": "EICAR no es dañino por sí mismo; se utiliza para probar defensas pero debe registrarse el contexto del test."
+  },
+  {
+    "id": "GT-35",
+    "ruleId": "MAGECART-SKIMMER-DETECTED",
+    "category": "ECOMMERCE_WEB",
+    "severity": "CRITICAL",
+    "cvssScore": 9.6,
+    "title": "Script de robo de tarjetas (Magecart) inyectado en pasarela de pago",
+    "location": "https://tienda.empresa.com/checkout.js",
+    "description": "Se detectó código malicioso ofuscado que intercepta eventos de teclado en campos de tarjeta de crédito.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "tienda.empresa.com",
+      "name": "E-Commerce",
+      "criticality": "CRITICAL",
+      "tags": ["ecommerce", "payments"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Ataque en curso de robo de tarjetas de crédito (e-skimming) requiere retirada inmediata del script."
+  },
+  {
+    "id": "GT-36",
+    "ruleId": "VULN-LOG4SHELL-RCE",
+    "category": "VULNERABILITY",
+    "severity": "CRITICAL",
+    "cvssScore": 10.0,
+    "title": "Ejecución Remota de Código Log4Shell (CVE-2021-44228)",
+    "location": "https://auth.empresa.com:8443 (log4j-core 2.14.1)",
+    "description": "Librería vulnerable a inyección JNDI accesible desde campos HTTP de entrada.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "auth.empresa.com",
+      "name": "Servidor de Identidad",
+      "criticality": "CRITICAL",
+      "tags": ["cisa-kev", "cve"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Vulnerabilidad en catálogo CISA KEV con explotación activa y severidad máxima (10.0)."
+  },
+  {
+    "id": "GT-37",
+    "ruleId": "DNS-SUBDOMAIN-TAKEOVER",
+    "category": "DNS_SECURITY",
+    "severity": "HIGH",
+    "cvssScore": 8.1,
+    "title": "CNAME huérfano apunta a recurso S3/GitHub inexistente (Takeover)",
+    "location": "blog.empresa.com -> empresa-blog.s3-website.amazonaws.com",
+    "description": "El registro CNAME apunta a un bucket no reclamado permitiendo a terceros registrarlo.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "blog.empresa.com",
+      "name": "Subdominio Blog",
+      "criticality": "HIGH",
+      "tags": ["dns", "takeover"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Un atacante puede reclamar el bucket y servir contenido malicioso o phishing bajo el dominio de la empresa."
+  },
+  {
+    "id": "GT-38",
+    "ruleId": "DNS-ZONE-TRANSFER",
+    "category": "DNS_SECURITY",
+    "severity": "MEDIUM",
+    "cvssScore": 5.3,
+    "title": "Transferencia de zona DNS completa (AXFR) permitida",
+    "location": "ns2.empresa.com:53 (AXFR)",
+    "description": "El servidor DNS permite descargar todos los registros de la zona a cualquier cliente.",
+    "asset": {
+      "type": "NAMESERVER",
+      "value": "ns2.empresa.com",
+      "name": "DNS Secundario",
+      "criticality": "HIGH",
+      "tags": ["dns"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "AXFR permite a atacantes mapear la totalidad de activos, servidores internos e infraestructura de la organización."
+  },
+  {
+    "id": "GT-39",
+    "ruleId": "CORS-WILDCARD-ORIGIN",
+    "category": "HTTP_HEADERS",
+    "severity": "HIGH",
+    "cvssScore": 6.5,
+    "title": "CORS Access-Control-Allow-Origin: * con credenciales habilitadas",
+    "location": "https://api.empresa.com/v1/user/profile",
+    "description": "Permite a cualquier origen leer datos autenticados de perfil de usuario.",
+    "asset": {
+      "type": "API_GATEWAY",
+      "value": "api.empresa.com",
+      "name": "API de Clientes",
+      "criticality": "HIGH",
+      "tags": ["api", "cors"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Configuración insegura de CORS que rompe el principio de mismo origen (Same-Origin Policy)."
+  },
+  {
+    "id": "GT-40",
+    "ruleId": "CORS-WILDCARD-ORIGIN",
+    "category": "HTTP_HEADERS",
+    "severity": "LOW",
+    "cvssScore": 2.0,
+    "title": "CORS Access-Control-Allow-Origin: * en endpoint público de tipos de cambio",
+    "location": "https://api.empresa.com/v1/public/forex-rates",
+    "description": "Datos financieros públicos sin autenticación diseñados para consumo abierto.",
+    "asset": {
+      "type": "API_GATEWAY",
+      "value": "api.empresa.com",
+      "name": "API Pública",
+      "criticality": "LOW",
+      "tags": ["public-data"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "Los endpoints públicos diseñados para consumo universal requieren Origin: * para funcionar."
+  },
+  {
+    "id": "GT-41",
+    "ruleId": "WEB-SOURCEMAP-EXPOSED",
+    "category": "SENSITIVE_PATHS",
+    "severity": "MEDIUM",
+    "cvssScore": 4.0,
+    "title": "Mapas de código fuente de JavaScript (.js.map) expuestos en producción",
+    "location": "https://app.empresa.com/static/js/main.b91a72.js.map",
+    "description": "Permite reconstruir el código fuente original de React/TypeScript de la aplicación.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "app.empresa.com",
+      "name": "Web SPA",
+      "criticality": "MEDIUM",
+      "tags": ["frontend"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Facilita la auditoría de vulnerabilidades por atacantes al exponer lógica interna de negocio y comentarios."
+  },
+  {
+    "id": "GT-42",
+    "ruleId": "WEB-DEBUG-MODE",
+    "category": "SENSITIVE_PATHS",
+    "severity": "CRITICAL",
+    "cvssScore": 8.9,
+    "title": "Consola de depuración interactiva de Django / Werkzeug expuesta",
+    "location": "https://analytics.empresa.com/console",
+    "description": "Consola interactiva de Python accesible permitiendo ejecución de comandos.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "analytics.empresa.com",
+      "name": "Dashboard Analítica",
+      "criticality": "CRITICAL",
+      "tags": ["python", "django"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "La consola de depuración de Werkzeug permite ejecución arbitraria de comandos en el servidor."
+  },
+  {
+    "id": "GT-43",
+    "ruleId": "EMAIL-MTA-STS-MISSING",
+    "category": "EMAIL_SECURITY",
+    "severity": "LOW",
+    "cvssScore": 3.0,
+    "title": "Falta política MTA-STS en dominio que no recibe correos (no-reply)",
+    "location": "noreply-alerts.empresa.com",
+    "description": "Subdominio configurado exclusivamente para envíos de alertas automatizadas.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "noreply-alerts.empresa.com",
+      "name": "Emisor Solo Envío",
+      "criticality": "LOW",
+      "tags": ["outbound-only"]
+    },
+    "expectedVerdict": "PROBABLE_FALSE_POSITIVE",
+    "rationale": "MTA-STS asegura la recepción de correos entrantes hacia el servidor MX; dominios que solo emiten no requieren MTA-STS."
+  },
+  {
+    "id": "GT-44",
+    "ruleId": "PORT-FTP-ANONYMOUS",
+    "category": "NETWORK_PORTS",
+    "severity": "CRITICAL",
+    "cvssScore": 8.2,
+    "title": "Acceso anónimo habilitado en servidor FTP (puerto 21)",
+    "location": "files.empresa.com:21",
+    "description": "Servidor FTP permite ingreso con usuario 'anonymous' y contraseña en blanco.",
+    "asset": {
+      "type": "FILE_SERVER",
+      "value": "files.empresa.com",
+      "name": "Servidor de Archivos",
+      "criticality": "HIGH",
+      "tags": ["ftp", "storage"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Permite a cualquier usuario acceder o subir archivos sin ningún control de identidad."
+  },
+  {
+    "id": "GT-45",
+    "ruleId": "PORT-TELNET-OPEN",
+    "category": "NETWORK_PORTS",
+    "severity": "CRITICAL",
+    "cvssScore": 9.0,
+    "title": "Protocolo inseguro Telnet (puerto 23) activo en enrutador de borde",
+    "location": "router-core.empresa.com:23",
+    "description": "Administración por Telnet sin cifrado en equipo de red perimetral.",
+    "asset": {
+      "type": "ROUTER",
+      "value": "router-core.empresa.com",
+      "name": "Router de Borde",
+      "criticality": "CRITICAL",
+      "tags": ["network", "router"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Telnet transmite credenciales y comandos en texto claro, totalmente desaconsejado en redes modernas."
+  },
+  {
+    "id": "GT-46",
+    "ruleId": "TLS-CIPHER-WEAK",
+    "category": "SSL_TLS",
+    "severity": "HIGH",
+    "cvssScore": 6.8,
+    "title": "Cifrado débil RC4 y 3DES soportado en servidor HTTPS",
+    "location": "legacy.empresa.com:443",
+    "description": "Negociación de suites CBC débiles susceptibles al ataque SWEET32.",
+    "asset": {
+      "type": "WEB_APPLICATION",
+      "value": "legacy.empresa.com",
+      "name": "Sistema Legado",
+      "criticality": "MEDIUM",
+      "tags": ["legacy"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Suites criptográficas vulnerables a ataques de colisión y texto plano."
+  },
+  {
+    "id": "GT-47",
+    "ruleId": "CSPM-AZURE-STORAGE-HTTP",
+    "category": "CLOUD_SECURITY",
+    "severity": "HIGH",
+    "cvssScore": 7.0,
+    "title": "Cuenta de almacenamiento Azure permite tráfico HTTP no seguro",
+    "location": "stprodcorp01 (SupportsHttpsTrafficOnly = false)",
+    "description": "La cuenta de Blob Storage permite transferencias sin forzar HTTPS.",
+    "asset": {
+      "type": "AZURE_STORAGE",
+      "value": "stprodcorp01",
+      "name": "Storage Corporativo",
+      "criticality": "HIGH",
+      "tags": ["azure", "storage"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Todo acceso a datos en la nube debe exigir HTTPS mandatorio para evitar interceptación en tránsito."
+  },
+  {
+    "id": "GT-48",
+    "ruleId": "PORT-SNMP-DEFAULT-COMMUNITY",
+    "category": "NETWORK_PORTS",
+    "severity": "HIGH",
+    "cvssScore": 7.5,
+    "title": "Agente SNMP responde con comunidad por defecto 'public'",
+    "location": "switch-core.empresa.com:161",
+    "description": "Comunidad SNMP v1/v2c 'public' permite leer información de interfaces y rutas.",
+    "asset": {
+      "type": "SWITCH",
+      "value": "switch-core.empresa.com",
+      "name": "Switch Central",
+      "criticality": "HIGH",
+      "tags": ["snmp", "hardware"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Comunidades SNMP por defecto facilitan reconocimiento detallado y potencial control de hardware de red."
+  },
+  {
+    "id": "GT-49",
+    "ruleId": "LEAK-ROBOTS-SENSITIVE",
+    "category": "SENSITIVE_PATHS",
+    "severity": "LOW",
+    "cvssScore": 2.2,
+    "title": "Archivo robots.txt indexa rutas de administración (/admin-secret-portal)",
+    "location": "https://empresa.com/robots.txt",
+    "description": "Disallow: /admin-secret-portal divulga la existencia de rutas ocultas.",
+    "asset": {
+      "type": "DOMAIN",
+      "value": "empresa.com",
+      "name": "Sitio Web",
+      "criticality": "MEDIUM",
+      "tags": ["web"]
+    },
+    "expectedVerdict": "NEEDS_VERIFICATION",
+    "rationale": "robots.txt es público por diseño; divulgar URLs secretas es mala práctica pero requiere verificar si la ruta está protegida."
+  },
+  {
+    "id": "GT-50",
+    "ruleId": "VULN-SPRING4SHELL-RCE",
+    "category": "VULNERABILITY",
+    "severity": "CRITICAL",
+    "cvssScore": 9.8,
+    "title": "Spring Framework Data Binding RCE (Spring4Shell - CVE-2022-22965)",
+    "location": "https://api.empresa.com (Spring Framework 5.3.17)",
+    "description": "Vulnerabilidad crítica que permite inyección de beans y ejecución remota de código.",
+    "asset": {
+      "type": "API_GATEWAY",
+      "value": "api.empresa.com",
+      "name": "API Gateway Producción",
+      "criticality": "CRITICAL",
+      "tags": ["cve", "java", "spring"]
+    },
+    "expectedVerdict": "CONFIRMED_TRUE_POSITIVE",
+    "rationale": "Vulnerabilidad crítica RCE con exploits públicos conocidos; requiere actualización inmediata de dependencias."
+  }
+]

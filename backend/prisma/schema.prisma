@@ -295,6 +295,7 @@ model Organization {
   diagnosticBatches    DiagnosticBatch[]
   malwareAnalyses      MalwareAnalysis[]
   ticketingIntegration TicketingIntegration?
+  llmExecutionLogs     LlmExecutionLog[]
 
   @@map("organizations")
 }
@@ -983,4 +984,31 @@ model KnowledgeEmbedding {
   @@index([category])
   @@index([sourceId])
   @@map("knowledge_embeddings")
+}
+
+/// Registro estructurado de telemetría, observabilidad, consumo de tokens y costos de LLMs por tenant.
+model LlmExecutionLog {
+  id                      String   @id @default(uuid()) @db.Uuid
+  organizationId          String   @map("organization_id") @db.Uuid
+  agentOrService          String   @map("agent_or_service") @db.VarChar(100)
+  model                   String   @db.VarChar(100)
+  promptTokens            Int      @default(0) @map("prompt_tokens")
+  completionTokens        Int      @default(0) @map("completion_tokens")
+  totalTokens             Int      @default(0) @map("total_tokens")
+  estimatedCostUsd        Decimal  @default(0) @map("estimated_cost_usd") @db.Decimal(10, 6)
+  latencyMs               Int      @default(0) @map("latency_ms")
+  ttftMs                  Int?     @map("ttft_ms")
+  status                  String   @default("SUCCESS") @db.VarChar(30)
+  promptInjectionDetected Boolean  @default(false) @map("prompt_injection_detected")
+  promptInjectionScore    Int?     @map("prompt_injection_score")
+  detectedPatterns        String[] @default([]) @map("detected_patterns")
+  fallbackReason          String?  @map("fallback_reason") @db.VarChar(500)
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, agentOrService])
+  @@index([promptInjectionDetected])
+  @@map("llm_execution_logs")
 }
