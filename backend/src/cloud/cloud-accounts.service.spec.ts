@@ -35,12 +35,14 @@ describe('CloudAccountsService', () => {
     cryptoVault = new CryptoVaultService(configMock);
     awsConnectorMock = { verifyConnection: jest.fn() };
     azureConnectorMock = { verifyConnection: jest.fn() };
+    const gcpConnectorMock = { verifyConnection: jest.fn() };
 
     service = new CloudAccountsService(
       prismaMock,
       cryptoVault,
       awsConnectorMock as any,
       azureConnectorMock as any,
+      gcpConnectorMock as any,
     );
   });
 
@@ -52,6 +54,8 @@ describe('CloudAccountsService', () => {
       expect(tpl.awsCloudFormationYaml).toContain('SSPMCloudAuditorRole');
       expect(tpl.awsCloudFormationYaml).toContain('arn:aws:iam::aws:policy/SecurityAudit');
       expect(tpl.azureCliSnippet).toContain('az ad sp create-for-rbac');
+      expect(tpl.gcpCliSnippet).toContain('gcloud iam service-accounts create');
+      expect(tpl.gcpTerraformSnippet).toContain('resource "google_service_account"');
     });
   });
 

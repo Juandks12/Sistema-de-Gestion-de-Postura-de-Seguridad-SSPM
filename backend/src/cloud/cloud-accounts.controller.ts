@@ -40,7 +40,7 @@ export class CloudAccountsController {
 
   @Get('onboarding-template')
   @ApiOperation({
-    summary: 'Obtener External ID y plantillas CloudFormation / CLI para conectar AWS y Azure',
+    summary: 'Obtener External ID y plantillas CloudFormation / CLI / Terraform para conectar AWS, Azure y GCP',
   })
   getOnboardingTemplate(@CurrentUser() user: AuthUser) {
     return this.cloudAccounts.getOnboardingTemplates(user.organizationId);

@@ -7,8 +7,10 @@ import { CloudAccountsService } from './cloud-accounts.service';
 import { CloudScanService } from './cloud-scan.service';
 import { AwsConnectorService } from './connectors/aws-connector.service';
 import { AzureConnectorService } from './connectors/azure-connector.service';
+import { GcpConnectorService } from './connectors/gcp-connector.service';
 import { AwsCspmEvaluatorService } from './evaluators/aws-cspm.evaluator';
 import { AzureCspmEvaluatorService } from './evaluators/azure-cspm.evaluator';
+import { GcpCspmEvaluatorService } from './evaluators/gcp-cspm.evaluator';
 
 @Module({
   imports: [PrismaModule, RiskModule, AlertsModule],
@@ -18,16 +20,20 @@ import { AzureCspmEvaluatorService } from './evaluators/azure-cspm.evaluator';
     CloudScanService,
     AwsConnectorService,
     AzureConnectorService,
+    GcpConnectorService,
     AwsCspmEvaluatorService,
     AzureCspmEvaluatorService,
+    GcpCspmEvaluatorService,
   ],
   exports: [
     CloudAccountsService,
     CloudScanService,
     AwsConnectorService,
     AzureConnectorService,
+    GcpConnectorService,
     AwsCspmEvaluatorService,
     AzureCspmEvaluatorService,
+    GcpCspmEvaluatorService,
   ],
 })
 export class CloudModule {}

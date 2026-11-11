@@ -23,6 +23,10 @@ import {
   AzureConnectorService,
   AzureVerificationResult,
 } from './connectors/azure-connector.service';
+import {
+  GcpConnectorService,
+  GcpVerificationResult,
+} from './connectors/gcp-connector.service';
 import { CSPM_RULES, CspmRuleDefinition } from './cspm.catalog';
 import {
   CreateCloudAccountDto,
@@ -36,6 +40,9 @@ export interface StoredCloudCredentials {
   awsSessionToken?: string;
   azureClientId?: string;
   azureClientSecret?: string;
+  gcpClientEmail?: string;
+  gcpPrivateKey?: string;
+  gcpServiceAccountJson?: string;
 }
 
 export type SanitizedCloudAccount = Omit<CloudAccount, 'encryptedCredentials'> & {
@@ -49,6 +56,7 @@ export class CloudAccountsService {
     private readonly cryptoVault: CryptoVaultService,
     private readonly awsConnector: AwsConnectorService,
     private readonly azureConnector: AzureConnectorService,
+    private readonly gcpConnector: GcpConnectorService,
   ) {}
 
   /**
@@ -122,11 +130,43 @@ export class CloudAccountsService {
       'az role assignment create --assignee "<APP_ID>" --role "Security Reader" --scope "/subscriptions/<SUBSCRIPTION_ID>"',
     ].join('\n');
 
+    const gcpCliSnippet = [
+      '# 1. Crear Service Account para auditoría CSPM de solo lectura en GCP:',
+      'gcloud iam service-accounts create sspm-cloud-auditor --display-name="SSPM Cloud Auditor"',
+      '# 2. Asignar roles de lectura y revisión de seguridad en el proyecto:',
+      'gcloud projects add-iam-policy-binding <PROJECT_ID> --member="serviceAccount:sspm-cloud-auditor@<PROJECT_ID>.iam.gserviceaccount.com" --role="roles/viewer"',
+      'gcloud projects add-iam-policy-binding <PROJECT_ID> --member="serviceAccount:sspm-cloud-auditor@<PROJECT_ID>.iam.gserviceaccount.com" --role="roles/iam.securityReviewer"',
+      '# 3. Descargar clave privada JSON para configurar en SecAudit:',
+      'gcloud iam service-accounts keys create sspm-sa-key.json --iam-account=sspm-cloud-auditor@<PROJECT_ID>.iam.gserviceaccount.com',
+    ].join('\n');
+
+    const gcpTerraformSnippet = [
+      '# Terraform: Service Account de solo lectura para auditoría SecAudit / SSPM',
+      'resource "google_service_account" "sspm_auditor" {',
+      '  account_id   = "sspm-cloud-auditor"',
+      '  display_name = "SSPM Cloud Auditor"',
+      '}',
+      '',
+      'resource "google_project_iam_member" "sspm_viewer" {',
+      '  project = var.gcp_project_id',
+      '  role    = "roles/viewer"',
+      '  member  = "serviceAccount:${google_service_account.sspm_auditor.email}"',
+      '}',
+      '',
+      'resource "google_project_iam_member" "sspm_security_reviewer" {',
+      '  project = var.gcp_project_id',
+      '  role    = "roles/iam.securityReviewer"',
+      '  member  = "serviceAccount:${google_service_account.sspm_auditor.email}"',
+      '}',
+    ].join('\n');
+
     return {
       awsExternalId: externalId,
       awsCloudFormationYaml,
       awsCliSnippet,
       azureCliSnippet,
+      gcpCliSnippet,
+      gcpTerraformSnippet,
     };
   }
 
@@ -163,12 +203,12 @@ export class CloudAccountsService {
   }
 
   /**
-   * Prueba la conexión contra AWS o Azure sin persistir cambios en la base de datos.
+   * Prueba la conexión contra AWS, Azure o GCP sin persistir cambios en la base de datos.
    */
   async testConnection(
     organizationId: string,
     dto: TestCloudConnectionDto,
-  ): Promise<AwsVerificationResult | AzureVerificationResult> {
+  ): Promise<AwsVerificationResult | AzureVerificationResult | GcpVerificationResult> {
     if (dto.provider === CloudProvider.AWS) {
       return this.awsConnector.verifyConnection({
         authType: dto.authType,
@@ -195,12 +235,29 @@ export class CloudAccountsService {
       });
     }
 
+    if (dto.provider === CloudProvider.GCP) {
+      if (
+        !dto.gcpServiceAccountJson?.trim() &&
+        (!dto.gcpClientEmail?.trim() || !dto.gcpPrivateKey?.trim())
+      ) {
+        throw new BadRequestException(
+          'Para probar la conexión con GCP se requiere el JSON de la Service Account o el Client Email y la Private Key.',
+        );
+      }
+      return this.gcpConnector.verifyConnection({
+        projectId: dto.accountOrSubscriptionId.trim(),
+        clientEmail: dto.gcpClientEmail,
+        privateKey: dto.gcpPrivateKey,
+        serviceAccountJson: dto.gcpServiceAccountJson,
+      });
+    }
+
     throw new BadRequestException(`Proveedor de nube no soportado: ${dto.provider}`);
   }
 
   /**
-   * Registra una nueva cuenta de AWS o suscripción de Azure, cifra sus credenciales
-   * con AES-256-GCM, vincula un activo en el inventario y verifica la conectividad.
+   * Registra una nueva cuenta de AWS, suscripción de Azure o proyecto de GCP,
+   * cifra sus credenciales con AES-256-GCM, vincula un activo en el inventario y verifica la conectividad.
    */
   async createAccount(
     organizationId: string,
@@ -208,7 +265,7 @@ export class CloudAccountsService {
     dto: CreateCloudAccountDto,
   ): Promise<{
     account: SanitizedCloudAccount;
-    verification: AwsVerificationResult | AzureVerificationResult | null;
+    verification: AwsVerificationResult | AzureVerificationResult | GcpVerificationResult | null;
   }> {
     this.validateCreateDto(dto);
 
@@ -235,12 +292,27 @@ export class CloudAccountsService {
         ? dto.awsExternalId?.trim() || this.generateExternalId(organizationId)
         : null;
 
+    let gcpClientEmailToStore = dto.gcpClientEmail?.trim() || null;
+    if (dto.provider === CloudProvider.GCP && dto.gcpServiceAccountJson?.trim()) {
+      try {
+        const parsed = JSON.parse(dto.gcpServiceAccountJson.trim());
+        if (parsed.client_email && !gcpClientEmailToStore) {
+          gcpClientEmailToStore = String(parsed.client_email).trim();
+        }
+      } catch {
+        // Será capturado por validateCreateDto o testConnection
+      }
+    }
+
     const credsToStore: StoredCloudCredentials = {
       awsAccessKeyId: dto.awsAccessKeyId?.trim() || undefined,
       awsSecretAccessKey: dto.awsSecretAccessKey?.trim() || undefined,
       awsSessionToken: dto.awsSessionToken?.trim() || undefined,
       azureClientId: dto.azureClientId?.trim() || undefined,
       azureClientSecret: dto.azureClientSecret?.trim() || undefined,
+      gcpClientEmail: gcpClientEmailToStore || undefined,
+      gcpPrivateKey: dto.gcpPrivateKey?.trim() || undefined,
+      gcpServiceAccountJson: dto.gcpServiceAccountJson?.trim() || undefined,
     };
 
     const hasAnySecret = Object.values(credsToStore).some(Boolean);
@@ -250,7 +322,7 @@ export class CloudAccountsService {
 
     let status: CloudAccountStatus = CloudAccountStatus.PENDING;
     let lastAuditError: string | null = null;
-    let verification: AwsVerificationResult | AzureVerificationResult | null = null;
+    let verification: AwsVerificationResult | AzureVerificationResult | GcpVerificationResult | null = null;
 
     if (dto.verifyOnCreate !== false) {
       verification = await this.testConnection(organizationId, {
@@ -265,6 +337,9 @@ export class CloudAccountsService {
         awsAccessKeyId: dto.awsAccessKeyId,
         awsSecretAccessKey: dto.awsSecretAccessKey,
         awsSessionToken: dto.awsSessionToken,
+        gcpClientEmail: gcpClientEmailToStore || undefined,
+        gcpPrivateKey: dto.gcpPrivateKey,
+        gcpServiceAccountJson: dto.gcpServiceAccountJson,
       });
 
       if (verification.valid) {
@@ -281,7 +356,9 @@ export class CloudAccountsService {
         ? dto.monitoredRegions
         : dto.provider === CloudProvider.AWS
           ? ['us-east-1', 'us-west-2']
-          : ['eastus', 'westus2'];
+          : dto.provider === CloudProvider.AZURE
+            ? ['eastus', 'westus2']
+            : ['us-central1', 'us-east1'];
 
     // Crear o reutilizar el activo padre en la tabla assets
     const asset = await this.prisma.asset.upsert({
@@ -321,6 +398,7 @@ export class CloudAccountsService {
         status,
         accountOrSubscriptionId: normalizedAccountId,
         azureTenantId: dto.azureTenantId?.trim() || null,
+        gcpClientEmail: gcpClientEmailToStore,
         awsRoleArn: dto.awsRoleArn?.trim() || null,
         awsExternalId: externalId,
         encryptedCredentials,
@@ -344,7 +422,7 @@ export class CloudAccountsService {
     accountId: string,
   ): Promise<{
     account: SanitizedCloudAccount;
-    verification: AwsVerificationResult | AzureVerificationResult;
+    verification: AwsVerificationResult | AzureVerificationResult | GcpVerificationResult;
   }> {
     const { account, credentials } = await this.getDecryptedCredentials(organizationId, accountId);
 
@@ -360,6 +438,9 @@ export class CloudAccountsService {
       awsAccessKeyId: credentials.awsAccessKeyId,
       awsSecretAccessKey: credentials.awsSecretAccessKey,
       awsSessionToken: credentials.awsSessionToken,
+      gcpClientEmail: account.gcpClientEmail ?? credentials.gcpClientEmail,
+      gcpPrivateKey: credentials.gcpPrivateKey,
+      gcpServiceAccountJson: credentials.gcpServiceAccountJson,
     });
 
     const newStatus = verification.valid ? CloudAccountStatus.CONNECTED : CloudAccountStatus.ERROR;
@@ -405,6 +486,9 @@ export class CloudAccountsService {
       awsSessionToken: dto.awsSessionToken !== undefined ? dto.awsSessionToken.trim() : credentials.awsSessionToken,
       azureClientId: dto.azureClientId !== undefined ? dto.azureClientId.trim() : credentials.azureClientId,
       azureClientSecret: dto.azureClientSecret !== undefined ? dto.azureClientSecret.trim() : credentials.azureClientSecret,
+      gcpClientEmail: dto.gcpClientEmail !== undefined ? dto.gcpClientEmail.trim() : credentials.gcpClientEmail,
+      gcpPrivateKey: dto.gcpPrivateKey !== undefined ? dto.gcpPrivateKey.trim() : credentials.gcpPrivateKey,
+      gcpServiceAccountJson: dto.gcpServiceAccountJson !== undefined ? dto.gcpServiceAccountJson.trim() : credentials.gcpServiceAccountJson,
     };
 
     const hasAnySecret = Object.values(mergedCreds).some(Boolean);
@@ -415,6 +499,7 @@ export class CloudAccountsService {
       data: {
         name: dto.name !== undefined ? dto.name.trim() : undefined,
         awsRoleArn: dto.awsRoleArn !== undefined ? dto.awsRoleArn.trim() : undefined,
+        gcpClientEmail: dto.gcpClientEmail !== undefined ? dto.gcpClientEmail.trim() : undefined,
         monitoredRegions: dto.monitoredRegions !== undefined ? dto.monitoredRegions : undefined,
         encryptedCredentials,
       },
@@ -508,6 +593,20 @@ export class CloudAccountsService {
       if (!dto.azureTenantId?.trim() || !dto.azureClientId?.trim() || !dto.azureClientSecret?.trim()) {
         throw new BadRequestException(
           'Para conectar una suscripción de Azure se requieren Tenant ID, Client ID y Client Secret.',
+        );
+      }
+    } else if (dto.provider === CloudProvider.GCP) {
+      if (dto.authType !== CloudAuthType.SERVICE_ACCOUNT_KEY) {
+        throw new BadRequestException(
+          'Para proyectos GCP el tipo de autenticación debe ser SERVICE_ACCOUNT_KEY.',
+        );
+      }
+      if (
+        !dto.gcpServiceAccountJson?.trim() &&
+        (!dto.gcpClientEmail?.trim() || !dto.gcpPrivateKey?.trim())
+      ) {
+        throw new BadRequestException(
+          'Para conectar un proyecto de GCP se requiere el JSON de la Service Account o el Client Email y la Private Key.',
         );
       }
     }
