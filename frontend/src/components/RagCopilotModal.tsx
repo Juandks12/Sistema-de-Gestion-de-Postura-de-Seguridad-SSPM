@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Sparkles,
   Copy,
@@ -25,36 +26,26 @@ interface RagCopilotModalProps {
 }
 
 export function RagCopilotModal({ finding, onClose }: RagCopilotModalProps) {
-  const [loading, setLoading] = useState(true);
-  const [playbook, setPlaybook] = useState<GroundedRemediationPlaybook | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [copiedSnippetIdx, setCopiedSnippetIdx] = useState<number | null>(null);
   const [copiedCommand, setCopiedCommand] = useState(false);
 
-  const fetchPlaybook = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api<GroundedRemediationPlaybook>(
-        `/ai/rag/remediation-advice/${finding.id}`,
-        {
-          method: 'POST',
-          json: {},
-        },
-      );
-      setPlaybook(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(`No se pudo generar el playbook RAG: ${msg}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: playbook,
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useQuery<GroundedRemediationPlaybook>({
+    queryKey: ['rag-remediation-advice', finding.id],
+    queryFn: () =>
+      api<GroundedRemediationPlaybook>(`/ai/rag/remediation-advice/${finding.id}`, {
+        method: 'POST',
+        json: {},
+      }),
+  });
 
-  useEffect(() => {
-    fetchPlaybook();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finding.id]);
+  const error = queryError
+    ? `No se pudo generar el playbook RAG: ${queryError instanceof Error ? queryError.message : String(queryError)}`
+    : null;
 
   const copyToClipboard = (text: string, type: 'snippet' | 'command', idx?: number) => {
     navigator.clipboard.writeText(text);
@@ -107,7 +98,7 @@ export function RagCopilotModal({ finding, onClose }: RagCopilotModalProps) {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => fetchPlaybook()}
+            onClick={() => void refetch()}
             disabled={loading}
             className="flex items-center gap-1.5"
           >

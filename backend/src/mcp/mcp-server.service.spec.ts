@@ -1,5 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
-import { FindingSeverity, FindingStatus, ScanSource, ScanType } from '@prisma/client';
+import { ScanSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiKeysService } from '../api-keys/api-keys.service';
 import { RiskScoresService } from '../risk/risk-scores.service';

@@ -1,8 +1,6 @@
 import {
-  BadRequestException,
   Injectable,
   Logger,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { FindingSeverity, FindingStatus, ScanSource, ScanType } from '@prisma/client';
