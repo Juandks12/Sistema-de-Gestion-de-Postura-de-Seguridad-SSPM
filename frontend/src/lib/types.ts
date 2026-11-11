@@ -1460,6 +1460,63 @@ export interface BulkTicketFindingsResult {
   errors: Array<{ findingId: string; reason: string }>;
 }
 
+export interface RagDocumentResult {
+  id: string;
+  category: 'CVE' | 'GRC_CONTROL' | 'HARDENING_GUIDE' | 'REMEDIATION_IAC';
+  sourceId: string | null;
+  title: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  similarity: number;
+}
+
+export interface GroundedRemediationPlaybook {
+  findingId: string;
+  ruleId: string;
+  title: string;
+  severity: string;
+  asset: {
+    id: string;
+    target: string;
+    type: string;
+  };
+  rootCauseAnalysis: string;
+  complianceImpact: Array<{
+    framework: string;
+    controlCode: string;
+    title: string;
+  }>;
+  stepByStepRemediation: string[];
+  codeSnippets: Array<{
+    language: string;
+    description: string;
+    code: string;
+  }>;
+  verificationTest: {
+    command: string;
+    expectedResult: string;
+    description: string;
+  };
+  groundedCitations: Array<{
+    sourceId: string;
+    title: string;
+    category: string;
+    similarityScore: number;
+  }>;
+  generatedAt: string;
+}
+
+export interface McpToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+
 
 
 

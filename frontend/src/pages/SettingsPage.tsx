@@ -29,6 +29,7 @@ import type { AlertChannel, AlertChannelType, MonitoringFrequency, Severity } fr
 
 import { ApiKeysCard } from '@/components/ApiKeysCard';
 import { TicketingIntegrationCard } from '@/components/TicketingIntegrationCard';
+import { McpIntegrationCard } from '@/components/McpIntegrationCard';
 
 const FREQUENCIES: MonitoringFrequency[] = ['OFF', 'DAILY', 'WEEKLY'];
 
@@ -43,6 +44,7 @@ export function SettingsPage() {
       <MonitoringCard />
       <ChannelsCard />
       <ApiKeysCard />
+      <McpIntegrationCard />
       <TicketingIntegrationCard />
       <DataRetentionCard />
     </>
