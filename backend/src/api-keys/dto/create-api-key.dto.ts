@@ -6,6 +6,8 @@ export const VALID_API_KEY_SCOPES = [
   'alerts:read',
   'posture:read',
   'assets:read',
+  'scans:write',
+  'mcp:tools',
 ] as const;
 
 export type ApiKeyScope = (typeof VALID_API_KEY_SCOPES)[number];

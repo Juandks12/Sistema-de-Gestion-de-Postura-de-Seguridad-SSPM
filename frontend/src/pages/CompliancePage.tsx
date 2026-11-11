@@ -3,12 +3,14 @@ import {
   Award,
   BookOpen,
   CheckCircle2,
+  Cpu,
   Download,
   ExternalLink,
   Layers,
   Search,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   XCircle,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -25,11 +27,12 @@ import { Skeleton } from '@/components/ui/Spinner';
 import { StatTile } from '@/components/ui/StatTile';
 import { Table, Td, Th } from '@/components/ui/Table';
 import { useComplianceFramework, useComplianceOverview } from '@/hooks/queries';
-import { downloadFile } from '@/lib/api';
+import { api, downloadFile } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import type {
   ComplianceFramework,
   ControlEvaluationResult,
+  RagDocumentResult,
 } from '@/lib/types';
 
 const FRAMEWORK_ORDER: ComplianceFramework[] = [
@@ -48,6 +51,30 @@ export function CompliancePage() {
   const [selectedControl, setSelectedControl] = useState<ControlEvaluationResult | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const [ragQuery, setRagQuery] = useState('');
+  const [ragSearching, setRagSearching] = useState(false);
+  const [ragResults, setRagResults] = useState<RagDocumentResult[] | null>(null);
+  const [ragError, setRagError] = useState<string | null>(null);
+
+  const handleRagSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!ragQuery.trim()) return;
+    setRagSearching(true);
+    setRagError(null);
+    try {
+      const res = await api<RagDocumentResult[]>('/ai/rag/search', {
+        method: 'POST',
+        json: { query: ragQuery.trim(), limit: 4 },
+      });
+      setRagResults(res);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setRagError(`Fallo en la búsqueda semántica RAG: ${msg}`);
+    } finally {
+      setRagSearching(false);
+    }
+  };
 
   const overviewQuery = useComplianceOverview();
   const frameworkQuery = useComplianceFramework(selectedFramework);
@@ -266,6 +293,91 @@ export function CompliancePage() {
           </div>
         )}
       </section>
+
+      {/* Asistente RAG de Ciberseguridad & Cumplimiento */}
+      <Card className="mb-6 border-primary-500/25 bg-surface">
+        <CardBody className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary-500/10 text-primary-400 border border-primary-500/20">
+                <Sparkles className="w-4 h-4 text-primary-400" />
+              </div>
+              <span className="text-sm font-semibold text-white">Consultar SecAudit Copilot (RAG Semántico)</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 font-mono">
+                <Cpu className="w-3 h-3" /> pgvector HNSW
+              </span>
+            </div>
+            {ragResults && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setRagResults(null);
+                  setRagQuery('');
+                }}
+                className="text-xs h-7"
+              >
+                Limpiar Búsqueda
+              </Button>
+            )}
+          </div>
+
+          <form onSubmit={handleRagSearch} className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <Input
+                placeholder="Pregunta en lenguaje natural: ej. '¿Qué exige PCI-DSS para cifrado TLS?', 'Bastionado HSTS Nginx'..."
+                value={ragQuery}
+                onChange={(e) => setRagQuery(e.target.value)}
+                className="pl-9 text-xs"
+              />
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={ragSearching}
+              disabled={!ragQuery.trim()}
+              className="text-xs shrink-0"
+            >
+              Consultar IA
+            </Button>
+          </form>
+
+          {ragError && <Alert kind="error">{ragError}</Alert>}
+
+          {ragResults && ragResults.length > 0 && (
+            <div className="pt-2 border-t border-border space-y-2.5">
+              <div className="text-xs text-text-muted">
+                {ragResults.length} resultados semánticos recuperados con distancia coseno:
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {ragResults.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 rounded-xl bg-surface-subtle border border-border text-xs space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-primary-300 truncate">{item.title}</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-500/20 shrink-0">
+                        {(item.similarity * 100).toFixed(0)}% match
+                      </span>
+                    </div>
+                    <p className="text-text-muted line-clamp-3 leading-relaxed">{item.content}</p>
+                    {item.metadata && (
+                      <div className="flex items-center gap-2 text-[10px] text-text-subtle pt-1 border-t border-border/50">
+                        <span className="px-1.5 py-0.5 rounded bg-surface border border-border/50">
+                          {item.category}
+                        </span>
+                        {item.sourceId && <span className="font-mono text-primary-400/80">{item.sourceId}</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
       {/* Matriz Detallada del Marco Seleccionado */}
       <Card className="mb-6">

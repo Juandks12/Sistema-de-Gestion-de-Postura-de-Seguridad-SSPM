@@ -277,23 +277,23 @@ model Organization {
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users             User[]
-  accountTokens     AccountToken[]
-  auditLogs         AuditLog[]
-  assets            Asset[]
-  scans             Scan[]
-  scanPorts         ScanPort[]
-  findings          Finding[]
-  riskScores        RiskScore[]
-  alerts            Alert[]
-  alertChannels     AlertChannel[]
-  reports           Report[]
-  discoveredHosts   DiscoveredHost[]
-  apiKeys           ApiKey[]
-  cloudAccounts     CloudAccount[]
-  cloudResources    CloudResource[]
-  diagnosticBatches DiagnosticBatch[]
-  malwareAnalyses   MalwareAnalysis[]
+  users                User[]
+  accountTokens        AccountToken[]
+  auditLogs            AuditLog[]
+  assets               Asset[]
+  scans                Scan[]
+  scanPorts            ScanPort[]
+  findings             Finding[]
+  riskScores           RiskScore[]
+  alerts               Alert[]
+  alertChannels        AlertChannel[]
+  reports              Report[]
+  discoveredHosts      DiscoveredHost[]
+  apiKeys              ApiKey[]
+  cloudAccounts        CloudAccount[]
+  cloudResources       CloudResource[]
+  diagnosticBatches    DiagnosticBatch[]
+  malwareAnalyses      MalwareAnalysis[]
   ticketingIntegration TicketingIntegration?
 
   @@map("organizations")
@@ -958,4 +958,29 @@ model TicketingIntegration {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("ticketing_integrations")
+}
+
+/// Categoría de conocimiento de ciberseguridad para RAG y vector search.
+enum KnowledgeCategory {
+  CVE
+  GRC_CONTROL
+  HARDENING_GUIDE
+  REMEDIATION_IAC
+}
+
+/// Base de conocimiento vectorizada con pgvector para grounding de IA y remediación semántica.
+model KnowledgeEmbedding {
+  id        String                       @id @default(uuid()) @db.Uuid
+  category  KnowledgeCategory
+  sourceId  String?                      @map("source_id") @db.VarChar(120)
+  title     String                       @db.VarChar(500)
+  content   String                       @db.Text
+  metadata  Json?
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([category])
+  @@index([sourceId])
+  @@map("knowledge_embeddings")
 }
