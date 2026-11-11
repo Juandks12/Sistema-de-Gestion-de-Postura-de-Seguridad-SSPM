@@ -28,6 +28,7 @@ import {
 import { CSPM_RULES_MAP } from './cspm.catalog';
 import { AwsCspmEvaluatorService } from './evaluators/aws-cspm.evaluator';
 import { AzureCspmEvaluatorService } from './evaluators/azure-cspm.evaluator';
+import { GcpCspmEvaluatorService } from './evaluators/gcp-cspm.evaluator';
 import {
   CloudAuditExecutionResult,
   CloudAuditStats,
@@ -99,6 +100,7 @@ export class CloudScanService {
     private readonly cloudAccounts: CloudAccountsService,
     private readonly awsEvaluator: AwsCspmEvaluatorService,
     private readonly azureEvaluator: AzureCspmEvaluatorService,
+    private readonly gcpEvaluator: GcpCspmEvaluatorService,
     private readonly riskScores: RiskScoresService,
     @Optional() private readonly alerts?: AlertsService,
   ) {}
@@ -144,6 +146,17 @@ export class CloudScanService {
             tenantId: account.azureTenantId ?? '',
             clientId: credentials.azureClientId ?? '',
             clientSecret: credentials.azureClientSecret ?? '',
+          },
+          monitoredRegions: account.monitoredRegions,
+          simulate: options?.simulate,
+        });
+      } else if (account.provider === CloudProvider.GCP) {
+        executionResult = await this.gcpEvaluator.evaluateProject({
+          authInput: {
+            projectId: account.accountOrSubscriptionId,
+            clientEmail: account.gcpClientEmail ?? credentials.gcpClientEmail,
+            privateKey: credentials.gcpPrivateKey,
+            serviceAccountJson: credentials.gcpServiceAccountJson,
           },
           monitoredRegions: account.monitoredRegions,
           simulate: options?.simulate,
@@ -610,11 +623,13 @@ export class CloudScanService {
     const accountsByProvider = {
       AWS: accounts.filter((a) => a.provider === CloudProvider.AWS).length,
       AZURE: accounts.filter((a) => a.provider === CloudProvider.AZURE).length,
+      GCP: accounts.filter((a) => a.provider === CloudProvider.GCP).length,
     };
 
     const resourcesByProvider = {
       AWS: resources.filter((r) => r.provider === CloudProvider.AWS).length,
       AZURE: resources.filter((r) => r.provider === CloudProvider.AZURE).length,
+      GCP: resources.filter((r) => r.provider === CloudProvider.GCP).length,
     };
 
     const resourcesByType: Record<string, number> = {};

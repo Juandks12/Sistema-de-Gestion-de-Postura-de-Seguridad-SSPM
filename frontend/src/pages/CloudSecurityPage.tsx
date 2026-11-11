@@ -80,6 +80,12 @@ const RESOURCE_TYPES: CloudResourceType[] = [
   'AZURE_SQL_DATABASE',
   'AZURE_ACTIVITY_LOG',
   'AZURE_VNET',
+  'GCP_STORAGE_BUCKET',
+  'GCP_SERVICE_ACCOUNT',
+  'GCP_FIREWALL_RULE',
+  'GCP_COMPUTE_INSTANCE',
+  'GCP_SQL_INSTANCE',
+  'GCP_LOGGING_SINK',
   'OTHER',
 ];
 
@@ -207,7 +213,7 @@ export function CloudSecurityPage() {
     <>
       <PageHeader
         title="Seguridad Cloud (CSPM)"
-        description="Gestión centralizada de postura de seguridad para cuentas de Amazon Web Services (AWS) y suscripciones de Microsoft Azure: inventario agentless, evaluación de 31 reglas y remediación IaC/CLI."
+        description="Gestión centralizada de postura de seguridad multi-nube para AWS, Azure y Google Cloud Platform (GCP): inventario agentless, evaluación de 36 reglas y remediación IaC/CLI."
         actions={
           canEdit ? (
             <Button
@@ -232,7 +238,7 @@ export function CloudSecurityPage() {
               {summary?.accounts.total ?? 0}
             </span>
             <span className="text-xs text-muted">
-              ({summary?.accounts.byProvider.AWS ?? 0} AWS · {summary?.accounts.byProvider.AZURE ?? 0} Azure)
+              ({summary?.accounts.byProvider.AWS ?? 0} AWS · {summary?.accounts.byProvider.AZURE ?? 0} Azure · {summary?.accounts.byProvider.GCP ?? 0} GCP)
             </span>
           </div>
         </div>
@@ -408,8 +414,8 @@ export function CloudSecurityPage() {
           <Card>
             <EmptyState
               icon={Cloud}
-              title="Sin cuentas de AWS o Azure conectadas"
-              description="Conecta una cuenta de Amazon Web Services (mediante IAM Cross-Account Role) o una suscripción de Microsoft Azure (mediante Service Principal), o lanza una cuenta Sandbox de demostración en 1 clic."
+              title="Sin cuentas de AWS, Azure o GCP conectadas"
+              description="Conecta una cuenta de Amazon Web Services (mediante IAM Cross-Account Role), una suscripción de Microsoft Azure (mediante Service Principal), un proyecto de Google Cloud Platform (mediante Service Account Key), o lanza una cuenta Sandbox de demostración en 1 clic."
               action={
                 canEdit ? (
                   <Button
@@ -438,9 +444,18 @@ export function CloudSecurityPage() {
                               {acc.name}
                             </h3>
                             <p className="font-mono text-xs text-muted">
-                              {acc.provider === 'AWS' ? 'Account ID: ' : 'Subscription ID: '}
+                              {acc.provider === 'AWS'
+                                ? 'Account ID: '
+                                : acc.provider === 'AZURE'
+                                  ? 'Subscription ID: '
+                                  : 'Project ID: '}
                               {acc.accountOrSubscriptionId}
                             </p>
+                            {acc.gcpClientEmail ? (
+                              <p className="font-mono text-[11px] text-muted truncate max-w-[280px]">
+                                {acc.gcpClientEmail}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                         <AccountStatusBadge status={acc.status} />
@@ -454,7 +469,9 @@ export function CloudSecurityPage() {
                               ? 'IAM Cross-Account Role'
                               : acc.authType === 'ACCESS_KEYS'
                                 ? 'IAM Access Keys'
-                                : 'Entra ID Service Principal'}
+                                : acc.authType === 'SERVICE_ACCOUNT_KEY'
+                                  ? 'GCP Service Account Key'
+                                  : 'Entra ID Service Principal'}
                           </dd>
                         </div>
                         <div>
@@ -605,9 +622,10 @@ export function CloudSecurityPage() {
                 value={selectedProviderFilter}
                 onChange={(e) => updateParam('provider', e.target.value)}
               >
-                <option value="">AWS y Azure</option>
+                <option value="">Todas las nubes (AWS, Azure, GCP)</option>
                 <option value="AWS">Amazon Web Services (AWS)</option>
                 <option value="AZURE">Microsoft Azure</option>
+                <option value="GCP">Google Cloud Platform (GCP)</option>
               </Select>
             </div>
 
@@ -665,7 +683,7 @@ export function CloudSecurityPage() {
               <EmptyState
                 icon={Database}
                 title="No se encontraron recursos cloud"
-                description="Ejecuta una auditoría sobre tus cuentas de AWS o Azure conectadas para poblar el inventario de recursos."
+                description="Ejecuta una auditoría sobre tus cuentas conectadas (AWS, Azure o GCP) para poblar el inventario de recursos."
               />
             ) : (
               <Table>
@@ -815,12 +833,12 @@ export function CloudSecurityPage() {
         </>
       ) : null}
 
-      {/* TAB 3: CATÁLOGO DE 31 REGLAS CSPM */}
+      {/* TAB 3: CATÁLOGO DE 36 REGLAS CSPM */}
       {activeTab === 'rules' ? (
         <>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
-              {(['', 'AWS', 'AZURE'] as const).map((prov) => (
+            <div className="flex flex-wrap gap-2">
+              {(['', 'AWS', 'AZURE', 'GCP'] as const).map((prov) => (
                 <button
                   key={prov || 'ALL'}
                   type="button"
@@ -833,10 +851,12 @@ export function CloudSecurityPage() {
                   )}
                 >
                   {prov === ''
-                    ? 'Todos los proveedores (31)'
+                    ? 'Todos los proveedores (36)'
                     : prov === 'AWS'
                       ? 'Amazon Web Services (19)'
-                      : 'Microsoft Azure (12)'}
+                      : prov === 'AZURE'
+                        ? 'Microsoft Azure (12)'
+                        : 'Google Cloud Platform (5)'}
                 </button>
               ))}
             </div>
@@ -921,7 +941,7 @@ export function CloudSecurityPage() {
                                 <div>
                                   <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-ink">
                                     <Terminal className="size-3.5 text-accent" />
-                                    Remediación CLI ({r.provider === 'AWS' ? 'AWS CLI' : 'Azure CLI'})
+                                    Remediación CLI ({r.provider === 'AWS' ? 'AWS CLI' : r.provider === 'AZURE' ? 'Azure CLI' : 'gcloud CLI'})
                                   </p>
                                   <pre className="overflow-x-auto rounded-lg border border-border bg-[#18181b] p-3 font-mono text-xs text-zinc-100 whitespace-pre-wrap">
                                     {r.remediationCli}
@@ -971,9 +991,16 @@ function ProviderBadge({ provider }: { provider: CloudProvider }) {
       </span>
     );
   }
+  if (provider === 'AZURE') {
+    return (
+      <span className="inline-flex items-center rounded-md bg-sky-500/15 px-2 py-0.5 text-xs font-bold text-sky-600 dark:text-sky-400">
+        Azure
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center rounded-md bg-sky-500/15 px-2 py-0.5 text-xs font-bold text-sky-600 dark:text-sky-400">
-      Azure
+    <span className="inline-flex items-center rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+      GCP
     </span>
   );
 }
@@ -1021,6 +1048,10 @@ function ConnectCloudAccountModal({
   const [azureTenantId, setAzureTenantId] = useState('');
   const [azureClientId, setAzureClientId] = useState('');
   const [azureClientSecret, setAzureClientSecret] = useState('');
+  const [gcpClientEmail, setGcpClientEmail] = useState('');
+  const [gcpPrivateKey, setGcpPrivateKey] = useState('');
+  const [gcpServiceAccountJson, setGcpServiceAccountJson] = useState('');
+  const [gcpSnippetType, setGcpSnippetType] = useState<'terraform' | 'cli'>('terraform');
   const [regionsText, setRegionsText] = useState('us-east-1, us-west-2');
   const [verifyOnCreate, setVerifyOnCreate] = useState(true);
   const [showTemplate, setShowTemplate] = useState(false);
@@ -1038,9 +1069,31 @@ function ConnectCloudAccountModal({
     if (next === 'AWS') {
       setAuthType('ROLE_ARN');
       setRegionsText('us-east-1, us-west-2');
-    } else {
+    } else if (next === 'AZURE') {
       setAuthType('SERVICE_PRINCIPAL');
       setRegionsText('eastus, westus2');
+    } else {
+      setAuthType('SERVICE_ACCOUNT_KEY');
+      setRegionsText('us-central1, us-east1, global');
+    }
+  };
+
+  const handleGcpJsonPaste = (val: string) => {
+    setGcpServiceAccountJson(val);
+    try {
+      const parsed = JSON.parse(val);
+      if (parsed.project_id) {
+        setAccountOrSubscriptionId(parsed.project_id);
+        if (!name) setName(`GCP ${parsed.project_id}`);
+      }
+      if (parsed.client_email) {
+        setGcpClientEmail(parsed.client_email);
+      }
+      if (parsed.private_key) {
+        setGcpPrivateKey(parsed.private_key);
+      }
+    } catch {
+      // JSON aún no completo
     }
   };
 
@@ -1054,7 +1107,7 @@ function ConnectCloudAccountModal({
       setAccountOrSubscriptionId('000000000000');
       setAwsRoleArn('arn:aws:iam::000000000000:role/SSPM-Cloud-Auditor-Role');
       setRegionsText('us-east-1');
-    } else {
+    } else if (provider === 'AZURE') {
       setName('Azure Corporativo (Sandbox Demo)');
       setAuthType('SERVICE_PRINCIPAL');
       setAccountOrSubscriptionId('00000000-0000-0000-0000-000000000000');
@@ -1062,6 +1115,14 @@ function ConnectCloudAccountModal({
       setAzureClientId('22222222-2222-2222-2222-222222222222');
       setAzureClientSecret('sandbox-demo-secret-value');
       setRegionsText('eastus');
+    } else {
+      setName('GCP Producción (Sandbox Demo)');
+      setAuthType('SERVICE_ACCOUNT_KEY');
+      setAccountOrSubscriptionId('sspm-enterprise-sandbox-demo');
+      setGcpClientEmail('sspm-auditor@sspm-enterprise-sandbox-demo.iam.gserviceaccount.com');
+      setGcpPrivateKey('-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0demo...\n-----END RSA PRIVATE KEY-----');
+      setGcpServiceAccountJson('{\n  "type": "service_account",\n  "project_id": "sspm-enterprise-sandbox-demo",\n  "client_email": "sspm-auditor@sspm-enterprise-sandbox-demo.iam.gserviceaccount.com"\n}');
+      setRegionsText('us-central1, us-east1');
     }
   };
 
@@ -1080,14 +1141,22 @@ function ConnectCloudAccountModal({
         azureTenantId: azureTenantId || undefined,
         azureClientId: azureClientId || undefined,
         azureClientSecret: azureClientSecret || undefined,
+        gcpClientEmail: gcpClientEmail || undefined,
+        gcpPrivateKey: gcpPrivateKey || undefined,
+        gcpServiceAccountJson: gcpServiceAccountJson || undefined,
       });
       if (res.valid) {
+        let msg = '';
+        if (provider === 'AWS') {
+          msg = `Conexión verificada vía AWS STS (${res.latencyMs} ms) · Identidad: ${res.arn}`;
+        } else if (provider === 'AZURE') {
+          msg = `Conexión verificada vía Azure ARM (${res.latencyMs} ms) · Suscripción: ${res.displayName} (${res.state})`;
+        } else {
+          msg = `Conexión verificada vía GCP Cloud Resource Manager (${res.latencyMs} ms) · Proyecto: ${res.projectName || res.projectId || accountOrSubscriptionId} (${res.lifecycleState || 'ACTIVE'})`;
+        }
         setTestFeedback({
           valid: true,
-          message:
-            provider === 'AWS'
-              ? `Conexión verificada vía AWS STS (${res.latencyMs} ms) · Identidad: ${res.arn}`
-              : `Conexión verificada vía Azure ARM (${res.latencyMs} ms) · Suscripción: ${res.displayName} (${res.state})`,
+          message: msg,
         });
       } else {
         setTestFeedback({
@@ -1127,6 +1196,9 @@ function ConnectCloudAccountModal({
         azureTenantId: azureTenantId || undefined,
         azureClientId: azureClientId || undefined,
         azureClientSecret: azureClientSecret || undefined,
+        gcpClientEmail: gcpClientEmail || undefined,
+        gcpPrivateKey: gcpPrivateKey || undefined,
+        gcpServiceAccountJson: gcpServiceAccountJson || undefined,
         monitoredRegions,
         verifyOnCreate,
       });
@@ -1154,11 +1226,11 @@ function ConnectCloudAccountModal({
     <Modal
       open
       onClose={onClose}
-      title="Conectar Cuenta Cloud (AWS / Microsoft Azure)"
+      title="Conectar Cuenta Cloud (AWS / Microsoft Azure / Google Cloud)"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Selector de proveedor */}
-        <div className="grid grid-cols-2 gap-2.5">
+        {/* Selector de proveedor (Tríada Multi-Cloud) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <button
             type="button"
             onClick={() => switchProvider('AWS')}
@@ -1194,6 +1266,24 @@ function ConnectCloudAccountModal({
               Entra ID Service Principal (ARM)
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => switchProvider('GCP')}
+            className={cn(
+              'flex flex-col items-start rounded-xl border p-3 text-left transition',
+              provider === 'GCP'
+                ? 'border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/20'
+                : 'border-border hover:bg-surface-2',
+            )}
+          >
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+              Google Cloud Platform
+            </span>
+            <span className="mt-0.5 text-xs text-ink-2">
+              Service Account Key JSON
+            </span>
+          </button>
         </div>
 
         {/* Botón rápido de Sandbox Demo */}
@@ -1210,13 +1300,15 @@ function ConnectCloudAccountModal({
           </button>
         </div>
 
-        {/* Plantilla de Onboarding (CloudFormation / Azure CLI) */}
+        {/* Plantilla de Onboarding (CloudFormation / Azure CLI / GCP Terraform) */}
         <div className="rounded-lg border border-border bg-surface-2/50 p-3 text-xs">
           <div className="flex items-center justify-between">
             <span className="font-semibold text-ink">
               {provider === 'AWS'
                 ? `External ID de tu organización: ${onboardingQ.data?.awsExternalId ?? '...'}`
-                : 'Comandos de provisión de solo lectura (Reader) en Azure CLI'}
+                : provider === 'AZURE'
+                  ? 'Comandos de provisión de solo lectura (Reader) en Azure CLI'
+                  : 'Plantilla de solo lectura para GCP (Terraform / gcloud CLI)'}
             </span>
             <button
               type="button"
@@ -1227,7 +1319,35 @@ function ConnectCloudAccountModal({
             </button>
           </div>
           {showTemplate && onboardingQ.data ? (
-            <div className="mt-2">
+            <div className="mt-2 space-y-2">
+              {provider === 'GCP' ? (
+                <div className="flex gap-2 mb-1">
+                  <button
+                    type="button"
+                    onClick={() => setGcpSnippetType('terraform')}
+                    className={cn(
+                      'px-2 py-0.5 rounded text-[10px] font-semibold transition',
+                      gcpSnippetType === 'terraform'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-surface border border-border text-ink-2',
+                    )}
+                  >
+                    Terraform IaC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGcpSnippetType('cli')}
+                    className={cn(
+                      'px-2 py-0.5 rounded text-[10px] font-semibold transition',
+                      gcpSnippetType === 'cli'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-surface border border-border text-ink-2',
+                    )}
+                  >
+                    gcloud CLI Script
+                  </button>
+                </div>
+              ) : null}
               <div className="relative rounded-lg border border-border bg-[#18181b] p-2.5 font-mono text-[11px] text-zinc-100">
                 <button
                   type="button"
@@ -1235,7 +1355,11 @@ function ConnectCloudAccountModal({
                     copySnippet(
                       provider === 'AWS'
                         ? onboardingQ.data.awsCloudFormationYaml
-                        : onboardingQ.data.azureCliSnippet,
+                        : provider === 'AZURE'
+                          ? onboardingQ.data.azureCliSnippet
+                          : gcpSnippetType === 'terraform'
+                            ? onboardingQ.data.gcpTerraformSnippet ?? ''
+                            : onboardingQ.data.gcpCliSnippet ?? '',
                     )
                   }
                   className="absolute top-2 right-2 inline-flex items-center gap-1 rounded bg-zinc-800 px-2 py-1 font-sans text-[10px] text-zinc-200 hover:bg-zinc-700"
@@ -1253,7 +1377,11 @@ function ConnectCloudAccountModal({
                 <pre className="max-h-40 overflow-auto pr-16 whitespace-pre-wrap">
                   {provider === 'AWS'
                     ? onboardingQ.data.awsCloudFormationYaml
-                    : onboardingQ.data.azureCliSnippet}
+                    : provider === 'AZURE'
+                      ? onboardingQ.data.azureCliSnippet
+                      : gcpSnippetType === 'terraform'
+                        ? onboardingQ.data.gcpTerraformSnippet
+                        : onboardingQ.data.gcpCliSnippet}
                 </pre>
               </div>
             </div>
@@ -1267,7 +1395,11 @@ function ConnectCloudAccountModal({
               id="ca-name"
               required
               placeholder={
-                provider === 'AWS' ? 'AWS Producción Principal' : 'Azure Suscripción Core'
+                provider === 'AWS'
+                  ? 'AWS Producción Principal'
+                  : provider === 'AZURE'
+                    ? 'Azure Suscripción Core'
+                    : 'GCP Proyecto Producción'
               }
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -1278,7 +1410,9 @@ function ConnectCloudAccountModal({
             <Label htmlFor="ca-id">
               {provider === 'AWS'
                 ? 'AWS Account ID (12 dígitos)'
-                : 'Azure Subscription ID (UUID)'}
+                : provider === 'AZURE'
+                  ? 'Azure Subscription ID (UUID)'
+                  : 'GCP Project ID'}
             </Label>
             <Input
               id="ca-id"
@@ -1286,7 +1420,9 @@ function ConnectCloudAccountModal({
               placeholder={
                 provider === 'AWS'
                   ? '123456789012'
-                  : 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+                  : provider === 'AZURE'
+                    ? 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+                    : 'mi-proyecto-prod-123'
               }
               value={accountOrSubscriptionId}
               onChange={(e) => setAccountOrSubscriptionId(e.target.value)}
@@ -1349,7 +1485,7 @@ function ConnectCloudAccountModal({
               </div>
             )}
           </>
-        ) : (
+        ) : provider === 'AZURE' ? (
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <Label htmlFor="az-tenant">Directory (Tenant) ID</Label>
@@ -1383,6 +1519,47 @@ function ConnectCloudAccountModal({
               />
             </div>
           </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="gcp-json">
+                Clave Service Account JSON (Recomendado - Completa los campos automáticamente)
+              </Label>
+              <textarea
+                id="gcp-json"
+                rows={4}
+                value={gcpServiceAccountJson}
+                onChange={(e) => handleGcpJsonPaste(e.target.value)}
+                placeholder={'{\n  "type": "service_account",\n  "project_id": "mi-proyecto",\n  "client_email": "auditor@mi-proyecto.iam.gserviceaccount.com",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n..."\n}'}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-ink placeholder:text-muted focus:border-accent focus:outline-none"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="gcp-email">Service Account Client Email</Label>
+                <Input
+                  id="gcp-email"
+                  required
+                  placeholder="sspm-auditor@proyecto.iam.gserviceaccount.com"
+                  value={gcpClientEmail}
+                  onChange={(e) => setGcpClientEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="gcp-pk">Private Key (PEM RSA)</Label>
+                <Input
+                  id="gcp-pk"
+                  type="password"
+                  required
+                  placeholder="-----BEGIN RSA PRIVATE KEY-----..."
+                  value={gcpPrivateKey}
+                  onChange={(e) => setGcpPrivateKey(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1403,7 +1580,7 @@ function ConnectCloudAccountModal({
                 onChange={(e) => setVerifyOnCreate(e.target.checked)}
                 className="accent-[var(--accent)]"
               />
-              Verificar conectividad STS / ARM al guardar
+              Verificar conectividad STS / ARM / GCP al guardar
             </label>
           </div>
         </div>

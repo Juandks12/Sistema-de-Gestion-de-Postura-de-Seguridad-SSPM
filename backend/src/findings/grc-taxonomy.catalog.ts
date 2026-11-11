@@ -187,6 +187,31 @@ const RULE_SPECIFIC_TAXONOMY: Record<string, Partial<FindingSecurityTaxonomy>> =
     owaspCategory: 'A05:2021 - Security Misconfiguration',
     mitreAttackTechnique: 'T1590.002 - Gather Victim Network Information: DNS',
   },
+  'GCP-STORAGE-PUBLIC-BUCKET': {
+    cweId: 'CWE-552: Files or Directories Accessible to External Parties (GCP Public Bucket)',
+    owaspCategory: 'A01:2021 - Broken Access Control',
+    mitreAttackTechnique: 'T1530 - Data from Cloud Storage',
+  },
+  'GCP-IAM-KEY-ROTATION': {
+    cweId: 'CWE-262 / CWE-324: Use of a Key Past its Expiration Date (GCP Service Account Key)',
+    owaspCategory: 'A07:2021 - Identification and Authentication Failures',
+    mitreAttackTechnique: 'T1078.004 - Valid Accounts: Cloud Accounts',
+  },
+  'GCP-COMPUTE-PUBLIC-IP': {
+    cweId: 'CWE-284: Improper Access Control (GCP Compute Public SSH/RDP)',
+    owaspCategory: 'A05:2021 - Security Misconfiguration',
+    mitreAttackTechnique: 'T1190 - Exploit Public-Facing Application / T1021 - Remote Services',
+  },
+  'GCP-SQL-PUBLIC-ACCESS': {
+    cweId: 'CWE-284 / CWE-319: Cleartext Transmission / Publicly Accessible Cloud Database',
+    owaspCategory: 'A02:2021 - Cryptographic Failures / A05:2021 - Security Misconfiguration',
+    mitreAttackTechnique: 'T1530 - Data from Cloud Storage & Databases',
+  },
+  'GCP-LOGGING-SINKS-OFF': {
+    cweId: 'CWE-778: Insufficient Logging (GCP Missing Cloud Logging Sink)',
+    owaspCategory: 'A09:2021 - Security Logging and Monitoring Failures',
+    mitreAttackTechnique: 'T1562.001 - Impair Defenses: Disable Cloud Logging',
+  },
 };
 
 const CONTROLS_BY_RULE_ID = new Map<string, FindingComplianceControlRef[]>();

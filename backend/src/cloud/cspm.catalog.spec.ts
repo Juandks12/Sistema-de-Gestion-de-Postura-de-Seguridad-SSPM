@@ -2,9 +2,9 @@ import { CloudProvider, FindingCategory } from '@prisma/client';
 import { CSPM_RULES, CSPM_RULES_MAP } from './cspm.catalog';
 
 describe('CSPM Catalog', () => {
-  it('contiene las 31 reglas base de postura de seguridad cloud', () => {
-    expect(CSPM_RULES).toHaveLength(31);
-    expect(CSPM_RULES_MAP.size).toBe(31);
+  it('contiene las 36 reglas base de postura de seguridad multi-cloud (AWS, Azure, GCP)', () => {
+    expect(CSPM_RULES).toHaveLength(36);
+    expect(CSPM_RULES_MAP.size).toBe(36);
   });
 
   it('garantiza identificadores únicos para cada regla CSPM', () => {
@@ -31,12 +31,14 @@ describe('CSPM Catalog', () => {
     }
   });
 
-  it('cubre equilibradamente AWS y Azure en las 6 categorías de seguridad cloud', () => {
+  it('cubre equilibradamente AWS, Azure y GCP en las 6 categorías de seguridad cloud', () => {
     const awsRules = CSPM_RULES.filter((r) => r.provider === CloudProvider.AWS);
     const azureRules = CSPM_RULES.filter((r) => r.provider === CloudProvider.AZURE);
+    const gcpRules = CSPM_RULES.filter((r) => r.provider === CloudProvider.GCP);
 
     expect(awsRules.length).toBeGreaterThanOrEqual(15);
     expect(azureRules.length).toBeGreaterThanOrEqual(10);
+    expect(gcpRules.length).toBe(5);
 
     const categories = new Set(CSPM_RULES.map((r) => r.category));
     expect(categories.has(FindingCategory.CLOUD_IAM)).toBe(true);
