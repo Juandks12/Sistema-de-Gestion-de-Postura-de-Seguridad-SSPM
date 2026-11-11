@@ -16,6 +16,7 @@ import {
 } from './cloud-scan.service';
 import { AwsCspmEvaluatorService } from './evaluators/aws-cspm.evaluator';
 import { AzureCspmEvaluatorService } from './evaluators/azure-cspm.evaluator';
+import { GcpCspmEvaluatorService } from './evaluators/gcp-cspm.evaluator';
 
 describe('CloudScanService', () => {
   let service: CloudScanService;
@@ -38,6 +39,7 @@ describe('CloudScanService', () => {
   };
   let awsEvaluatorMock: { evaluateAccount: jest.Mock };
   let azureEvaluatorMock: { evaluateSubscription: jest.Mock };
+  let gcpEvaluatorMock: { evaluateProject: jest.Mock };
   let riskScoresMock: { snapshot: jest.Mock };
 
   beforeEach(() => {
@@ -134,6 +136,35 @@ describe('CloudScanService', () => {
       evaluateSubscription: jest.fn(),
     };
 
+    gcpEvaluatorMock = {
+      evaluateProject: jest.fn().mockResolvedValue({
+        provider: CloudProvider.GCP,
+        accountOrSubscriptionId: 'sec-audit-gcp-prod',
+        simulated: true,
+        evaluatedRulesCount: 5,
+        warnings: [],
+        resources: [
+          {
+            nativeId: 'projects/_/buckets/sec-audit-gcp-prod-bucket',
+            name: 'sec-audit-gcp-prod-bucket',
+            resourceType: CloudResourceType.GCP_STORAGE_BUCKET,
+            region: 'us-central1',
+            configuration: { isPublic: true },
+          },
+        ],
+        findings: [
+          {
+            ruleId: 'GCP-STORAGE-PUBLIC-BUCKET',
+            nativeId: 'projects/_/buckets/sec-audit-gcp-prod-bucket',
+            resourceName: 'sec-audit-gcp-prod-bucket',
+            resourceType: CloudResourceType.GCP_STORAGE_BUCKET,
+            region: 'us-central1',
+            evidence: { bucketName: 'sec-audit-gcp-prod-bucket' },
+          },
+        ],
+      }),
+    };
+
     riskScoresMock = {
       snapshot: jest.fn().mockResolvedValue({
         asset: { score: 62, grade: 'C' },
@@ -146,6 +177,7 @@ describe('CloudScanService', () => {
       cloudAccountsMock as unknown as CloudAccountsService,
       awsEvaluatorMock as unknown as AwsCspmEvaluatorService,
       azureEvaluatorMock as unknown as AzureCspmEvaluatorService,
+      gcpEvaluatorMock as unknown as GcpCspmEvaluatorService,
       riskScoresMock as unknown as RiskScoresService,
     );
   });
@@ -212,6 +244,7 @@ describe('CloudScanService', () => {
         cloudAccountsMock as unknown as CloudAccountsService,
         awsEvaluatorMock as unknown as AwsCspmEvaluatorService,
         azureEvaluatorMock as unknown as AzureCspmEvaluatorService,
+        gcpEvaluatorMock as unknown as GcpCspmEvaluatorService,
         riskScoresMock as unknown as RiskScoresService,
         alertsMock as unknown as AlertsService,
       );
@@ -285,7 +318,7 @@ describe('CloudScanService', () => {
 
       expect(summary.accounts.total).toBe(2);
       expect(summary.accounts.connected).toBe(2);
-      expect(summary.accounts.byProvider).toEqual({ AWS: 1, AZURE: 1 });
+      expect(summary.accounts.byProvider).toEqual({ AWS: 1, AZURE: 1, GCP: 0 });
       expect(summary.resources.total).toBe(2);
       expect(summary.resources.withFindings).toBe(1);
       expect(summary.resources.clean).toBe(1);

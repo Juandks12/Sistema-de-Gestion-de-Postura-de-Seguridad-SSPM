@@ -999,8 +999,8 @@ export interface FrameworkDetailsResponse {
 }
 
 // Cloud Security Posture Management (CSPM)
-export type CloudProvider = 'AWS' | 'AZURE';
-export type CloudAuthType = 'ROLE_ARN' | 'ACCESS_KEYS' | 'SERVICE_PRINCIPAL';
+export type CloudProvider = 'AWS' | 'AZURE' | 'GCP';
+export type CloudAuthType = 'ROLE_ARN' | 'ACCESS_KEYS' | 'SERVICE_PRINCIPAL' | 'SERVICE_ACCOUNT_KEY';
 export type CloudAccountStatus = 'PENDING' | 'CONNECTED' | 'ERROR' | 'DISCONNECTED';
 
 export type CloudResourceType =
@@ -1019,6 +1019,12 @@ export type CloudResourceType =
   | 'AZURE_SQL_DATABASE'
   | 'AZURE_ACTIVITY_LOG'
   | 'AZURE_VNET'
+  | 'GCP_STORAGE_BUCKET'
+  | 'GCP_SERVICE_ACCOUNT'
+  | 'GCP_FIREWALL_RULE'
+  | 'GCP_COMPUTE_INSTANCE'
+  | 'GCP_SQL_INSTANCE'
+  | 'GCP_LOGGING_SINK'
   | 'OTHER';
 
 export interface CloudAccountItem {
@@ -1032,6 +1038,7 @@ export interface CloudAccountItem {
   azureTenantId?: string | null;
   awsRoleArn?: string | null;
   awsExternalId?: string | null;
+  gcpClientEmail?: string | null;
   monitoredRegions: string[];
   assetId?: string | null;
   lastAuditedAt?: string | null;
@@ -1048,6 +1055,8 @@ export interface CloudOnboardingTemplate {
   awsCloudFormationYaml: string;
   awsCliSnippet: string;
   azureCliSnippet: string;
+  gcpCliSnippet?: string;
+  gcpTerraformSnippet?: string;
 }
 
 export interface CloudVerificationResult {
@@ -1060,6 +1069,10 @@ export interface CloudVerificationResult {
   displayName?: string;
   state?: string;
   tenantId?: string;
+  projectId?: string;
+  projectName?: string;
+  projectNumber?: string;
+  lifecycleState?: string;
   latencyMs: number;
   error?: string;
 }
@@ -1077,6 +1090,9 @@ export interface CreateCloudAccountInput {
   awsAccessKeyId?: string;
   awsSecretAccessKey?: string;
   awsSessionToken?: string;
+  gcpClientEmail?: string;
+  gcpPrivateKey?: string;
+  gcpServiceAccountJson?: string;
   monitoredRegions?: string[];
   verifyOnCreate?: boolean;
 }
@@ -1093,6 +1109,9 @@ export interface TestCloudConnectionInput {
   awsAccessKeyId?: string;
   awsSecretAccessKey?: string;
   awsSessionToken?: string;
+  gcpClientEmail?: string;
+  gcpPrivateKey?: string;
+  gcpServiceAccountJson?: string;
 }
 
 export interface CspmRuleDefinition {
@@ -1168,13 +1187,13 @@ export interface CloudPostureSummary {
     connected: number;
     error: number;
     pending: number;
-    byProvider: { AWS: number; AZURE: number };
+    byProvider: { AWS: number; AZURE: number; GCP: number };
   };
   resources: {
     total: number;
     withFindings: number;
     clean: number;
-    byProvider: { AWS: number; AZURE: number };
+    byProvider: { AWS: number; AZURE: number; GCP: number };
     byType: Record<string, number>;
   };
   findings: {

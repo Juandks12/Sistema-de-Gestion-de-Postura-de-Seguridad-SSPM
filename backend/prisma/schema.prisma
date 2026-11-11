@@ -99,6 +99,7 @@ enum MalwareVerdict {
 enum CloudProvider {
   AWS
   AZURE
+  GCP
 }
 
 /// Mecanismo de autenticación utilizado para conectar la cuenta de nube.
@@ -106,6 +107,7 @@ enum CloudAuthType {
   ROLE_ARN
   ACCESS_KEYS
   SERVICE_PRINCIPAL
+  SERVICE_ACCOUNT_KEY
 }
 
 /// Estado del conector de la cuenta de nube.
@@ -133,6 +135,12 @@ enum CloudResourceType {
   AZURE_SQL_DATABASE
   AZURE_ACTIVITY_LOG
   AZURE_VNET
+  GCP_STORAGE_BUCKET
+  GCP_SERVICE_ACCOUNT
+  GCP_FIREWALL_RULE
+  GCP_COMPUTE_INSTANCE
+  GCP_SQL_INSTANCE
+  GCP_LOGGING_SINK
   OTHER
 }
 
@@ -831,6 +839,9 @@ model CloudAccount {
 
   /// Azure Tenant ID (UUID de Microsoft Entra ID)
   azureTenantId String? @map("azure_tenant_id") @db.VarChar(100)
+
+  /// GCP Client Email de la Service Account
+  gcpClientEmail String? @map("gcp_client_email") @db.VarChar(150)
 
   /// AWS IAM Role ARN asumible por el conector de auditoría
   awsRoleArn String? @map("aws_role_arn") @db.VarChar(255)

@@ -92,6 +92,22 @@ export class CreateCloudAccountDto {
   @IsString()
   awsSessionToken?: string;
 
+  @ApiPropertyOptional({ description: 'Client Email de la Service Account en GCP' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  gcpClientEmail?: string;
+
+  @ApiPropertyOptional({ description: 'Private Key PEM de la Service Account en GCP' })
+  @IsOptional()
+  @IsString()
+  gcpPrivateKey?: string;
+
+  @ApiPropertyOptional({ description: 'Contenido JSON completo de la clave de Service Account de GCP' })
+  @IsOptional()
+  @IsString()
+  gcpServiceAccountJson?: string;
+
   @ApiPropertyOptional({
     description: 'Regiones habilitadas para auditoría',
     example: ['us-east-1', 'us-west-2'],
@@ -151,6 +167,22 @@ export class UpdateCloudAccountDto {
   @IsString()
   @MaxLength(500)
   azureClientSecret?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  gcpClientEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  gcpPrivateKey?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  gcpServiceAccountJson?: string;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -213,6 +245,21 @@ export class TestCloudConnectionDto {
   @IsOptional()
   @IsString()
   awsSessionToken?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  gcpClientEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  gcpPrivateKey?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  gcpServiceAccountJson?: string;
 }
 
 export class RunCloudAuditDto {

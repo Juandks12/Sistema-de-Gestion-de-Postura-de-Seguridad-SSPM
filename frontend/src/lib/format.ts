@@ -94,6 +94,12 @@ export const CLOUD_RESOURCE_TYPE_LABEL: Record<CloudResourceType, string> = {
   AZURE_SQL_DATABASE: 'Azure SQL Database',
   AZURE_ACTIVITY_LOG: 'Activity Log / Monitor',
   AZURE_VNET: 'Virtual Network',
+  GCP_STORAGE_BUCKET: 'Cloud Storage Bucket',
+  GCP_SERVICE_ACCOUNT: 'IAM Service Account',
+  GCP_FIREWALL_RULE: 'VPC Firewall Rule',
+  GCP_COMPUTE_INSTANCE: 'Compute Engine VM',
+  GCP_SQL_INSTANCE: 'Cloud SQL Instance',
+  GCP_LOGGING_SINK: 'Cloud Logging Sink',
   OTHER: 'Otro recurso Cloud',
 };
 
