@@ -48,13 +48,13 @@ jobs:
           exit "$status"
 
   backend-lint-test:
-    name: Backend · lint + unit tests
+    name: Backend · lint + unit tests + evals
     uses: miguelortiz13/github-workflows/.github/workflows/build-node.yml@v0.4.0
     with:
       node-version: "22"
       working-directory: backend
       install-command: npm ci && npx prisma generate
-      scripts: lint test
+      scripts: lint test test:evals
 
   backend-e2e:
     name: Backend · e2e tests
@@ -64,7 +64,7 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: admin
