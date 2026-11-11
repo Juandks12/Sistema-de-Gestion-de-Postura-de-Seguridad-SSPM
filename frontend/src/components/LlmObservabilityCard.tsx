@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
   Bot,
@@ -20,33 +21,27 @@ import type { LlmExecutionLogItem, LlmObservabilityStats } from '@/lib/types';
 
 export function LlmObservabilityCard() {
   const [days, setDays] = useState<number>(30);
-  const [stats, setStats] = useState<LlmObservabilityStats | null>(null);
-  const [logs, setLogs] = useState<LlmExecutionLogItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'agents' | 'models' | 'logs'>('agents');
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useQuery<{ stats: LlmObservabilityStats; logs: LlmExecutionLogItem[] }>({
+    queryKey: ['llm-observability', days],
+    queryFn: async () => {
       const [statsData, logsData] = await Promise.all([
         api<LlmObservabilityStats>(`/ai/observability/stats?days=${days}`),
         api<LlmExecutionLogItem[]>('/ai/observability/logs?limit=15'),
       ]);
-      setStats(statsData);
-      setLogs(logsData);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return { stats: statsData, logs: logsData };
+    },
+  });
 
-  useEffect(() => {
-    void fetchData();
-  }, [days]);
+  const stats = data?.stats ?? null;
+  const logs = data?.logs ?? [];
+  const error = queryError ? (queryError instanceof Error ? queryError.message : String(queryError)) : null;
 
   return (
     <Card className="mt-6 border-indigo-500/20">
@@ -75,7 +70,7 @@ export function LlmObservabilityCard() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => void fetchData()}
+                onClick={() => void refetch()}
                 disabled={loading}
                 className="gap-1 text-xs"
               >

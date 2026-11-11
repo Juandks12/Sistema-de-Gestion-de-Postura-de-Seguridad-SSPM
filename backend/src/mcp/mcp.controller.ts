@@ -70,7 +70,7 @@ export class McpController {
     }
 
     try {
-      const { organizationId } = await this.mcpServerService.authenticateApiKey(rawKey);
+      await this.mcpServerService.authenticateApiKey(rawKey);
 
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
