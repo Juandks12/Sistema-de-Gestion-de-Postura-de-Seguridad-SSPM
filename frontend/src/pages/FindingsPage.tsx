@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Clock,
   Cloud,
+  Cpu,
   Download,
   ExternalLink,
   FlaskConical,
@@ -32,6 +33,7 @@ import { AttackPathsCard } from '@/components/AttackPathsCard';
 import { CveList } from '@/components/CveList';
 import { FindingTriageModal } from '@/components/FindingTriageModal';
 import { RemediationGuideCard } from '@/components/RemediationGuideCard';
+import { RagCopilotModal } from '@/components/RagCopilotModal';
 import { Alert } from '@/components/ui/Alert';
 import { FindingStatusBadge, SeverityBadge, SlaBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -104,6 +106,7 @@ export function FindingsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [review, setReview] = useState<{ finding: Finding; action: ReviewAction } | null>(null);
   const [remediationFinding, setRemediationFinding] = useState<Finding | null>(null);
+  const [ragFinding, setRagFinding] = useState<Finding | null>(null);
   const [triageFinding, setTriageFinding] = useState<Finding | null>(null);
   const [createManualOpen, setCreateManualOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -897,6 +900,7 @@ export function FindingsPage() {
                             onReview={(action) => setReview({ finding: f, action })}
                             onManageRemediation={(item) => setRemediationFinding(item)}
                             onTriage={(item) => setTriageFinding(item)}
+                            onCopilotRag={(item) => setRagFinding(item)}
                           />
                         </td>
                       </tr>
@@ -922,6 +926,13 @@ export function FindingsPage() {
         <RemediationModal
           finding={remediationFinding}
           onClose={() => setRemediationFinding(null)}
+        />
+      ) : null}
+
+      {ragFinding ? (
+        <RagCopilotModal
+          finding={ragFinding}
+          onClose={() => setRagFinding(null)}
         />
       ) : null}
 
@@ -962,12 +973,14 @@ function FindingDetail({
   onReview,
   onManageRemediation,
   onTriage,
+  onCopilotRag,
 }: {
   finding: Finding;
   canEdit: boolean;
   onReview: (a: ReviewAction) => void;
   onManageRemediation: (finding: Finding) => void;
   onTriage: (finding: Finding) => void;
+  onCopilotRag: (finding: Finding) => void;
 }) {
   const retest = useRetestFinding();
   const [retestResult, setRetestResult] = useState<{ stillReproducible: boolean; message: string } | null>(null);
@@ -1196,6 +1209,15 @@ function FindingDetail({
               title="Analizar con motor heurístico y síntesis de IA para triage contextual y detección de falsos positivos"
             >
               Triage IA
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Cpu className="size-3.5 text-emerald-400" />}
+              onClick={() => onCopilotRag(f)}
+              title="Copilot RAG con pgvector para generar playbook de mitigación técnica verificada sin alucinaciones"
+            >
+              Copilot RAG
             </Button>
             <Button
               size="sm"

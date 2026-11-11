@@ -29,6 +29,8 @@ import { CryptoVaultModule } from './common/crypto/crypto-vault.module';
 import { CloudModule } from './cloud/cloud.module';
 import { ThreatLabModule } from './threat-lab/threat-lab.module';
 import { TicketingModule } from './ticketing/ticketing.module';
+import { AiModule } from './ai/ai.module';
+import { McpModule } from './mcp/mcp.module';
 
 @Module({
   imports: [
@@ -68,6 +70,8 @@ import { TicketingModule } from './ticketing/ticketing.module';
     CloudModule,
     ThreatLabModule,
     TicketingModule,
+    AiModule,
+    McpModule,
   ],
   providers: [
     // Orden importante: primero autenticación (JWT), después autorización (roles).
